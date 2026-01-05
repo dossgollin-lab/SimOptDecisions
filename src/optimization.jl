@@ -217,13 +217,7 @@ end
 
 Backend-specific optimization implementation.
 Extensions add methods to this function.
+
+Requires loading the appropriate extension package (e.g., `using Metaheuristics`).
 """
 function optimize_backend end
-
-# Default: error if extension not loaded
-function optimize_backend(prob::OptimizationProblem, backend::MetaheuristicsBackend)
-    return error(
-        "Metaheuristics extension not loaded. " *
-        "Please run `using Metaheuristics` to use MetaheuristicsBackend.",
-    )
-end

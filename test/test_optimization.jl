@@ -136,7 +136,7 @@
         @test metrics.mean_value == 50.0  # 10 steps * 5.0 increment
     end
 
-    @testset "MetaheuristicsBackend requires extension" begin
+    @testset "MetaheuristicsBackend with extension" begin
         # Create minimal valid problem
         struct ExtTestState <: AbstractState
             value::Float64
@@ -187,8 +187,10 @@
             [minimize(:mean)],
         )
 
-        # Should throw helpful error
-        @test_throws ErrorException optimize(prob, MetaheuristicsBackend())
+        # Extension is loaded (Metaheuristics in test extras), should work
+        backend = MetaheuristicsBackend(; algorithm=:ECA, max_iterations=5, population_size=5)
+        result = SimOptDecisions.optimize(prob, backend)
+        @test result isa OptimizationResult{ExtTestPolicy}
     end
 
     @testset "Objective extraction" begin
@@ -261,7 +263,7 @@
         @test result.convergence_info[:iterations] == 100
 
         # Test pareto_front iteration
-        front = collect(pareto_front(result))
+        front = collect(SimOptDecisions.pareto_front(result))
         @test length(front) == 3
         @test front[1] == ([0.3], [12.0])
         @test front[2] == ([0.5], [10.0])

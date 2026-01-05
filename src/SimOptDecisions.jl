@@ -13,6 +13,7 @@ include("validation.jl")
 include("simulation.jl")
 include("optimization.jl")
 include("persistence.jl")
+include("plotting.jl")
 
 # ============================================================================
 # Exports
@@ -62,5 +63,10 @@ export AbstractConstraint, FeasibilityConstraint, PenaltyConstraint
 export SharedParameters, ExperimentConfig
 export save_checkpoint, load_checkpoint
 export save_experiment, load_experiment
+
+# ---------- Phase 3 Exports ----------
+
+# Plotting (requires Makie extension)
+export to_scalars, plot_trace, plot_pareto
 
 end # module SimOptDecisions
