@@ -343,3 +343,62 @@ test = ["Aqua", "Test"]
 
 - Dev tools (`JuliaFormatter`, `Revise`, `Aqua`) go in `[extras]`, not weak dependencies
 - Weak deps are for runtime functionality that loads when users import a package
+
+---
+
+## Implementation Roadmap
+
+### File Structure
+
+```text
+SimOptDecisions.jl/
+├── src/
+│   ├── SimOptDecisions.jl    # Main module, exports
+│   ├── types.jl              # Abstract types, TimeStep, Objective
+│   ├── simulation.jl         # simulate, initialize, step, time_axis
+│   ├── recorders.jl          # NoRecorder, TraceRecorder, Tables.jl
+│   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
+│   ├── validation.jl         # _validate_* functions, constraints
+│   └── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
+├── ext/
+│   ├── SimOptMetaheuristicsExt.jl
+│   └── SimOptMakieExt.jl
+├── test/
+│   ├── runtests.jl
+│   └── ext/                  # Extension tests (optional)
+├── Project.toml
+└── README.md
+```
+
+### Phase 1: Core Framework
+
+- [ ] Abstract types: `AbstractState`, `AbstractPolicy`, `AbstractSystemModel`, `AbstractSOW`, `AbstractRecorder`
+- [ ] `TimeStep{V}` struct and `_validate_time_axis`
+- [ ] Interface functions: `initialize`, `step`, `time_axis`, `aggregate_outcome`, `is_terminal`
+- [ ] `simulate(model, sow, policy, recorder, rng)` with convenience overload
+- [ ] Recorders: `NoRecorder`, `TraceRecorderBuilder`, `TraceRecorder{S,T}`, Tables.jl integration
+
+### Phase 2: Optimization
+
+- [ ] Policy interface: `params`, `param_bounds`, `_validate_policy_interface`
+- [ ] Objectives: `Objective` struct, `minimize`/`maximize` constructors
+- [ ] Batch sizing: `AbstractBatchSize`, `FullBatch`, `FixedBatch`, `FractionBatch`
+- [ ] `OptimizationProblem` struct with `_validate_sows` constructor
+- [ ] `evaluate_policy` and `optimize` entry point
+- [ ] Validation hooks and constraint types (`FeasibilityConstraint`, `PenaltyConstraint`)
+- [ ] `SharedParameters`, `ExperimentConfig`, `save_checkpoint`/`load_checkpoint`
+
+### Phase 3: Extensions
+
+- [ ] `ext/SimOptMetaheuristicsExt.jl`: `optimize_backend`, algorithm selection, result wrapping
+- [ ] `ext/SimOptMakieExt.jl`: `plot_trace`, `plot_pareto`
+- [ ] Project.toml: `[weakdeps]` and `[extensions]` sections
+- [ ] Error messages when extensions not loaded
+
+### Phase 4: Verification
+
+- [ ] Package structure: main module with includes, exports, Project.toml
+- [ ] MWE test problem (random walk or similar)
+- [ ] `Aqua.test_all(SimOptDecisions)`
+- [ ] Allocation test: `@test (@allocated simulate(...)) == 0`
+- [ ] Type inference test: `@inferred simulate(...)`

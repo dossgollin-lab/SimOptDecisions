@@ -1,4 +1,4 @@
-# SimOptDecisions.jl
+# `SimOptDecisions.jl`
 
 A high-performance, type-stable Julia framework for simulation-optimization under deep uncertainty.
 
@@ -18,7 +18,7 @@ Simulation-optimization provides a framework for finding good policies by:
 
 At its heart, this framework evaluates how well a policy performs:
 
-```
+```julia
 Model(SOW, Policy) → Outcome
 ```
 
@@ -107,36 +107,41 @@ SimOptDecisions.params(p::DriftPolicy) = [p.drift]
 SimOptDecisions.param_bounds(::Type{<:DriftPolicy}) = [(-1.0, 1.0)]
 DriftPolicy(x::AbstractVector{T}) where T<:AbstractFloat = DriftPolicy(x[1])
 
-# 4. Implement required methods using ScalarSOW (built-in wrapper for scalar values)
-function SimOptDecisions.initialize(::RandomWalkModel, sow::ScalarSOW{T}, rng) where T
+# 4. Define your SOW (States of the World)
+struct NoiseSOW{T<:AbstractFloat} <: AbstractSOW
+    scale::T
+end
+
+# 5. Implement required methods
+function SimOptDecisions.initialize(::RandomWalkModel, sow::NoiseSOW{T}, rng) where T
     CounterState(zero(T), zero(T))
 end
 
-function SimOptDecisions.step(state::CounterState{T}, model, sow::ScalarSOW{T},
+function SimOptDecisions.step(state::CounterState{T}, model, sow::NoiseSOW{T},
                               policy::DriftPolicy, t::TimeStep, rng) where T
-    noise = randn(rng) * sow.value  # sow.value is the noise scale
+    noise = randn(rng) * sow.scale
     new_value = state.value + policy.drift + noise
     CounterState(new_value, state.cumulative + abs(new_value))
 end
 
-SimOptDecisions.time_axis(::RandomWalkModel, sow::ScalarSOW) = 1:100
+SimOptDecisions.time_axis(::RandomWalkModel, sow::NoiseSOW) = 1:100
 
 function SimOptDecisions.aggregate_outcome(state::CounterState, ::RandomWalkModel)
     (final_value = state.value, total_movement = state.cumulative)
 end
 
-# 5. Run a simulation
+# 6. Run a simulation
 model = RandomWalkModel()
-sow = ScalarSOW(0.1)  # noise scale wrapped in ScalarSOW
+sow = NoiseSOW(0.1)
 policy = DriftPolicy(0.05)
 
 result = simulate(model, sow, policy)  # uses defaults: NoRecorder(), Random.default_rng()
 # result.final_value ≈ 5.0, result.total_movement ≈ 250.0
 
-# 6. Run optimization (requires `using Metaheuristics`)
+# 7. Run optimization (requires `using Metaheuristics`)
 prob = OptimizationProblem(
     model,
-    [ScalarSOW(0.1), ScalarSOW(0.2), ScalarSOW(0.5)],  # Multiple SOWs
+    [NoiseSOW(0.1), NoiseSOW(0.2), NoiseSOW(0.5)],  # Multiple SOWs
     DriftPolicy,  # Policy type (not a builder function!)
     outcomes -> (mean_final = mean(o.final_value for o in outcomes),),  # Metric calculator
     [minimize(:mean_final)],  # Objectives
@@ -171,21 +176,7 @@ Julia's multiple dispatch catches type mismatches via `MethodError` at runtime.
 
 #### States of the World (SOWs)
 
-All SOWs must subtype `AbstractSOW`. Built-in options for quick prototyping:
-
-```julia
-# For simple scalar SOWs (noise scale, discount rate, etc.)
-struct ScalarSOW{T<:Real} <: AbstractSOW
-    value::T
-end
-
-# For NamedTuple-based SOWs (quick prototyping)
-struct TupleSOW{NT<:NamedTuple} <: AbstractSOW
-    data::NT
-end
-```
-
-For production, define your own:
+All SOWs must subtype `AbstractSOW`. Define your own to represent uncertain futures:
 
 ```julia
 struct ClimateSOW{T<:AbstractFloat} <: AbstractSOW
@@ -194,7 +185,7 @@ struct ClimateSOW{T<:AbstractFloat} <: AbstractSOW
     temperature_trajectory::Vector{T}
 end
 
-# Required: implement to_scalars for plotting/tables integration
+# Optional: implement to_scalars for plotting/tables integration
 function to_scalars(s::ClimateSOW)
     (; slr=s.sea_level_rise, storm=s.storm_intensity,
        temp_mean=mean(s.temperature_trajectory))
@@ -205,10 +196,10 @@ end
 
 ```julia
 # VALID
-sows = [ScalarSOW(0.1), ScalarSOW(0.2)]
+sows = [ClimateSOW(0.1, 1.0, temps1), ClimateSOW(0.2, 1.5, temps2)]
 
-# INVALID - rejected at construction
-sows = AbstractSOW[ScalarSOW(0.1), ClimateSOW(0.2, 1.0, temps)]
+# INVALID - rejected at construction (mixed types)
+sows = AbstractSOW[ClimateSOW(...), OtherSOW(...)]
 ```
 
 #### Required Methods
@@ -415,6 +406,28 @@ config = ExperimentConfig(
 ## For Developers
 
 This section is for people who want to contribute to or extend the framework itself. See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed implementation code and struct definitions.
+
+### File Structure
+
+```text
+SimOptDecisions.jl/
+├── src/
+│   ├── SimOptDecisions.jl    # Main module, exports
+│   ├── types.jl              # Abstract types, TimeStep, Objective
+│   ├── simulation.jl         # simulate, initialize, step, time_axis
+│   ├── recorders.jl          # NoRecorder, TraceRecorder, Tables.jl
+│   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
+│   ├── validation.jl         # _validate_* functions, constraints
+│   └── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
+├── ext/
+│   ├── SimOptMetaheuristicsExt.jl
+│   └── SimOptMakieExt.jl
+├── test/
+│   ├── runtests.jl
+│   └── ext/                  # Extension tests (optional)
+├── Project.toml
+└── README.md
+```
 
 ### Development Guidelines
 
