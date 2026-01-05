@@ -128,8 +128,23 @@
         policy = TSIncrementPolicy(1.0)
         rng = Random.Xoshiro(42)
 
-        # Test type inference
+        # Test type inference for simulate
         @test @inferred(simulate(model, sow, policy, NoRecorder(), rng)) isa NamedTuple
+
+        # Test type inference for interface functions
+        @test @inferred(SimOptDecisions.initialize(model, sow, rng)) isa TSCounterState
+        state = SimOptDecisions.initialize(model, sow, rng)
+        ts = TimeStep(1, 1, false)
+        @test @inferred(SimOptDecisions.step(state, model, sow, policy, ts, rng)) isa TSCounterState
+        @test @inferred(SimOptDecisions.aggregate_outcome(state, model)) isa NamedTuple
+
+        # Test zero allocations in hot path
+        # Warm-up run
+        simulate(model, sow, policy, NoRecorder(), rng)
+
+        # Test allocations
+        allocs = @allocated simulate(model, sow, policy, NoRecorder(), rng)
+        @test allocs == 0
     end
 
     @testset "Early termination" begin

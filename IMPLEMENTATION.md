@@ -397,8 +397,8 @@ SimOptDecisions.jl/
 
 ### Phase 4: Verification
 
-- [ ] Package structure: main module with includes, exports, Project.toml
-- [ ] MWE test problem (random walk or similar)
-- [ ] `Aqua.test_all(SimOptDecisions)`
-- [ ] Allocation test: `@test (@allocated simulate(...)) == 0`
-- [ ] Type inference test: `@inferred simulate(...)`
+- [x] Package structure: main module with includes, exports, Project.toml
+- [x] MWE test problem (CounterState in test_simulation.jl)
+- [x] `Aqua.test_all(SimOptDecisions)`
+- [x] Allocation test: `@test (@allocated simulate(...)) == 0`
+- [x] Type inference test: `@inferred simulate(...)` and interface functions
