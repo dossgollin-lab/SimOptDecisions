@@ -390,10 +390,10 @@ SimOptDecisions.jl/
 
 ### Phase 3: Extensions
 
-- [ ] `ext/SimOptMetaheuristicsExt.jl`: `optimize_backend`, algorithm selection, result wrapping
-- [ ] `ext/SimOptMakieExt.jl`: `plot_trace`, `plot_pareto`
-- [ ] Project.toml: `[weakdeps]` and `[extensions]` sections
-- [ ] Error messages when extensions not loaded
+- [x] `ext/SimOptMetaheuristicsExt.jl`: `optimize_backend`, algorithm selection, result wrapping
+- [x] `ext/SimOptMakieExt.jl`: `plot_trace`, `plot_pareto`
+- [x] Project.toml: `[weakdeps]` and `[extensions]` sections
+- [x] Error messages when extensions not loaded
 
 ### Phase 4: Verification
 
