@@ -6,7 +6,8 @@
     params(policy::AbstractPolicy) -> AbstractVector{<:AbstractFloat}
 
 Extract parameters from a policy as a vector.
-Override for your policy type.
+Optional: useful for inspection/logging, but not required for optimization.
+The optimizer uses `param_bounds` and the vector constructor instead.
 """
 function params end
 
@@ -221,3 +222,12 @@ Extensions add methods to this function.
 Requires loading the appropriate extension package (e.g., `using Metaheuristics`).
 """
 function optimize_backend end
+
+# Generic fallback with helpful error message
+function optimize_backend(::OptimizationProblem, backend::AbstractOptimizationBackend)
+    backend_type = typeof(backend)
+    return error(
+        "No optimize_backend method defined for $(backend_type). " *
+        "If using MetaheuristicsBackend, run `using Metaheuristics` before calling optimize().",
+    )
+end

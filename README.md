@@ -87,6 +87,8 @@ A minimal working example demonstrating the core interface:
 ```julia
 using SimOptDecisions
 using Random
+using Metaheuristics  # Required for optimization
+using Statistics: mean  # For metric calculator
 
 # 1. Define your state (parameterized for type flexibility)
 struct CounterState{T<:AbstractFloat} <: AbstractState
@@ -138,7 +140,7 @@ policy = DriftPolicy(0.05)
 result = simulate(model, sow, policy)  # uses defaults: NoRecorder(), Random.default_rng()
 # result.final_value ≈ 5.0, result.total_movement ≈ 250.0
 
-# 7. Run optimization (requires `using Metaheuristics`)
+# 7. Run optimization
 prob = OptimizationProblem(
     model,
     [NoiseSOW(0.1), NoiseSOW(0.2), NoiseSOW(0.5)],  # Multiple SOWs
@@ -147,8 +149,10 @@ prob = OptimizationProblem(
     [minimize(:mean_final)],  # Objectives
 )
 
-# result = optimize(prob, MetaheuristicsBackend())
-# best = result.best_policy  # DriftPolicy with optimal parameters
+# Note: Both SimOptDecisions and Metaheuristics export `optimize`.
+# Use the fully qualified name to avoid ambiguity:
+result = SimOptDecisions.optimize(prob, MetaheuristicsBackend())
+best = result.best_policy  # DriftPolicy with optimal parameters
 ```
 
 **Why parameterize with `T<:AbstractFloat`?** This enables:
@@ -567,8 +571,10 @@ The ecosystem uses weak dependencies (package extensions) to keep the core light
 
 Implements optimization via Metaheuristics.jl algorithms:
 
-- Single-objective: `:DE`, `:ECA`, `:PSO`, `:ABC`, `:GA`
-- Multi-objective: `:NSGA2`, `:NSGA3`, `:SPEA2`, `:MOEAD`, `:CCMO`
+- Single-objective: `:DE`, `:ECA`, `:PSO`, `:ABC`, `:SA`
+- Multi-objective: `:NSGA2`, `:NSGA3`, `:SPEA2`, `:MOEAD`
+
+**Note on reproducibility:** During optimization, the RNG is seeded deterministically based on the parameter vector hash. This ensures the same parameters always produce the same fitness value, which is important for optimizer convergence. However, it means stochastic variation within each evaluation is fixed for a given parameter set.
 
 #### Makie Extension
 
