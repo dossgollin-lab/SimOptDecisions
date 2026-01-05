@@ -2,7 +2,7 @@
 
 julia_version = "1.12.3"
 manifest_format = "2.0"
-project_hash = "6b5750cadd7bd6e5f138cd4b700712ded22a14e0"
+project_hash = "8ff08685d94d2319a3b9a8a0602d68ff26d8a7ff"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -222,9 +222,19 @@ uuid = "7e506255-f358-4e82-b7e4-beb19740aa63"
 version = "1.5.0"
 
 [[deps.SimOptDecisions]]
+deps = ["Dates", "JLD2", "Random", "Tables"]
 path = "."
 uuid = "8764eb7a-9599-4112-a7c7-9b4115e89f97"
 version = "0.1.0"
+
+    [deps.SimOptDecisions.extensions]
+    SimOptMakieExt = ["CairoMakie", "GLMakie"]
+    SimOptMetaheuristicsExt = "Metaheuristics"
+
+    [deps.SimOptDecisions.weakdeps]
+    CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+    GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+    Metaheuristics = "bcdb8e00-2c21-11e9-3065-2b553b22f898"
 
 [[deps.StyledStrings]]
 uuid = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
