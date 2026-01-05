@@ -266,4 +266,397 @@ import SimOptDecisions: finalize, step
         # Should terminate early at value 5, not 100
         @test result.final_value == 5
     end
+
+    # ========================================================================
+    # Phase 2: Optimization Infrastructure
+    # ========================================================================
+
+    @testset "Objective construction" begin
+        obj1 = minimize(:cost)
+        @test obj1.name == :cost
+        @test obj1.direction == Minimize
+
+        obj2 = maximize(:reliability)
+        @test obj2.name == :reliability
+        @test obj2.direction == Maximize
+
+        obj3 = Objective(:custom, Minimize)
+        @test obj3.name == :custom
+        @test obj3.direction == Minimize
+    end
+
+    @testset "Batch size types" begin
+        @test FullBatch() isa AbstractBatchSize
+
+        fb = FixedBatch(50)
+        @test fb.n == 50
+        @test_throws ArgumentError FixedBatch(0)
+        @test_throws ArgumentError FixedBatch(-1)
+
+        frac = FractionBatch(0.5)
+        @test frac.fraction == 0.5
+        @test FractionBatch(1.0).fraction == 1.0  # Edge case: 1.0 is valid
+        @test_throws ArgumentError FractionBatch(0.0)
+        @test_throws ArgumentError FractionBatch(1.5)
+        @test_throws ArgumentError FractionBatch(-0.1)
+    end
+
+    @testset "SOW validation" begin
+        struct OptTestSOW1 <: AbstractSOW end
+        struct OptTestSOW2 <: AbstractSOW end
+
+        @test SimOptDecisions._validate_sows([OptTestSOW1(), OptTestSOW1()]) === nothing
+        @test_throws ArgumentError SimOptDecisions._validate_sows([])
+        @test_throws ArgumentError SimOptDecisions._validate_sows(
+            [OptTestSOW1(), OptTestSOW2()]
+        )
+    end
+
+    @testset "Objectives validation" begin
+        @test SimOptDecisions._validate_objectives([minimize(:cost)]) === nothing
+        @test SimOptDecisions._validate_objectives(
+            [minimize(:cost), maximize(:reliability)]
+        ) === nothing
+
+        @test_throws ArgumentError SimOptDecisions._validate_objectives([])
+        @test_throws ArgumentError SimOptDecisions._validate_objectives(
+            [minimize(:cost), minimize(:cost)]
+        )  # Duplicate
+    end
+
+    @testset "Policy interface validation" begin
+        # Policy without interface
+        struct BadOptPolicy <: AbstractPolicy end
+        @test_throws ArgumentError SimOptDecisions._validate_policy_interface(BadOptPolicy)
+
+        # Policy with interface
+        struct GoodOptPolicy <: AbstractPolicy
+            x::Float64
+        end
+        SimOptDecisions.param_bounds(::Type{GoodOptPolicy}) = [(0.0, 1.0)]
+        GoodOptPolicy(x::AbstractVector) = GoodOptPolicy(x[1])
+
+        @test SimOptDecisions._validate_policy_interface(GoodOptPolicy) === nothing
+
+        # Test bounds validation
+        struct BadBoundsPolicy <: AbstractPolicy
+            x::Float64
+        end
+        SimOptDecisions.param_bounds(::Type{BadBoundsPolicy}) = [(1.0, 0.0)]  # lower > upper
+        BadBoundsPolicy(x::AbstractVector) = BadBoundsPolicy(x[1])
+
+        @test_throws ArgumentError SimOptDecisions._validate_policy_interface(BadBoundsPolicy)
+    end
+
+    @testset "Constraint types" begin
+        fc = FeasibilityConstraint(:bounds, p -> true)
+        @test fc.name == :bounds
+        @test fc.func(nothing) == true
+
+        pc = PenaltyConstraint(:soft_limit, p -> 0.0, 10.0)
+        @test pc.name == :soft_limit
+        @test pc.weight == 10.0
+        @test pc.func(nothing) == 0.0
+        @test_throws ArgumentError PenaltyConstraint(:bad, p -> 0.0, -1.0)
+    end
+
+    @testset "SharedParameters" begin
+        sp = SharedParameters(; discount_rate=0.03, horizon=50)
+        @test sp.discount_rate == 0.03
+        @test sp.horizon == 50
+        @test sp.params == (discount_rate=0.03, horizon=50)
+        @test :discount_rate in propertynames(sp)
+        @test :horizon in propertynames(sp)
+    end
+
+    @testset "MetaheuristicsBackend construction" begin
+        backend = MetaheuristicsBackend()
+        @test backend.algorithm == :ECA
+        @test backend.max_iterations == 1000
+        @test backend.population_size == 100
+        @test backend.parallel == true
+        @test backend.options == Dict{Symbol,Any}()
+
+        backend2 = MetaheuristicsBackend(;
+            algorithm=:DE, max_iterations=500, population_size=50, parallel=false
+        )
+        @test backend2.algorithm == :DE
+        @test backend2.max_iterations == 500
+        @test backend2.population_size == 50
+        @test backend2.parallel == false
+    end
+
+    @testset "OptimizationProblem construction" begin
+        # Set up MWE types for optimization
+        struct OptCounterState <: AbstractState
+            value::Float64
+        end
+
+        struct OptCounterPolicy <: AbstractPolicy
+            increment::Float64
+        end
+
+        struct OptCounterModel <: AbstractSystemModel
+            n_steps::Int
+        end
+
+        struct OptEmptySOW <: AbstractSOW end
+
+        # Implement interface for simulation
+        function SimOptDecisions.initialize(::OptCounterModel, ::OptEmptySOW, rng::AbstractRNG)
+            return OptCounterState(0.0)
+        end
+
+        function SimOptDecisions.step(
+            state::OptCounterState,
+            ::OptCounterModel,
+            ::OptEmptySOW,
+            policy::OptCounterPolicy,
+            t::TimeStep,
+            rng::AbstractRNG,
+        )
+            return OptCounterState(state.value + policy.increment)
+        end
+
+        function SimOptDecisions.time_axis(model::OptCounterModel, ::OptEmptySOW)
+            return 1:(model.n_steps)
+        end
+
+        function SimOptDecisions.aggregate_outcome(state::OptCounterState, ::OptCounterModel)
+            return (final_value=state.value,)
+        end
+
+        # Implement policy interface for optimization
+        SimOptDecisions.param_bounds(::Type{OptCounterPolicy}) = [(0.0, 10.0)]
+        OptCounterPolicy(x::AbstractVector) = OptCounterPolicy(x[1])
+        SimOptDecisions.params(p::OptCounterPolicy) = [p.increment]
+
+        # Create optimization problem
+        model = OptCounterModel(10)
+        sows = [OptEmptySOW() for _ in 1:5]
+
+        function metric_calculator(outcomes)
+            return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
+        end
+
+        prob = OptimizationProblem(
+            model, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
+        )
+
+        @test prob.model === model
+        @test length(prob.sows) == 5
+        @test prob.policy_type === OptCounterPolicy
+        @test length(prob.objectives) == 1
+        @test prob.batch_size isa FullBatch
+        @test isempty(prob.constraints)
+
+        # Test with options
+        prob2 = OptimizationProblem(
+            model,
+            sows,
+            OptCounterPolicy,
+            metric_calculator,
+            [minimize(:mean_value)];
+            batch_size=FixedBatch(3),
+        )
+        @test prob2.batch_size isa FixedBatch
+        @test prob2.batch_size.n == 3
+    end
+
+    @testset "evaluate_policy" begin
+        # Reuse MWE types (defined in previous testset but need to redefine here)
+        struct EvalCounterState <: AbstractState
+            value::Float64
+        end
+
+        struct EvalCounterPolicy <: AbstractPolicy
+            increment::Float64
+        end
+
+        struct EvalCounterModel <: AbstractSystemModel
+            n_steps::Int
+        end
+
+        struct EvalEmptySOW <: AbstractSOW end
+
+        function SimOptDecisions.initialize(::EvalCounterModel, ::EvalEmptySOW, rng::AbstractRNG)
+            return EvalCounterState(0.0)
+        end
+
+        function SimOptDecisions.step(
+            state::EvalCounterState,
+            ::EvalCounterModel,
+            ::EvalEmptySOW,
+            policy::EvalCounterPolicy,
+            t::TimeStep,
+            rng::AbstractRNG,
+        )
+            return EvalCounterState(state.value + policy.increment)
+        end
+
+        function SimOptDecisions.time_axis(model::EvalCounterModel, ::EvalEmptySOW)
+            return 1:(model.n_steps)
+        end
+
+        function SimOptDecisions.aggregate_outcome(state::EvalCounterState, ::EvalCounterModel)
+            return (final_value=state.value,)
+        end
+
+        SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
+        EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
+
+        model = EvalCounterModel(10)
+        sows = [EvalEmptySOW() for _ in 1:5]
+
+        function eval_metric_calculator(outcomes)
+            return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
+        end
+
+        prob = OptimizationProblem(
+            model, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
+        )
+
+        policy = EvalCounterPolicy(5.0)
+        metrics = evaluate_policy(prob, policy; seed=42)
+
+        @test haskey(metrics, :mean_value)
+        @test metrics.mean_value == 50.0  # 10 steps * 5.0 increment
+    end
+
+    @testset "MetaheuristicsBackend requires extension" begin
+        # Create minimal valid problem
+        struct ExtTestState <: AbstractState
+            value::Float64
+        end
+
+        struct ExtTestPolicy <: AbstractPolicy
+            x::Float64
+        end
+
+        struct ExtTestModel <: AbstractSystemModel end
+        struct ExtTestSOW <: AbstractSOW end
+
+        function SimOptDecisions.initialize(::ExtTestModel, ::ExtTestSOW, rng::AbstractRNG)
+            return ExtTestState(0.0)
+        end
+
+        function SimOptDecisions.step(
+            state::ExtTestState,
+            ::ExtTestModel,
+            ::ExtTestSOW,
+            policy::ExtTestPolicy,
+            t::TimeStep,
+            rng::AbstractRNG,
+        )
+            return ExtTestState(state.value + policy.x)
+        end
+
+        function SimOptDecisions.time_axis(::ExtTestModel, ::ExtTestSOW)
+            return 1:10
+        end
+
+        function SimOptDecisions.aggregate_outcome(state::ExtTestState, ::ExtTestModel)
+            return (final_value=state.value,)
+        end
+
+        SimOptDecisions.param_bounds(::Type{ExtTestPolicy}) = [(0.0, 1.0)]
+        ExtTestPolicy(x::AbstractVector) = ExtTestPolicy(x[1])
+
+        prob = OptimizationProblem(
+            ExtTestModel(),
+            [ExtTestSOW()],
+            ExtTestPolicy,
+            outcomes -> (mean=sum(o.final_value for o in outcomes) / length(outcomes),),
+            [minimize(:mean)],
+        )
+
+        # Should throw helpful error
+        @test_throws ErrorException optimize(prob, MetaheuristicsBackend())
+    end
+
+    @testset "Objective extraction" begin
+        metrics = (cost=100.0, reliability=0.95, efficiency=0.8)
+
+        objectives_min = [minimize(:cost)]
+        vals_min = SimOptDecisions._extract_objectives(metrics, objectives_min)
+        @test vals_min == [100.0]  # Minimize: no change
+
+        objectives_max = [maximize(:reliability)]
+        vals_max = SimOptDecisions._extract_objectives(metrics, objectives_max)
+        @test vals_max == [-0.95]  # Maximize: negated
+
+        objectives_multi = [minimize(:cost), maximize(:reliability)]
+        vals_multi = SimOptDecisions._extract_objectives(metrics, objectives_multi)
+        @test vals_multi == [100.0, -0.95]
+
+        # Missing metric should throw
+        @test_throws ArgumentError SimOptDecisions._extract_objectives(
+            metrics, [minimize(:missing)]
+        )
+    end
+
+    @testset "Batch selection" begin
+        struct BatchTestSOW <: AbstractSOW
+            id::Int
+        end
+
+        sows = [BatchTestSOW(i) for i in 1:100]
+        rng = Random.Xoshiro(42)
+
+        # FullBatch returns all
+        full_batch = SimOptDecisions._select_batch(sows, FullBatch(), rng)
+        @test length(full_batch) == 100
+        @test full_batch === sows
+
+        # FixedBatch returns n
+        fixed_batch = SimOptDecisions._select_batch(sows, FixedBatch(10), rng)
+        @test length(fixed_batch) == 10
+        @test all(s -> s in sows, fixed_batch)
+
+        # FractionBatch returns fraction
+        frac_batch = SimOptDecisions._select_batch(sows, FractionBatch(0.2), rng)
+        @test length(frac_batch) == 20
+        @test all(s -> s in sows, frac_batch)
+
+        # FractionBatch minimum is 1
+        tiny_sows = [BatchTestSOW(1)]
+        tiny_batch = SimOptDecisions._select_batch(tiny_sows, FractionBatch(0.1), rng)
+        @test length(tiny_batch) >= 1
+    end
+
+    @testset "Validation hooks" begin
+        struct ValidatableModel <: AbstractSystemModel end
+        struct ValidatablePolicy <: AbstractPolicy end
+
+        # Default implementations return true
+        @test validate(ValidatableModel()) == true
+        @test validate(ValidatablePolicy(), ValidatableModel()) == true
+    end
+
+    @testset "OptimizationResult and pareto_front" begin
+        struct ResultPolicy <: AbstractPolicy
+            x::Float64
+        end
+
+        result = OptimizationResult{ResultPolicy}(
+            [0.5],
+            [10.0],
+            ResultPolicy(0.5),
+            Dict{Symbol,Any}(:iterations => 100),
+            [[0.3], [0.5], [0.7]],
+            [[12.0], [10.0], [8.0]],
+        )
+
+        @test result.best_params == [0.5]
+        @test result.best_objectives == [10.0]
+        @test result.best_policy.x == 0.5
+        @test result.convergence_info[:iterations] == 100
+
+        # Test pareto_front iteration
+        front = collect(pareto_front(result))
+        @test length(front) == 3
+        @test front[1] == ([0.3], [12.0])
+        @test front[2] == ([0.5], [10.0])
+        @test front[3] == ([0.7], [8.0])
+    end
 end

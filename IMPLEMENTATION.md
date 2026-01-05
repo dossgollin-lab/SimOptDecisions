@@ -372,21 +372,21 @@ SimOptDecisions.jl/
 
 ### Phase 1: Core Framework
 
-- [ ] Abstract types: `AbstractState`, `AbstractPolicy`, `AbstractSystemModel`, `AbstractSOW`, `AbstractRecorder`
-- [ ] `TimeStep{V}` struct and `_validate_time_axis`
-- [ ] Interface functions: `initialize`, `step`, `time_axis`, `aggregate_outcome`, `is_terminal`
-- [ ] `simulate(model, sow, policy, recorder, rng)` with convenience overload
-- [ ] Recorders: `NoRecorder`, `TraceRecorderBuilder`, `TraceRecorder{S,T}`, Tables.jl integration
+- [x] Abstract types: `AbstractState`, `AbstractPolicy`, `AbstractSystemModel`, `AbstractSOW`, `AbstractRecorder`
+- [x] `TimeStep{V}` struct and `_validate_time_axis`
+- [x] Interface functions: `initialize`, `step`, `time_axis`, `aggregate_outcome`, `is_terminal`
+- [x] `simulate(model, sow, policy, recorder, rng)` with convenience overload
+- [x] Recorders: `NoRecorder`, `TraceRecorderBuilder`, `TraceRecorder{S,T}`, Tables.jl integration
 
 ### Phase 2: Optimization
 
-- [ ] Policy interface: `params`, `param_bounds`, `_validate_policy_interface`
-- [ ] Objectives: `Objective` struct, `minimize`/`maximize` constructors
-- [ ] Batch sizing: `AbstractBatchSize`, `FullBatch`, `FixedBatch`, `FractionBatch`
-- [ ] `OptimizationProblem` struct with `_validate_sows` constructor
-- [ ] `evaluate_policy` and `optimize` entry point
-- [ ] Validation hooks and constraint types (`FeasibilityConstraint`, `PenaltyConstraint`)
-- [ ] `SharedParameters`, `ExperimentConfig`, `save_checkpoint`/`load_checkpoint`
+- [x] Policy interface: `params`, `param_bounds`, `_validate_policy_interface`
+- [x] Objectives: `Objective` struct, `minimize`/`maximize` constructors
+- [x] Batch sizing: `AbstractBatchSize`, `FullBatch`, `FixedBatch`, `FractionBatch`
+- [x] `OptimizationProblem` struct with `_validate_sows` constructor
+- [x] `evaluate_policy` and `optimize` entry point
+- [x] Validation hooks and constraint types (`FeasibilityConstraint`, `PenaltyConstraint`)
+- [x] `SharedParameters`, `ExperimentConfig`, `save_checkpoint`/`load_checkpoint`
 
 ### Phase 3: Extensions
 
