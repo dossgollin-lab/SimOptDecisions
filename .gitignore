@@ -9,3 +9,4 @@ docs/_freeze/
 docs/*_files/
 docs/*.html
 docs/*.pdf
+*html.json

@@ -37,6 +37,6 @@ format:
 engine: julia
 execute:
   exeflags: ["+1.12", "--project=@.", "--threads=auto"]
-  freeze: auto
-  cache: true
+  freeze: false
+  cache: false
 

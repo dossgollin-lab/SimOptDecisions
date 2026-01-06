@@ -4,8 +4,9 @@ subtitle: "A toy problem for decision-making under uncertainty"
 author: "Doss-Gollin Lab @ Rice CEVE"
 engine: julia
 execute:
-  echo: true
-  warning: false
+  exeflags: ["+1.12", "--threads=auto"]
+  freeze: false
+  cache: false
 ---
 
 ## The Problem
@@ -34,6 +35,7 @@ Pkg.activate(dirname(dirname(@__FILE__)))
 
 ```{julia}
 #| output: false
+using Revise
 using SimOptDecisions
 using Distributions
 using Random
@@ -53,18 +55,18 @@ We model uncertainty in:
 
 ```{julia}
 #| output: false
-struct HouseElevationSOW{T <: AbstractFloat} <: AbstractSOW
-	# GEV parameters for annual max surge at the gauge
-	gev_μ::T  # location (ft)
-	gev_σ::T  # scale (ft)
-	gev_ξ::T  # shape (dimensionless)
+struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
+    # GEV parameters for annual max surge at the gauge
+    gev_μ::T  # location (ft)
+    gev_σ::T  # scale (ft)
+    gev_ξ::T  # shape (dimensionless)
 
-	# Depth-damage curve parameters (at the house)
-	dd_threshold::T   # depth below which no damage occurs (ft)
-	dd_saturation::T  # depth at which damage reaches 100% (ft)
+    # Depth-damage curve parameters (at the house)
+    dd_threshold::T   # depth below which no damage occurs (ft)
+    dd_saturation::T  # depth at which damage reaches 100% (ft)
 
-	# Economic parameters
-	discount_rate::T
+    # Economic parameters
+    discount_rate::T
 end
 ```
 
@@ -79,22 +81,24 @@ Annual maximum water levels at this location are typically 2-4 ft above Mean Hig
 ```{julia}
 #| output: false
 function sample_sow(rng::AbstractRNG)
-	# GEV parameters for annual max water level at Sewells Point, Norfolk VA
-	# Values are in feet above MHHW
-	# Based on historical observations: typical annual max ~2.5-3 ft, major storms 6-8+ ft
-	gev_μ = rand(rng, Normal(2.8, 0.3))   # location: typical annual max (ft above MHHW)
-	gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower = 0.3))  # scale: spread of extremes
-	gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower = -0.2, upper = 0.5))  # shape: tail behavior
+    # GEV parameters for annual max water level at Sewells Point, Norfolk VA
+    # Values are in feet above MHHW
+    # Based on historical observations: typical annual max ~2.5-3 ft, major storms 6-8+ ft
+    gev_μ = rand(rng, Normal(2.8, 0.3))   # location: typical annual max (ft above MHHW)
+    gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))  # scale: spread of extremes
+    gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))  # shape: tail behavior
 
-	# Depth-damage curve parameters (at house)
-	# No damage below ~0 ft at house floor, full damage around 8 ft
-	dd_threshold = rand(rng, Normal(0.0, 0.25))
-	dd_saturation = rand(rng, Normal(8.0, 0.5))
+    # Depth-damage curve parameters (at house)
+    # No damage below ~0 ft at house floor, full damage around 8 ft
+    dd_threshold = rand(rng, Normal(0.0, 0.25))
+    dd_saturation = rand(rng, Normal(8.0, 0.5))
 
-	# Discount rate: ~2.5% with uncertainty (following Doss-Gollin et al. 2022)
-	discount_rate = rand(rng, truncated(Normal(0.025, 0.01); lower = 0.01, upper = 0.06))
+    # Discount rate: ~2.5% with uncertainty (following Doss-Gollin et al. 2022)
+    discount_rate = rand(rng, truncated(Normal(0.025, 0.01); lower=0.01, upper=0.06))
 
-	return HouseElevationSOW(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
+    return HouseElevationSOW(
+        gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate
+    )
 end
 ```
 
@@ -104,8 +108,8 @@ For this example, we consider a **static policy**: choose an elevation height on
 
 ```{julia}
 #| output: false
-struct ElevationPolicy{T <: AbstractFloat} <: AbstractPolicy
-	elevation_ft::T  # feet above current ground level (0-14)
+struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
+    elevation_ft::T  # feet above current ground level (0-14)
 end
 
 # For optimization, we need to define how to convert between policy and parameter vector
@@ -127,11 +131,11 @@ We use values from [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/20
 
 ```{julia}
 #| output: false
-Base.@kwdef struct HouseElevationParams{T <: AbstractFloat} <: AbstractFixedParams
-	horizon::Int = 70                  # planning horizon (years)
-	gauge_to_house::T = 5.0            # surge level at which water reaches house floor (ft)
-	house_area_ft2::T = 1500.0         # floor area in square feet
-	house_value::T = 200_000.0         # house value in dollars (not land)
+Base.@kwdef struct HouseElevationParams{T<:AbstractFloat} <: AbstractFixedParams
+    horizon::Int = 70                  # planning horizon (years)
+    gauge_to_house::T = 5.0            # surge level at which water reaches house floor (ft)
+    house_area_ft2::T = 1500.0         # floor area in square feet
+    house_value::T = 200_000.0         # house value in dollars (not land)
 end
 ```
 
@@ -142,15 +146,15 @@ We use a logistic curve with a threshold and saturation point.
 
 ```{julia}
 #| output: false
-function depth_damage(depth::T, threshold::T, saturation::T) where {T <: AbstractFloat}
-	# No damage if water doesn't reach the floor
-	depth <= threshold && return zero(T)
-	# Full damage if deeply flooded
-	depth >= saturation && return one(T)
-	# Logistic transition between threshold and saturation
-	midpoint = (threshold + saturation) / 2
-	steepness = T(6) / (saturation - threshold)  # reaches ~95% at saturation
-	return one(T) / (one(T) + exp(-steepness * (depth - midpoint)))
+function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
+    # No damage if water doesn't reach the floor
+    depth <= threshold && return zero(T)
+    # Full damage if deeply flooded
+    depth >= saturation && return one(T)
+    # Logistic transition between threshold and saturation
+    midpoint = (threshold + saturation) / 2
+    steepness = T(6) / (saturation - threshold)  # reaches ~95% at saturation
+    return one(T) / (one(T) + exp(-steepness * (depth - midpoint)))
 end
 ```
 
@@ -161,26 +165,27 @@ We can visualize how damage increases with flood depth:
 #| fig-cap: "Depth-damage function showing fractional damage as a function of flood depth at the house"
 #| code-fold: true
 let
-	depths = range(-1, 10; length = 200)
-	fig = Figure(size = (600, 400))
-	ax = Axis(fig[1, 1];
-		xlabel = "Flood depth at house (ft)",
-		ylabel = "Damage (fraction of house value)",
-		title = "Depth-Damage Function",
-	)
+    depths = range(-1, 10; length=200)
+    fig = Figure(; size=(600, 400))
+    ax = Axis(
+        fig[1, 1];
+        xlabel="Flood depth at house (ft)",
+        ylabel="Damage (fraction of house value)",
+        title="Depth-Damage Function",
+    )
 
-	# Show for nominal parameters
-	damages = [depth_damage(d, 0.0, 8.0) for d in depths]
-	lines!(ax, depths, damages; linewidth = 2, label = "Nominal (threshold=0, sat=8)")
+    # Show for nominal parameters
+    damages = [depth_damage(d, 0.0, 8.0) for d in depths]
+    lines!(ax, depths, damages; linewidth=2, label="Nominal (threshold=0, sat=8)")
 
-	# Show uncertainty range
-	for (thresh, sat) in [(-0.5, 7.5), (0.5, 8.5)]
-		damages_alt = [depth_damage(d, thresh, sat) for d in depths]
-		lines!(ax, depths, damages_alt; linewidth = 1, linestyle = :dash, alpha = 0.5)
-	end
+    # Show uncertainty range
+    for (thresh, sat) in [(-0.5, 7.5), (0.5, 8.5)]
+        damages_alt = [depth_damage(d, thresh, sat) for d in depths]
+        lines!(ax, depths, damages_alt; linewidth=1, linestyle=:dash, alpha=0.5)
+    end
 
-	axislegend(ax; position = :rb)
-	fig
+    axislegend(ax; position=:rb)
+    fig
 end
 ```
 
@@ -198,31 +203,31 @@ Compute elevation cost as a fraction of house value.
 Based on USACE cost estimates with piecewise-linear rates.
 """
 function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
-	Δh <= 0 && return 0.0
-	Δh > 14 && error("Cannot elevate more than 14 ft")
+    Δh <= 0 && return 0.0
+    Δh > 14 && error("Cannot elevate more than 14 ft")
 
-	# Cost structure from Doss-Gollin et al. (2022)
-	# Base cost covers permits, engineering, temporary relocation, etc.
-	base_cost = 10_000 + 300 + 470 + 4_300 + 2_175 + 3_500  # = $20,745
+    # Cost structure from Doss-Gollin et al. (2022)
+    # Base cost covers permits, engineering, temporary relocation, etc.
+    base_cost = 10_000 + 300 + 470 + 4_300 + 2_175 + 3_500  # = $20,745
 
-	# Per-square-foot rates increase with elevation height ($/ft²)
-	# These are interpolated based on elevation
-	thresholds = [0.0, 5.0, 8.5, 12.0, 14.0]
-	rates = [80.36, 82.5, 86.25, 103.75, 113.75]
+    # Per-square-foot rates increase with elevation height ($/ft²)
+    # These are interpolated based on elevation
+    thresholds = [0.0, 5.0, 8.5, 12.0, 14.0]
+    rates = [80.36, 82.5, 86.25, 103.75, 113.75]
 
-	# Linear interpolation of rate
-	rate = rates[1]
-	for i in 1:(length(thresholds)-1)
-		if Δh <= thresholds[i+1]
-			t = (Δh - thresholds[i]) / (thresholds[i+1] - thresholds[i])
-			rate = rates[i] + t * (rates[i+1] - rates[i])
-			break
-		end
-		rate = rates[i+1]
-	end
+    # Linear interpolation of rate
+    rate = rates[1]
+    for i in 1:(length(thresholds) - 1)
+        if Δh <= thresholds[i + 1]
+            t = (Δh - thresholds[i]) / (thresholds[i + 1] - thresholds[i])
+            rate = rates[i] + t * (rates[i + 1] - rates[i])
+            break
+        end
+        rate = rates[i + 1]
+    end
 
-	cost_dollars = base_cost + area_ft2 * rate
-	return cost_dollars / house_value
+    cost_dollars = base_cost + area_ft2 * rate
+    return cost_dollars / house_value
 end
 
 # Convenience wrapper using default house parameters
@@ -236,17 +241,18 @@ We can plot the cost curve to see how expenses grow with elevation height:
 #| fig-cap: "Construction cost to elevate the house as a function of elevation height"
 #| code-fold: true
 let
-	heights = 0:14
-	costs = [elevation_cost(h) for h in heights]
+    heights = 0:14
+    costs = [elevation_cost(h) for h in heights]
 
-	fig = Figure(size = (600, 400))
-	ax = Axis(fig[1, 1];
-		xlabel = "Elevation height (ft)",
-		ylabel = "Cost (fraction of house value)",
-		title = "Elevation Cost Function (1500 ft², \$200k house)",
-	)
-	scatterlines!(ax, heights, costs; markersize = 10)
-	fig
+    fig = Figure(; size=(600, 400))
+    ax = Axis(
+        fig[1, 1];
+        xlabel="Elevation height (ft)",
+        ylabel="Cost (fraction of house value)",
+        title="Elevation Cost Function (1500 ft², \$200k house)",
+    )
+    scatterlines!(ax, heights, costs; markersize=10)
+    fig
 end
 ```
 
@@ -258,36 +264,40 @@ For each simulation, we loop through years, sample storm surges, compute damages
 ```{julia}
 #| output: false
 function SimOptDecisions.simulate(
-	params::HouseElevationParams,
-	sow::HouseElevationSOW,
-	policy::ElevationPolicy,
-	rng::AbstractRNG,
+    params::HouseElevationParams,
+    sow::HouseElevationSOW,
+    policy::ElevationPolicy,
+    rng::AbstractRNG,
 )
-	# Use run_timesteps to handle the loop with preallocation
-	# This model has no state between years, so we pass `nothing`
-	_, annual_damages = SimOptDecisions.Utils.run_timesteps(nothing, 1:params.horizon) do state, ts
-		# Sample annual maximum surge at the gauge
-		surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
-		surge_at_gauge = rand(rng, surge_dist)
+    # Use run_timesteps to handle the loop with preallocation
+    # This model has no state between years, so we pass `nothing`
+    _, annual_damages =
+        SimOptDecisions.Utils.run_timesteps(nothing, 1:(params.horizon)) do state, ts
+            # Sample annual maximum surge at the gauge
+            surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
+            surge_at_gauge = rand(rng, surge_dist)
 
-		# Convert to depth at house floor (accounting for elevation)
-		# gauge_to_house is the surge level at which water reaches the (unelevated) house floor
-		# With elevation, we need (gauge_to_house + elevation) surge to start flooding
-		flood_depth_at_house = surge_at_gauge - (params.gauge_to_house + policy.elevation_ft)
+            # Convert to depth at house floor (accounting for elevation)
+            # gauge_to_house is the surge level at which water reaches the (unelevated) house floor
+            # With elevation, we need (gauge_to_house + elevation) surge to start flooding
+            flood_depth_at_house =
+                surge_at_gauge - (params.gauge_to_house + policy.elevation_ft)
 
-		# Compute fractional damage this year
-		damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
+            # Compute fractional damage this year
+            damage_fraction = depth_damage(
+                flood_depth_at_house, sow.dd_threshold, sow.dd_saturation
+            )
 
-		return (state, damage_fraction)  # state unchanged, output is damage
-	end
+            return (state, damage_fraction)  # state unchanged, output is damage
+        end
 
-	# Discount damages at the end (cleaner than accumulating during simulation)
-	npv_damages = sum(
-		annual_damages[t] * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t)
-		for t in eachindex(annual_damages)
-	)
+    # Discount damages at the end (cleaner than accumulating during simulation)
+    npv_damages = sum(
+        annual_damages[t] * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t) for
+        t in eachindex(annual_damages)
+    )
 
-	return (npv_damages = npv_damages, annual_damages = annual_damages)
+    return (npv_damages=npv_damages, annual_damages=annual_damages)
 end
 ```
 
@@ -318,12 +328,12 @@ params = HouseElevationParams()
 elevations = 0:14
 
 # Store results: for each elevation, vector of NPV damages across SOWs
-results = Dict{Int, Vector{Float64}}()
+results = Dict{Int,Vector{Float64}}()
 
 for elev in elevations
-	policy = ElevationPolicy(Float64(elev))
-	outcomes = [simulate(params, sow, policy).npv_damages for sow in sows]
-	results[elev] = outcomes
+    policy = ElevationPolicy(Float64(elev))
+    outcomes = [simulate(params, sow, policy).npv_damages for sow in sows]
+    results[elev] = outcomes
 end
 ```
 
@@ -338,25 +348,32 @@ The key insight is the trade-off between upfront cost (elevation) and expected f
 #| fig-cap: "Trade-off between construction cost and expected NPV damages. Each point represents an elevation level (0-14 ft)."
 #| code-fold: true
 let
-	construction_costs = [elevation_cost(e) for e in elevations]
-	expected_damages = [mean(results[e]) for e in elevations]
+    construction_costs = [elevation_cost(e) for e in elevations]
+    expected_damages = [mean(results[e]) for e in elevations]
 
-	fig = Figure(size = (700, 500))
-	ax = Axis(fig[1, 1];
-		xlabel = "Construction cost (fraction of house value)",
-		ylabel = "Expected NPV damages (fraction of house value)",
-		title = "Cost-Damage Trade-off by Elevation Level",
-	)
+    fig = Figure(; size=(700, 500))
+    ax = Axis(
+        fig[1, 1];
+        xlabel="Construction cost (fraction of house value)",
+        ylabel="Expected NPV damages (fraction of house value)",
+        title="Cost-Damage Trade-off by Elevation Level",
+    )
 
-	scatter!(ax, construction_costs, expected_damages; markersize = 15)
+    scatter!(ax, construction_costs, expected_damages; markersize=15)
 
-	# Label points with elevation
-	for (i, elev) in enumerate(elevations)
-		text!(ax, construction_costs[i], expected_damages[i];
-			text = string(elev), align = (:left, :bottom), offset = (5, 5))
-	end
+    # Label points with elevation
+    for (i, elev) in enumerate(elevations)
+        text!(
+            ax,
+            construction_costs[i],
+            expected_damages[i];
+            text=string(elev),
+            align=(:left, :bottom),
+            offset=(5, 5),
+        )
+    end
 
-	fig
+    fig
 end
 ```
 
@@ -369,25 +386,32 @@ Let's look at the total cost (construction + expected damages) for each elevatio
 #| fig-cap: "Total expected cost (construction + NPV damages) by elevation level"
 #| code-fold: true
 let
-	construction_costs = [elevation_cost(e) for e in elevations]
-	expected_damages = [mean(results[e]) for e in elevations]
-	total_costs = construction_costs .+ expected_damages
+    construction_costs = [elevation_cost(e) for e in elevations]
+    expected_damages = [mean(results[e]) for e in elevations]
+    total_costs = construction_costs .+ expected_damages
 
-	fig = Figure(size = (700, 500))
-	ax = Axis(fig[1, 1];
-		xlabel = "Elevation (ft)",
-		ylabel = "Total expected cost (fraction of house value)",
-		title = "Total Cost by Elevation Level",
-	)
+    fig = Figure(; size=(700, 500))
+    ax = Axis(
+        fig[1, 1];
+        xlabel="Elevation (ft)",
+        ylabel="Total expected cost (fraction of house value)",
+        title="Total Cost by Elevation Level",
+    )
 
-	barplot!(ax, collect(elevations), total_costs; color = :steelblue)
+    barplot!(ax, collect(elevations), total_costs; color=:steelblue)
 
-	# Mark the minimum
-	min_idx = argmin(total_costs)
-	scatter!(ax, [elevations[min_idx]], [total_costs[min_idx]];
-		color = :red, markersize = 20, marker = :star5)
+    # Mark the minimum
+    min_idx = argmin(total_costs)
+    scatter!(
+        ax,
+        [elevations[min_idx]],
+        [total_costs[min_idx]];
+        color=:red,
+        markersize=20,
+        marker=:star5,
+    )
 
-	fig
+    fig
 end
 ```
 
@@ -400,33 +424,40 @@ The expected value doesn't tell the whole story. Let's examine the full distribu
 #| fig-cap: "Distribution of NPV damages for each elevation level. Box shows 25th-75th percentile; whiskers show 5th-95th percentile."
 #| code-fold: true
 let
-	fig = Figure(size = (800, 500))
-	ax = Axis(fig[1, 1];
-		xlabel = "Elevation (ft)",
-		ylabel = "NPV damages (fraction of house value)",
-		title = "Damage Uncertainty by Elevation Level",
-	)
+    fig = Figure(; size=(800, 500))
+    ax = Axis(
+        fig[1, 1];
+        xlabel="Elevation (ft)",
+        ylabel="NPV damages (fraction of house value)",
+        title="Damage Uncertainty by Elevation Level",
+    )
 
-	# Compute quantiles for each elevation
-	for elev in elevations
-		damages = results[elev]
-		q05 = quantile(damages, 0.05)
-		q25 = quantile(damages, 0.25)
-		q50 = quantile(damages, 0.50)
-		q75 = quantile(damages, 0.75)
-		q95 = quantile(damages, 0.95)
+    # Compute quantiles for each elevation
+    for elev in elevations
+        damages = results[elev]
+        q05 = quantile(damages, 0.05)
+        q25 = quantile(damages, 0.25)
+        q50 = quantile(damages, 0.50)
+        q75 = quantile(damages, 0.75)
+        q95 = quantile(damages, 0.95)
 
-		# Whiskers (5-95)
-		lines!(ax, [elev, elev], [q05, q95]; color = :gray, linewidth = 1)
-		# Box (25-75)
-		poly!(ax,
-			Point2f[(elev-0.3, q25), (elev+0.3, q25), (elev+0.3, q75), (elev-0.3, q75)];
-			color = (:steelblue, 0.5), strokecolor = :black, strokewidth = 1)
-		# Median
-		lines!(ax, [elev-0.3, elev+0.3], [q50, q50]; color = :black, linewidth = 2)
-	end
+        # Whiskers (5-95)
+        lines!(ax, [elev, elev], [q05, q95]; color=:gray, linewidth=1)
+        # Box (25-75)
+        poly!(
+            ax,
+            Point2f[
+                (elev - 0.3, q25), (elev + 0.3, q25), (elev + 0.3, q75), (elev - 0.3, q75)
+            ];
+            color=(:steelblue, 0.5),
+            strokecolor=:black,
+            strokewidth=1,
+        )
+        # Median
+        lines!(ax, [elev - 0.3, elev + 0.3], [q50, q50]; color=:black, linewidth=2)
+    end
 
-	fig
+    fig
 end
 ```
 
@@ -439,42 +470,43 @@ How does the "optimal" elevation depend on the discount rate?
 #| fig-cap: "Optimal elevation as a function of discount rate. Lower discount rates favor more elevation (future damages weigh more heavily)."
 #| code-fold: true
 let
-	# Group SOWs by discount rate bins
-	rate_bins = [0.015, 0.02, 0.025, 0.03, 0.035, 0.04]
-	optimal_by_rate = Float64[]
+    # Group SOWs by discount rate bins
+    rate_bins = [0.015, 0.02, 0.025, 0.03, 0.035, 0.04]
+    optimal_by_rate = Float64[]
 
-	for rate in rate_bins
-		# Filter SOWs near this discount rate
-		filtered_sows = filter(s -> abs(s.discount_rate - rate) < 0.005, sows)
-		if length(filtered_sows) < 10
-			push!(optimal_by_rate, NaN)
-			continue
-		end
+    for rate in rate_bins
+        # Filter SOWs near this discount rate
+        filtered_sows = filter(s -> abs(s.discount_rate - rate) < 0.005, sows)
+        if length(filtered_sows) < 10
+            push!(optimal_by_rate, NaN)
+            continue
+        end
 
-		# For these SOWs, find elevation with lowest total cost
-		best_elev = 0
-		best_cost = Inf
-		for elev in elevations
-			policy = ElevationPolicy(Float64(elev))
-			outcomes = [simulate(params, sow, policy).npv_damages for sow in filtered_sows]
-			total = elevation_cost(elev) + mean(outcomes)
-			if total < best_cost
-				best_cost = total
-				best_elev = elev
-			end
-		end
-		push!(optimal_by_rate, best_elev)
-	end
+        # For these SOWs, find elevation with lowest total cost
+        best_elev = 0
+        best_cost = Inf
+        for elev in elevations
+            policy = ElevationPolicy(Float64(elev))
+            outcomes = [simulate(params, sow, policy).npv_damages for sow in filtered_sows]
+            total = elevation_cost(elev) + mean(outcomes)
+            if total < best_cost
+                best_cost = total
+                best_elev = elev
+            end
+        end
+        push!(optimal_by_rate, best_elev)
+    end
 
-	fig = Figure(size = (600, 400))
-	ax = Axis(fig[1, 1];
-		xlabel = "Discount rate",
-		ylabel = "Optimal elevation (ft)",
-		title = "Sensitivity to Discount Rate",
-	)
+    fig = Figure(; size=(600, 400))
+    ax = Axis(
+        fig[1, 1];
+        xlabel="Discount rate",
+        ylabel="Optimal elevation (ft)",
+        title="Sensitivity to Discount Rate",
+    )
 
-	scatterlines!(ax, rate_bins, optimal_by_rate; markersize = 12)
-	fig
+    scatterlines!(ax, rate_bins, optimal_by_rate; markersize=12)
+    fig
 end
 ```
 
@@ -509,15 +541,15 @@ Note: construction_cost is computed from the policy elevation, not from outcomes
 We pass it through the metric calculator by extracting from the first outcome's context.
 """
 function calculate_metrics(outcomes, policy)
-	damages = [o.npv_damages for o in outcomes]
-	# Construction cost depends only on the policy, not the SOW outcomes
-	construction = elevation_cost(policy.elevation_ft)
-	return (
-		construction_cost = construction,
-		expected_damage = mean(damages),
-		cvar_95 = mean(sort(damages)[(end-max(1, length(damages)÷20)):end]),  # CVaR at 95%
-		worst_case = maximum(damages),
-	)
+    damages = [o.npv_damages for o in outcomes]
+    # Construction cost depends only on the policy, not the SOW outcomes
+    construction = elevation_cost(policy.elevation_ft)
+    return (
+        construction_cost=construction,
+        expected_damage=mean(damages),
+        cvar_95=mean(sort(damages)[(end - max(1, length(damages) ÷ 20)):end]),  # CVaR at 95%
+        worst_case=maximum(damages),
+    )
 end
 ```
 
@@ -532,11 +564,11 @@ using Metaheuristics: Metaheuristics  # avoid name collision with SimOptDecision
 
 # Create the optimization problem
 prob = OptimizationProblem(
-	params,
-	sows,
-	ElevationPolicy,
-	calculate_metrics,
-	[minimize(:construction_cost), minimize(:expected_damage)];
+    params,
+    sows,
+    ElevationPolicy,
+    calculate_metrics,
+    [minimize(:construction_cost), minimize(:expected_damage)];
 )
 ```
 
@@ -544,12 +576,10 @@ prob = OptimizationProblem(
 
 ```{julia}
 # Run multi-objective optimization using NSGA-II
-backend = MetaheuristicsBackend(
-	algorithm = :NSGA2,
-	max_iterations = 200,
-	population_size = 50,
-)
+backend = MetaheuristicsBackend(; algorithm=:NSGA2, max_iterations=200, population_size=50)
+```
 
+```{julia}
 opt_result = SimOptDecisions.optimize(prob, backend)
 ```
 
@@ -562,31 +592,38 @@ The optimization returns a set of Pareto-optimal solutions—policies where you 
 #| fig-cap: "Pareto front showing trade-off between construction cost and expected NPV damages. Each point is a non-dominated elevation choice."
 #| code-fold: true
 let
-	fig = Figure(size = (700, 500))
-	ax = Axis(fig[1, 1];
-		xlabel = "Construction cost (fraction of house value)",
-		ylabel = "Expected NPV damages (fraction of house value)",
-		title = "Pareto Front: Construction Cost vs Expected Damage",
-	)
+    fig = Figure(; size=(700, 500))
+    ax = Axis(
+        fig[1, 1];
+        xlabel="Construction cost (fraction of house value)",
+        ylabel="Expected NPV damages (fraction of house value)",
+        title="Pareto Front: Construction Cost vs Expected Damage",
+    )
 
-	# Extract Pareto front
-	pareto_pts = collect(SimOptDecisions.pareto_front(opt_result))
+    # Extract Pareto front
+    pareto_pts = collect(SimOptDecisions.pareto_front(opt_result))
 
-	if !isempty(pareto_pts)
-		construction = [obj[1] for (_, obj) in pareto_pts]
-		expected = [obj[2] for (_, obj) in pareto_pts]
-		elevations = [round(p[1]; digits = 1) for (p, _) in pareto_pts]
+    if !isempty(pareto_pts)
+        construction = [obj[1] for (_, obj) in pareto_pts]
+        expected = [obj[2] for (_, obj) in pareto_pts]
+        elevations = [round(p[1]; digits=1) for (p, _) in pareto_pts]
 
-		scatter!(ax, construction, expected; markersize = 15, color = :steelblue)
+        scatter!(ax, construction, expected; markersize=15, color=:steelblue)
 
-		# Label points with elevation
-		for (i, elev) in enumerate(elevations)
-			text!(ax, construction[i], expected[i];
-				text = string(elev), align = (:left, :bottom), offset = (5, 5))
-		end
-	end
+        # Label points with elevation
+        for (i, elev) in enumerate(elevations)
+            text!(
+                ax,
+                construction[i],
+                expected[i];
+                text=string(elev),
+                align=(:left, :bottom),
+                offset=(5, 5),
+            )
+        end
+    end
 
-	fig
+    fig
 end
 ```
 
@@ -601,8 +638,10 @@ The Pareto front reveals the fundamental trade-off:
 ```{julia}
 # Show the best policy found (by first objective)
 println("Best policy found: ", opt_result.best_policy)
-println("Objectives: construction_cost = $(round(opt_result.best_objectives[1], digits=3)), ",
-	"expected_damage = $(round(opt_result.best_objectives[2], digits=3))")
+println(
+    "Objectives: construction_cost = $(round(opt_result.best_objectives[1], digits=3)), ",
+    "expected_damage = $(round(opt_result.best_objectives[2], digits=3))",
+)
 ```
 
 ## Discussion
