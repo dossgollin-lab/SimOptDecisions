@@ -42,37 +42,28 @@ _checkpoint_metric_calc(outcomes) = (mean=sum(o.final for o in outcomes) / lengt
             x::Float64
         end
 
-        struct CheckpointModel <: AbstractSystemModel end
+        struct CheckpointParams <: AbstractFixedParams end
         struct CheckpointSOW <: AbstractSOW end
 
-        function SimOptDecisions.initialize(::CheckpointModel, ::CheckpointSOW, rng::AbstractRNG)
-            return CheckpointState(0.0)
-        end
-
-        function SimOptDecisions.step(
-            state::CheckpointState,
-            ::CheckpointModel,
-            ::CheckpointSOW,
+        # Simple for-loop implementation
+        function SimOptDecisions.simulate(
+            params::CheckpointParams,
+            sow::CheckpointSOW,
             policy::CheckpointPolicy,
-            t::TimeStep,
             rng::AbstractRNG,
         )
-            return CheckpointState(state.v + policy.x)
-        end
-
-        function SimOptDecisions.time_axis(::CheckpointModel, ::CheckpointSOW)
-            return 1:5
-        end
-
-        function SimOptDecisions.aggregate_outcome(state::CheckpointState, ::CheckpointModel)
-            return (final=state.v,)
+            value = 0.0
+            for ts in SimOptDecisions.Utils.timeindex(1:5)
+                value += policy.x
+            end
+            return (final=value,)
         end
 
         SimOptDecisions.param_bounds(::Type{CheckpointPolicy}) = [(0.0, 1.0)]
         CheckpointPolicy(x::AbstractVector) = CheckpointPolicy(x[1])
 
         prob = OptimizationProblem(
-            CheckpointModel(),
+            CheckpointParams(),
             [CheckpointSOW()],
             CheckpointPolicy,
             _checkpoint_metric_calc,

@@ -59,11 +59,11 @@
     end
 
     @testset "Validation hooks" begin
-        struct ValidatableModel <: AbstractSystemModel end
+        struct ValidatableParams <: AbstractFixedParams end
         struct ValidatablePolicy <: AbstractPolicy end
 
         # Default implementations return true
-        @test validate(ValidatableModel()) == true
-        @test validate(ValidatablePolicy(), ValidatableModel()) == true
+        @test validate(ValidatableParams()) == true
+        @test validate(ValidatablePolicy(), ValidatableParams()) == true
     end
 end

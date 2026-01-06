@@ -3,7 +3,7 @@
 
 abstract type AbstractState end
 abstract type AbstractPolicy end
-abstract type AbstractSystemModel end
+abstract type AbstractFixedParams end
 abstract type AbstractSOW end
 abstract type AbstractRecorder end
 

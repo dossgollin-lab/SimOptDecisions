@@ -1,130 +1,107 @@
 # ============================================================================
-# Interface Functions - Users must implement these for their models
+# Core Simulation Interface
 # ============================================================================
 
 """
-Create initial state for a simulation.
-Must be implemented by user.
-"""
-function initialize end
+    simulate(params, sow, policy, rng) -> outcome
 
-function initialize(model::AbstractSystemModel, sow::AbstractSOW, rng::AbstractRNG)
-    return error(
-        "Implement `SimOptDecisions.initialize(::$(typeof(model)), ::$(typeof(sow)), ::AbstractRNG)` " *
-        "to return initial state",
-    )
+Run a simulation with the given parameters, state of the world, and policy.
+
+This is the core interface that users must implement. The return type is
+user-defined (typically a NamedTuple or custom outcome type).
+
+# Implementation Options
+
+## Direct Implementation (non-time-stepped)
+For closed-form solutions, optimization-based models, or external simulators:
+```julia
+function SimOptDecisions.simulate(
+    params::MyParams,
+    sow::MySOW,
+    policy::MyPolicy,
+    rng::AbstractRNG
+)
+    # Direct computation, solver call, external simulator, etc.
+    return (cost = compute_cost(params, sow, policy),)
 end
+```
 
-"""
-Advance simulation by one time step.
-Must be implemented by user.
-"""
-function step end
+## Time-Stepped Implementation
+For models that iterate through discrete time steps, use the TimeStepping helper:
+```julia
+function SimOptDecisions.simulate(params::MyParams, sow::MySOW, policy::MyPolicy, rng)
+    SimOptDecisions.TimeStepping.run_timestepped(params, sow, policy, rng)
+end
+```
 
-function step(
-    state::AbstractState,
-    model::AbstractSystemModel,
+See `SimOptDecisions.TimeStepping` module for the time-stepping interface.
+"""
+function simulate end
+
+function simulate(
+    params::AbstractFixedParams,
     sow::AbstractSOW,
     policy::AbstractPolicy,
-    t::TimeStep,
     rng::AbstractRNG,
 )
     return error(
-        "Implement `SimOptDecisions.step(::$(typeof(state)), ::$(typeof(model)), " *
-        "::$(typeof(sow)), ::$(typeof(policy)), ::TimeStep, ::AbstractRNG)` to return new state",
+        "Implement `SimOptDecisions.simulate(::$(typeof(params)), ::$(typeof(sow)), " *
+        "::$(typeof(policy)), ::AbstractRNG)` to return simulation outcome",
     )
 end
 
-"""
-Return the time points for simulation.
-Must be implemented by user.
-"""
-function time_axis end
-
-function time_axis(model::AbstractSystemModel, sow::AbstractSOW)
-    return error(
-        "Implement `SimOptDecisions.time_axis(::$(typeof(model)), ::$(typeof(sow)))` " *
-        "to return iterable of time points (e.g., 1:100, Date(2020):Year(1):Date(2050))",
-    )
-end
-
-"""
-Extract final metrics from terminal state.
-Default returns state unchanged. Override for custom outcome extraction.
-"""
-function aggregate_outcome end
-
-aggregate_outcome(state::AbstractState, model::AbstractSystemModel) = state
-
-"""
-Check for early termination.
-Default is false. Override for custom termination conditions.
-"""
-function is_terminal end
-
-is_terminal(state::AbstractState, model::AbstractSystemModel, t::TimeStep) = false
-
 # ============================================================================
-# Main Simulation Function
+# Convenience Overloads
 # ============================================================================
 
-"""
-    simulate(model, sow, policy, recorder, rng)
-
-Run a simulation of the model with given SOW and policy.
-
-Returns the outcome from `aggregate_outcome(final_state, model)`.
-"""
+# Keyword arguments with defaults
 function simulate(
-    model::AbstractSystemModel,
-    sow::AbstractSOW,
-    policy::AbstractPolicy,
-    recorder::AbstractRecorder,
-    rng::AbstractRNG,
-)
-    # Get and validate time axis
-    times = time_axis(model, sow)
-    _validate_time_axis(times)
-    n_steps = length(times)
-
-    # Initialize
-    state = initialize(model, sow, rng)
-    record!(recorder, state, nothing)
-
-    # Simulation loop
-    for (i, t_val) in enumerate(times)
-        t = TimeStep(i, t_val, i == n_steps)
-
-        # Check early termination
-        if is_terminal(state, model, t)
-            break
-        end
-
-        # Advance state
-        state = step(state, model, sow, policy, t, rng)
-        record!(recorder, state, t_val)
-    end
-
-    return aggregate_outcome(state, model)
-end
-
-# Convenience overload with keyword arguments
-function simulate(
-    model::AbstractSystemModel,
+    params::AbstractFixedParams,
     sow::AbstractSOW,
     policy::AbstractPolicy;
-    recorder::AbstractRecorder=NoRecorder(),
     rng::AbstractRNG=Random.default_rng(),
 )
-    return simulate(model, sow, policy, recorder, rng)
+    return simulate(params, sow, policy, rng)
 end
 
-# Convenience overload: positional recorder, default rng
+# ============================================================================
+# Recording Support (Optional)
+# ============================================================================
+
+"""
+    simulate(params, sow, policy, recorder, rng) -> outcome
+
+Run a simulation with recording support.
+
+For time-stepped models, pass the recorder to `run_timestepped()`.
+For other models, handle recording in your implementation or ignore the recorder.
+
+Default implementation ignores the recorder and calls the base simulate.
+Override for time-stepped models:
+```julia
+function SimOptDecisions.simulate(params::MyParams, sow, policy, recorder, rng)
+    SimOptDecisions.TimeStepping.run_timestepped(params, sow, policy, recorder, rng)
+end
+```
+"""
 function simulate(
-    model::AbstractSystemModel,
+    params::AbstractFixedParams,
+    sow::AbstractSOW,
+    policy::AbstractPolicy,
+    recorder::AbstractRecorder,
+    rng::AbstractRNG,
+)
+    # Default: ignore recorder, call base simulate
+    # Users override for recording support
+    return simulate(params, sow, policy, rng)
+end
+
+# Convenience: recorder with default rng
+function simulate(
+    params::AbstractFixedParams,
     sow::AbstractSOW,
     policy::AbstractPolicy,
     recorder::AbstractRecorder,
 )
-    return simulate(model, sow, policy, recorder, Random.default_rng())
+    return simulate(params, sow, policy, recorder, Random.default_rng())
 end

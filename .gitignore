@@ -1,2 +1,11 @@
 *.pdf
 .claude/
+
+# Quarto output
+docs/_site/
+docs/.quarto/
+docs/_freeze/
+
+docs/*_files/
+docs/*.html
+docs/*.pdf

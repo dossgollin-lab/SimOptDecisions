@@ -66,24 +66,24 @@ end
 Defines a simulation-optimization problem.
 
 # Fields
-- `model`: The system model to simulate
+- `params`: Fixed parameters for the simulation
 - `sows`: Vector of States of the World to evaluate policies against
 - `policy_type`: The Type of policy to optimize (not an instance)
-- `metric_calculator`: Function mapping Vector{Outcome} -> NamedTuple of metrics
+- `metric_calculator`: Function `(outcomes, policy) -> NamedTuple` of metrics
 - `objectives`: Vector of Objective specifying what to optimize
 - `batch_size`: How many SOWs to use per evaluation (default: FullBatch)
 - `constraints`: Optional vector of constraints
 """
 struct OptimizationProblem{
-    M<:AbstractSystemModel,
+    P<:AbstractFixedParams,
     S<:AbstractSOW,
-    P<:AbstractPolicy,
+    T<:AbstractPolicy,
     F<:Function,
     B<:AbstractBatchSize,
 }
-    model::M
+    params::P
     sows::Vector{S}
-    policy_type::Type{P}
+    policy_type::Type{T}
     metric_calculator::F
     objectives::Vector{Objective}
     batch_size::B
@@ -92,14 +92,14 @@ end
 
 # Primary constructor with validation
 function OptimizationProblem(
-    model::AbstractSystemModel,
+    params::AbstractFixedParams,
     sows::AbstractVector{<:AbstractSOW},
-    policy_type::Type{P},
+    policy_type::Type{T},
     metric_calculator::Function,
     objectives::AbstractVector{<:Objective};
     batch_size::AbstractBatchSize=FullBatch(),
     constraints::AbstractVector{<:AbstractConstraint}=AbstractConstraint[],
-) where {P<:AbstractPolicy}
+) where {T<:AbstractPolicy}
     # Validate inputs
     _validate_sows(sows)
     _validate_policy_interface(policy_type)
@@ -111,7 +111,7 @@ function OptimizationProblem(
     const_vec = collect(constraints)
 
     return OptimizationProblem(
-        model, sows_vec, policy_type, metric_calculator, obj_vec, batch_size, const_vec
+        params, sows_vec, policy_type, metric_calculator, obj_vec, batch_size, const_vec
     )
 end
 
@@ -154,13 +154,15 @@ function evaluate_policy(
     # Select SOWs for this evaluation
     batch_sows = _select_batch(prob.sows, prob.batch_size, rng)
 
-    # Run simulations (no recorder for performance)
+    # Run simulations
     outcomes = map(batch_sows) do sow
-        simulate(prob.model, sow, policy, NoRecorder(), rng)
+        simulate(prob.params, sow, policy, rng)
     end
 
     # Aggregate to metrics
-    return prob.metric_calculator(outcomes)
+    # Pass both outcomes and policy so metric calculator can use policy info
+    # (e.g., for computing construction cost based on policy parameters)
+    return prob.metric_calculator(outcomes, policy)
 end
 
 # Convenience overload with seed

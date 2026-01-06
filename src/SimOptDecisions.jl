@@ -10,6 +10,7 @@ using JLD2
 include("types.jl")
 include("recorders.jl")
 include("validation.jl")
+include("utils.jl")
 include("simulation.jl")
 include("optimization.jl")
 include("persistence.jl")
@@ -20,16 +21,16 @@ include("plotting.jl")
 # ============================================================================
 
 # Abstract types (users subtype these)
-export AbstractState, AbstractPolicy, AbstractSystemModel, AbstractSOW, AbstractRecorder
+export AbstractState, AbstractPolicy, AbstractFixedParams, AbstractSOW, AbstractRecorder
 
 # TimeStep struct
 export TimeStep
 
-# Interface functions (users implement these)
-export initialize, step, time_axis, aggregate_outcome, is_terminal
-
 # Core simulation
 export simulate
+
+# Utils helper submodule
+export Utils
 
 # Recorders
 export NoRecorder, TraceRecorderBuilder, TraceRecorder, record!, finalize

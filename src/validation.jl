@@ -145,24 +145,24 @@ function _validate_objectives(objectives)
 end
 
 # ============================================================================
-# Model Validation Hooks
+# Params Validation Hooks
 # ============================================================================
 
 """
-    validate(model::AbstractSystemModel) -> Bool
+    validate(params::AbstractFixedParams) -> Bool
 
-Override this to add domain-specific validation for your model.
+Override this to add domain-specific validation for your params.
 Default returns true (valid).
 """
-validate(model::AbstractSystemModel) = true
+validate(params::AbstractFixedParams) = true
 
 """
-    validate(policy::AbstractPolicy, model::AbstractSystemModel) -> Bool
+    validate(policy::AbstractPolicy, params::AbstractFixedParams) -> Bool
 
-Override this to add domain-specific validation for policy/model compatibility.
+Override this to add domain-specific validation for policy/params compatibility.
 Default returns true (valid).
 """
-validate(policy::AbstractPolicy, model::AbstractSystemModel) = true
+validate(policy::AbstractPolicy, params::AbstractFixedParams) = true
 
 # ============================================================================
 # Constraint Types
@@ -208,9 +208,9 @@ function _validate_problem(prob)
     _validate_policy_interface(prob.policy_type)
     _validate_objectives(prob.objectives)
 
-    # Validate model
-    if !validate(prob.model)
-        throw(ArgumentError("Model validation failed"))
+    # Validate params
+    if !validate(prob.params)
+        throw(ArgumentError("Params validation failed"))
     end
 
     # Validate batch size against SOW count

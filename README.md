@@ -19,10 +19,10 @@ Simulation-optimization provides a framework for finding good policies by:
 At its heart, this framework evaluates how well a policy performs:
 
 ```julia
-Model(SOW, Policy) → Outcome
+simulate(params, sow, policy) → Outcome
 ```
 
-Given a **State of the World** (the uncertain future conditions) and a **Policy** (the decision strategy), the model simulates the system forward through time and produces an **Outcome** describing how well things went.
+Given **fixed parameters** (problem configuration), a **State of the World** (the uncertain future conditions), and a **Policy** (the decision strategy), the simulation produces an **Outcome** describing how well things went.
 
 To evaluate a policy robustly, we don't just test it on one future—we run it across an ensemble of possible futures (SOWs) and aggregate the results into **performance metrics**.
 This aggregation requires making assumptions about how to weight different futures (uniform weights, probability-weighted, etc.), which the user specifies.
@@ -96,8 +96,8 @@ struct CounterState{T<:AbstractFloat} <: AbstractState
     cumulative::T
 end
 
-# 2. Define your model
-struct RandomWalkModel <: AbstractSystemModel end
+# 2. Define your fixed params (problem configuration)
+struct RandomWalkParams <: AbstractFixedParams end
 
 # 3. Define your policy (parameterized) with optimization interface
 struct DriftPolicy{T<:AbstractFloat} <: AbstractPolicy
@@ -114,35 +114,40 @@ struct NoiseSOW{T<:AbstractFloat} <: AbstractSOW
     scale::T
 end
 
-# 5. Implement required methods
-function SimOptDecisions.initialize(::RandomWalkModel, sow::NoiseSOW{T}, rng) where T
+# 5. Implement time-stepping interface (for time-stepped simulations)
+function SimOptDecisions.TimeStepping.initialize(::RandomWalkParams, sow::NoiseSOW{T}, rng) where T
     CounterState(zero(T), zero(T))
 end
 
-function SimOptDecisions.step(state::CounterState{T}, model, sow::NoiseSOW{T},
-                              policy::DriftPolicy, t::TimeStep, rng) where T
+function SimOptDecisions.TimeStepping.step(state::CounterState{T}, params, sow::NoiseSOW{T},
+                                           policy::DriftPolicy, t::TimeStep, rng) where T
     noise = randn(rng) * sow.scale
     new_value = state.value + policy.drift + noise
     CounterState(new_value, state.cumulative + abs(new_value))
 end
 
-SimOptDecisions.time_axis(::RandomWalkModel, sow::NoiseSOW) = 1:100
+SimOptDecisions.TimeStepping.time_axis(::RandomWalkParams, sow::NoiseSOW) = 1:100
 
-function SimOptDecisions.aggregate_outcome(state::CounterState, ::RandomWalkModel)
+function SimOptDecisions.TimeStepping.aggregate_outcome(state::CounterState, ::RandomWalkParams)
     (final_value = state.value, total_movement = state.cumulative)
 end
 
-# 6. Run a simulation
-model = RandomWalkModel()
+# 6. Connect to main simulate interface
+function SimOptDecisions.simulate(params::RandomWalkParams, sow::NoiseSOW, policy::DriftPolicy, rng)
+    SimOptDecisions.TimeStepping.run_timestepped(params, sow, policy, rng)
+end
+
+# 7. Run a simulation
+params = RandomWalkParams()
 sow = NoiseSOW(0.1)
 policy = DriftPolicy(0.05)
 
-result = simulate(model, sow, policy)  # uses defaults: NoRecorder(), Random.default_rng()
+result = simulate(params, sow, policy)  # uses default rng
 # result.final_value ≈ 5.0, result.total_movement ≈ 250.0
 
-# 7. Run optimization
+# 8. Run optimization
 prob = OptimizationProblem(
-    model,
+    params,
     [NoiseSOW(0.1), NoiseSOW(0.2), NoiseSOW(0.5)],  # Multiple SOWs
     DriftPolicy,  # Policy type (not a builder function!)
     outcomes -> (mean_final = mean(o.final_value for o in outcomes),),  # Metric calculator
@@ -170,7 +175,7 @@ Julia infers `T` from the inputs, so users just write `CounterState(0.0, 0.0)` a
 ```julia
 abstract type AbstractState end
 abstract type AbstractPolicy end
-abstract type AbstractSystemModel end
+abstract type AbstractFixedParams end
 abstract type AbstractSOW end
 abstract type AbstractRecorder end
 ```
@@ -208,23 +213,38 @@ sows = AbstractSOW[ClimateSOW(...), OtherSOW(...)]
 
 #### Required Methods
 
-You must implement these for your model:
+You must implement the core simulation function:
 
-1. **`initialize(model, sow, rng) -> state`**
+**`SimOptDecisions.simulate(params, sow, policy, rng) -> outcome`**
+   The main simulation entry point. Returns whatever outcome type you define.
+
+For **time-stepped simulations**, you can use the `TimeStepping` helper by implementing these in the `SimOptDecisions.TimeStepping` module:
+
+1. **`initialize(params, sow, rng) -> state`**
    Create the initial state for a simulation.
 
-2. **`step(state, model, sow, policy, t::TimeStep, rng) -> new_state`**
+2. **`step(state, params, sow, policy, t::TimeStep, rng) -> new_state`**
    The core simulation step. Takes current state, returns new state.
    This is a pure function (no mutation) for easier debugging and parallel safety.
 
-3. **`time_axis(model, sow) -> iterable`**
+3. **`time_axis(params, sow) -> iterable`**
    Returns the time points for simulation. Examples: `1:100`, `Date(2020):Year(1):Date(2050)`.
 
-4. **`aggregate_outcome(state, model) -> outcome`** (Optional)
+4. **`aggregate_outcome(state, params) -> outcome`** (Optional)
    Extracts final metrics from the terminal state. Default returns state unchanged.
 
-5. **`is_terminal(state, model, t) -> Bool`** (Optional)
+5. **`is_terminal(state, params, t) -> Bool`** (Optional)
    For early termination. Default is `false`.
+
+Then connect to the main interface:
+
+```julia
+function SimOptDecisions.simulate(params::MyParams, sow::MySOW, policy::MyPolicy, rng)
+    SimOptDecisions.TimeStepping.run_timestepped(params, sow, policy, rng)
+end
+```
+
+For **non-time-stepped simulations** (analytical solutions, external simulators, optimization-based models), implement `simulate` directly without using `TimeStepping`.
 
 #### Policy Interface for Optimization
 
@@ -251,14 +271,14 @@ MyPolicy(x::AbstractVector{T}) where T<:AbstractFloat = MyPolicy(x[1], x[2])
 #### Basic Usage
 
 ```julia
-result = simulate(model, sow, policy)
+result = simulate(params, sow, policy)
 ```
 
 #### With Recording (for debugging/visualization)
 
 ```julia
 builder = TraceRecorderBuilder()
-result = simulate(model, sow, policy, builder)
+result = simulate(params, sow, policy, builder)
 recorder = finalize(builder)
 
 # Works with Tables.jl ecosystem
@@ -290,11 +310,11 @@ end
 
 ```julia
 # GOOD
-time_axis(m, sow) = 1:100
-time_axis(m, sow) = Date(2020):Year(1):Date(2050)
+time_axis(params, sow) = 1:100
+time_axis(params, sow) = Date(2020):Year(1):Date(2050)
 
 # BAD - causes dynamic dispatch
-time_axis(m, sow) = Any[1, 2.0, Date(2020)]
+time_axis(params, sow) = Any[1, 2.0, Date(2020)]
 ```
 
 ### Running Optimization
@@ -303,7 +323,7 @@ time_axis(m, sow) = Any[1, 2.0, Date(2020)]
 
 ```julia
 prob = OptimizationProblem(
-    model,                    # Your AbstractSystemModel
+    params,                   # Your AbstractFixedParams
     sows,                     # Vector of SOWs to train on
     PolicyType,               # The TYPE of your policy (not an instance)
     metric_calculator,        # Function: Vector{Outcomes} -> NamedTuple
@@ -346,7 +366,7 @@ For Pareto front exploration:
 
 ```julia
 prob = OptimizationProblem(
-    model, sows, PolicyType, calculator,
+    params, sows, PolicyType, calculator,
     [minimize(:cost), maximize(:reliability)],
 )
 
@@ -374,13 +394,13 @@ shared = SharedParameters((
     planning_horizon = 50,
 ))
 
-# Access via model
-struct MyModel <: AbstractSystemModel
+# Access via params
+struct MyParams <: AbstractFixedParams
     shared::SharedParameters
 end
 
-function step(state, model, sow, policy, t, rng)
-    discount = model.shared.params.discount_rate
+function SimOptDecisions.TimeStepping.step(state, params::MyParams, sow, policy, t, rng)
+    discount = params.shared.params.discount_rate
     # ...
 end
 ```
@@ -418,7 +438,8 @@ SimOptDecisions.jl/
 ├── src/
 │   ├── SimOptDecisions.jl    # Main module, exports
 │   ├── types.jl              # Abstract types, TimeStep, Objective
-│   ├── simulation.jl         # simulate, initialize, step, time_axis
+│   ├── timestepping.jl       # TimeStepping submodule (helper for time-stepped sims)
+│   ├── simulation.jl         # simulate interface
 │   ├── recorders.jl          # NoRecorder, TraceRecorder, Tables.jl
 │   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
 │   ├── validation.jl         # _validate_* functions, constraints
@@ -543,7 +564,8 @@ Pkg.test()                           # Includes extension tests
 The ecosystem uses weak dependencies (package extensions) to keep the core lightweight:
 
 1. **SimOptDecisions.jl (The Hub)**
-   - Defines `AbstractSystemModel`, `AbstractPolicy`, `step`, `simulate`
+   - Defines `AbstractFixedParams`, `AbstractPolicy`, `simulate`
+   - Provides `TimeStepping` submodule for time-stepped simulations
    - Defines `OptimizationProblem` and `AbstractOptimizationBackend`
    - Defines backend structs (`MetaheuristicsBackend`, etc.) so users can construct them directly
    - Provides `save_checkpoint`, `load_checkpoint` for persistence
@@ -559,6 +581,7 @@ The ecosystem uses weak dependencies (package extensions) to keep the core light
 
 #### Design Philosophy
 
+- **Flexible Simulation:** Users implement `simulate` directly - time-stepping is optional via `TimeStepping` helper.
 - **Functional Core:** Pure `step` function (State to State) instead of mutation. Easier parallel debugging, no race conditions.
 - **Policy-Owned Parameters:** Each policy type defines its own parameters, bounds, and construction.
 - **Composability:** Inputs typed as `AbstractVector` allow memory-mapped arrays or distributed data.

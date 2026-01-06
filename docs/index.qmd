@@ -1,0 +1,127 @@
+---
+title: "SimOptDecisions.jl"
+subtitle: "A Julia framework for simulation-optimization under uncertainty"
+author: "Doss-Gollin Lab @ Rice CEVE"
+---
+
+::: {.callout-warning}
+## Work in Progress
+
+This package is under active development and the API may change.
+:::
+
+## Overview
+
+**`SimOptDecisions.jl`** provides a structured framework for decision-making under uncertainty using simulation and optimization.
+`SimOptDecisions.jl` is designed as a **framework to help you build your own simulation-optimization models**, not as a standalone tool.
+The package separates concerns into composable components:
+
+- **State of the World (SOW)**: Uncertain parameters that define a scenario
+- **Policy**: Decision rules that map states to actions
+- **Model**: System dynamics that evolve state over time
+- **State**: The evolving condition of the system
+
+This separation enables:
+
+1. **Monte Carlo simulation** across many SOWs to characterize uncertainty
+2. **Policy optimization** to find robust decisions (single or multi-objective)
+3. **Exploratory modeling** to understand how outcomes depend on uncertain parameters
+
+## Quick Example
+
+To use SimOptDecisions.jl, you need to define **four types** and implement **three interface methods**.
+
+```julia
+using SimOptDecisions
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 1: Define your four types (subtyping the abstract types)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# SOW: uncertain parameters that vary across scenarios
+struct MySOW{T<:AbstractFloat} <: AbstractSOW
+    parameter::T
+end
+
+# Policy: the decision variables you're optimizing
+struct MyPolicy{T<:AbstractFloat} <: AbstractPolicy
+    decision::T
+end
+
+# State: the evolving system state during simulation
+struct MyState{T<:AbstractFloat} <: AbstractState
+    value::T
+end
+
+# Model: fixed parameters shared across all simulations
+struct MyModel <: AbstractSystemModel end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 2: Implement the three required interface methods
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# time_axis: defines the simulation timeline
+SimOptDecisions.time_axis(::MyModel, ::MySOW) = 1:10
+
+# initialize: creates the initial state
+SimOptDecisions.initialize(::MyModel, sow::MySOW, rng) = MyState(0.0)
+
+# step: updates state at each time step
+SimOptDecisions.step(state::MyState, ::MyModel, sow::MySOW, policy::MyPolicy, t, rng) =
+    MyState(state.value + policy.decision * sow.parameter)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 3: Run simulations!
+# ═══════════════════════════════════════════════════════════════════════════════
+
+result = simulate(MyModel(), MySOW(1.5), MyPolicy(2.0))
+```
+
+## Key Concepts
+
+### Outcomes vs Metrics
+
+SimOptDecisions distinguishes between two important concepts:
+
+- **Outcome**: The result of a *single* simulation (`simulate(model, sow, policy)`). Defined by your `aggregate_outcome` method—typically a `NamedTuple` of values like `(cost=..., risk=...)`.
+
+- **Metric**: A statistic computed by *aggregating outcomes across many SOWs*. For example, `mean(outcomes.cost)` or `quantile(outcomes.risk, 0.95)`. Metrics are what the optimizer tries to minimize or maximize.
+
+### Policy Parameters for Optimization
+
+To use automatic optimization, your policy needs to define how to convert between a parameter vector and a policy instance:
+
+```julia
+# Constructor from parameter vector
+MyPolicy(params::AbstractVector) = MyPolicy(params[1])
+
+# Extract parameters as vector
+SimOptDecisions.params(p::MyPolicy) = [p.decision]
+
+# Define bounds for each parameter
+SimOptDecisions.param_bounds(::Type{MyPolicy}) = [(0.0, 10.0)]
+```
+
+This enables the optimizer to search over the continuous parameter space.
+
+## Installation
+
+```julia
+using Pkg
+Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
+```
+
+## Documentation
+
+- [House Elevation Example](examples/house_elevation.qmd): A complete tutorial demonstrating flood risk decision-making under uncertainty
+- [README](https://github.com/dossgollin-lab/SimOptDecisions.jl#readme): Full documentation and API reference
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| Type-stable simulation | Zero-allocation hot loops with `NoRecorder` |
+| Flexible time axes | Works with integers, floats, or `Date` ranges |
+| Optional recording | Trace simulation history for debugging |
+| Extensible optimization | Plug in Metaheuristics.jl or custom backends |
+| Multi-objective support | Pareto frontier extraction |

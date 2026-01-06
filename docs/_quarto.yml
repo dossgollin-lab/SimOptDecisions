@@ -1,0 +1,42 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "SimOptDecisions.jl"
+  description: "A Julia framework for simulation-optimization under uncertainty"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: examples/house_elevation.qmd
+        text: Examples
+    right:
+      - icon: github
+        href: https://github.com/dossgollin-lab/SimOptDecisions.jl
+  page-footer:
+    left: "SimOptDecisions.jl - Dossgollin Lab"
+    right:
+      - icon: github
+        href: https://github.com/dossgollin-lab/SimOptDecisions.jl
+
+format:
+  html:
+    #theme: _assets/theme/theme-rice.scss
+    #css: styles.css
+    theme: [sandstone, _assets/theme/theme-rice.scss]
+    toc: false
+    anchor-sections: true
+    code-overflow: wrap
+    citations-hover: true
+    code-annotations: hover
+    html-math-method: mathjax
+    date-format: long
+
+# Julia engine configuration
+engine: julia
+execute:
+  exeflags: ["+1.12", "--project=@.", "--threads=auto"]
+  freeze: auto
+  cache: true
+

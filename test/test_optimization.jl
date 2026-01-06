@@ -9,34 +9,24 @@
             increment::Float64
         end
 
-        struct OptCounterModel <: AbstractSystemModel
+        struct OptCounterParams <: AbstractFixedParams
             n_steps::Int
         end
 
         struct OptEmptySOW <: AbstractSOW end
 
-        # Implement interface for simulation
-        function SimOptDecisions.initialize(::OptCounterModel, ::OptEmptySOW, rng::AbstractRNG)
-            return OptCounterState(0.0)
-        end
-
-        function SimOptDecisions.step(
-            state::OptCounterState,
-            ::OptCounterModel,
-            ::OptEmptySOW,
+        # Simple for-loop implementation
+        function SimOptDecisions.simulate(
+            params::OptCounterParams,
+            sow::OptEmptySOW,
             policy::OptCounterPolicy,
-            t::TimeStep,
             rng::AbstractRNG,
         )
-            return OptCounterState(state.value + policy.increment)
-        end
-
-        function SimOptDecisions.time_axis(model::OptCounterModel, ::OptEmptySOW)
-            return 1:(model.n_steps)
-        end
-
-        function SimOptDecisions.aggregate_outcome(state::OptCounterState, ::OptCounterModel)
-            return (final_value=state.value,)
+            value = 0.0
+            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+                value += policy.increment
+            end
+            return (final_value=value,)
         end
 
         # Implement policy interface for optimization
@@ -45,18 +35,18 @@
         SimOptDecisions.params(p::OptCounterPolicy) = [p.increment]
 
         # Create optimization problem
-        model = OptCounterModel(10)
+        params = OptCounterParams(10)
         sows = [OptEmptySOW() for _ in 1:5]
 
-        function metric_calculator(outcomes)
+        function metric_calculator(outcomes, _policy)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            model, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
+            params, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
         )
 
-        @test prob.model === model
+        @test prob.params === params
         @test length(prob.sows) == 5
         @test prob.policy_type === OptCounterPolicy
         @test length(prob.objectives) == 1
@@ -65,7 +55,7 @@
 
         # Test with options
         prob2 = OptimizationProblem(
-            model,
+            params,
             sows,
             OptCounterPolicy,
             metric_calculator,
@@ -86,47 +76,38 @@
             increment::Float64
         end
 
-        struct EvalCounterModel <: AbstractSystemModel
+        struct EvalCounterParams <: AbstractFixedParams
             n_steps::Int
         end
 
         struct EvalEmptySOW <: AbstractSOW end
 
-        function SimOptDecisions.initialize(::EvalCounterModel, ::EvalEmptySOW, rng::AbstractRNG)
-            return EvalCounterState(0.0)
-        end
-
-        function SimOptDecisions.step(
-            state::EvalCounterState,
-            ::EvalCounterModel,
-            ::EvalEmptySOW,
+        # Simple for-loop implementation
+        function SimOptDecisions.simulate(
+            params::EvalCounterParams,
+            sow::EvalEmptySOW,
             policy::EvalCounterPolicy,
-            t::TimeStep,
             rng::AbstractRNG,
         )
-            return EvalCounterState(state.value + policy.increment)
-        end
-
-        function SimOptDecisions.time_axis(model::EvalCounterModel, ::EvalEmptySOW)
-            return 1:(model.n_steps)
-        end
-
-        function SimOptDecisions.aggregate_outcome(state::EvalCounterState, ::EvalCounterModel)
-            return (final_value=state.value,)
+            value = 0.0
+            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+                value += policy.increment
+            end
+            return (final_value=value,)
         end
 
         SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
         EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
 
-        model = EvalCounterModel(10)
+        params = EvalCounterParams(10)
         sows = [EvalEmptySOW() for _ in 1:5]
 
-        function eval_metric_calculator(outcomes)
+        function eval_metric_calculator(outcomes, _policy)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            model, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
+            params, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
         )
 
         policy = EvalCounterPolicy(5.0)
@@ -146,41 +127,32 @@
             x::Float64
         end
 
-        struct ExtTestModel <: AbstractSystemModel end
+        struct ExtTestParams <: AbstractFixedParams end
         struct ExtTestSOW <: AbstractSOW end
 
-        function SimOptDecisions.initialize(::ExtTestModel, ::ExtTestSOW, rng::AbstractRNG)
-            return ExtTestState(0.0)
-        end
-
-        function SimOptDecisions.step(
-            state::ExtTestState,
-            ::ExtTestModel,
-            ::ExtTestSOW,
+        # Simple for-loop implementation
+        function SimOptDecisions.simulate(
+            params::ExtTestParams,
+            sow::ExtTestSOW,
             policy::ExtTestPolicy,
-            t::TimeStep,
             rng::AbstractRNG,
         )
-            return ExtTestState(state.value + policy.x)
-        end
-
-        function SimOptDecisions.time_axis(::ExtTestModel, ::ExtTestSOW)
-            return 1:10
-        end
-
-        function SimOptDecisions.aggregate_outcome(state::ExtTestState, ::ExtTestModel)
-            return (final_value=state.value,)
+            value = 0.0
+            for ts in SimOptDecisions.Utils.timeindex(1:10)
+                value += policy.x
+            end
+            return (final_value=value,)
         end
 
         SimOptDecisions.param_bounds(::Type{ExtTestPolicy}) = [(0.0, 1.0)]
         ExtTestPolicy(x::AbstractVector) = ExtTestPolicy(x[1])
 
-        function ext_test_metric_calculator(outcomes)
+        function ext_test_metric_calculator(outcomes, _policy)
             return (mean=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            ExtTestModel(),
+            ExtTestParams(),
             [ExtTestSOW()],
             ExtTestPolicy,
             ext_test_metric_calculator,

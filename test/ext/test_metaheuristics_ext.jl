@@ -16,34 +16,24 @@ using Metaheuristics
         increment::Float64
     end
 
-    struct MHCounterModel <: AbstractSystemModel
+    struct MHCounterParams <: AbstractFixedParams
         n_steps::Int
     end
 
     struct MHEmptySOW <: AbstractSOW end
 
-    # Implement simulation interface
-    function SimOptDecisions.initialize(::MHCounterModel, ::MHEmptySOW, rng::AbstractRNG)
-        return MHCounterState(0.0)
-    end
-
-    function SimOptDecisions.step(
-        state::MHCounterState,
-        ::MHCounterModel,
-        ::MHEmptySOW,
+    # Simple for-loop implementation
+    function SimOptDecisions.simulate(
+        params::MHCounterParams,
+        sow::MHEmptySOW,
         policy::MHCounterPolicy,
-        t::TimeStep,
         rng::AbstractRNG,
     )
-        return MHCounterState(state.value + policy.increment)
-    end
-
-    function SimOptDecisions.time_axis(model::MHCounterModel, ::MHEmptySOW)
-        return 1:(model.n_steps)
-    end
-
-    function SimOptDecisions.aggregate_outcome(state::MHCounterState, ::MHCounterModel)
-        return (final_value=state.value,)
+        value = 0.0
+        for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+            value += policy.increment
+        end
+        return (final_value=value,)
     end
 
     # Implement policy interface
@@ -52,15 +42,15 @@ using Metaheuristics
     SimOptDecisions.params(p::MHCounterPolicy) = [p.increment]
 
     @testset "Single-objective optimization with ECA" begin
-        model = MHCounterModel(10)
+        params = MHCounterParams(10)
         sows = [MHEmptySOW() for _ in 1:5]
 
-        function metric_calculator(outcomes)
+        function metric_calculator(outcomes, _policy)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            model, sows, MHCounterPolicy, metric_calculator, [minimize(:mean_value)]
+            params, sows, MHCounterPolicy, metric_calculator, [minimize(:mean_value)]
         )
 
         # Run optimization with limited iterations for speed
@@ -88,15 +78,15 @@ using Metaheuristics
     end
 
     @testset "Single-objective with DE" begin
-        model = MHCounterModel(5)
+        params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function de_metric_calculator(outcomes)
+        function de_metric_calculator(outcomes, _policy)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            model, sows, MHCounterPolicy, de_metric_calculator, [minimize(:mean_value)]
+            params, sows, MHCounterPolicy, de_metric_calculator, [minimize(:mean_value)]
         )
 
         backend = MetaheuristicsBackend(;
@@ -108,15 +98,15 @@ using Metaheuristics
     end
 
     @testset "Single-objective with PSO" begin
-        model = MHCounterModel(5)
+        params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function pso_metric_calculator(outcomes)
+        function pso_metric_calculator(outcomes, _policy)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            model, sows, MHCounterPolicy, pso_metric_calculator, [minimize(:mean_value)]
+            params, sows, MHCounterPolicy, pso_metric_calculator, [minimize(:mean_value)]
         )
 
         backend = MetaheuristicsBackend(;
@@ -137,21 +127,24 @@ using Metaheuristics
         SimOptDecisions.param_bounds(::Type{MHMultiPolicy}) = [(0.0, 10.0), (0.0, 10.0)]
         MHMultiPolicy(x::AbstractVector) = MHMultiPolicy(x[1], x[2])
 
-        function SimOptDecisions.step(
-            state::MHCounterState,
-            ::MHCounterModel,
-            ::MHEmptySOW,
+        # Simple for-loop implementation for MHMultiPolicy
+        function SimOptDecisions.simulate(
+            params::MHCounterParams,
+            sow::MHEmptySOW,
             policy::MHMultiPolicy,
-            t::TimeStep,
             rng::AbstractRNG,
         )
-            return MHCounterState(state.value + policy.param1 - policy.param2 * 0.1)
+            value = 0.0
+            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+                value += policy.param1 - policy.param2 * 0.1
+            end
+            return (final_value=value,)
         end
 
-        model = MHCounterModel(5)
+        params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function multi_metric_calculator(outcomes)
+        function multi_metric_calculator(outcomes, _policy)
             values = [o.final_value for o in outcomes]
             return (
                 mean_value=sum(values) / length(values),
@@ -161,7 +154,7 @@ using Metaheuristics
         end
 
         prob = OptimizationProblem(
-            model,
+            params,
             sows,
             MHMultiPolicy,
             multi_metric_calculator,
@@ -186,15 +179,15 @@ using Metaheuristics
     end
 
     @testset "Maximization objective handling" begin
-        model = MHCounterModel(5)
+        params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function max_metric_calculator(outcomes)
+        function max_metric_calculator(outcomes, _policy)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            model,
+            params,
             sows,
             MHCounterPolicy,
             max_metric_calculator,
@@ -213,10 +206,10 @@ using Metaheuristics
     end
 
     @testset "Constraint handling - FeasibilityConstraint" begin
-        model = MHCounterModel(5)
+        params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function fc_metric_calculator(outcomes)
+        function fc_metric_calculator(outcomes, _policy)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -224,7 +217,7 @@ using Metaheuristics
         constraint = FeasibilityConstraint(:min_increment, p -> p.increment >= 2.0)
 
         prob = OptimizationProblem(
-            model,
+            params,
             sows,
             MHCounterPolicy,
             fc_metric_calculator,
@@ -244,10 +237,10 @@ using Metaheuristics
     end
 
     @testset "Constraint handling - PenaltyConstraint" begin
-        model = MHCounterModel(5)
+        params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function pc_metric_calculator(outcomes)
+        function pc_metric_calculator(outcomes, _policy)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -259,7 +252,7 @@ using Metaheuristics
         )
 
         prob = OptimizationProblem(
-            model,
+            params,
             sows,
             MHCounterPolicy,
             pc_metric_calculator,

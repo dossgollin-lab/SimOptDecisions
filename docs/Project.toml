@@ -1,0 +1,5 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Metaheuristics = "bcdb8e00-2c21-11e9-3065-2b553b22f898"
+SimOptDecisions = "8764eb7a-9599-4112-a7c7-9b4115e89f97"

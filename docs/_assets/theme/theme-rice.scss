@@ -1,0 +1,110 @@
+//
+// Rice University Colors
+//
+
+$rice-blue: #00205B;
+$rice-gray: #7C7E7F;
+$light-blue-gray: #ADC7DC;
+$light-gray: #E0E2E6;
+$bright-blue: #9FDDF9;
+$medium-blue: #4D9AD4;
+$rich-blue: #0A509E;
+$midnight-blue: #13133E;
+$dark-gray: #44474F;
+$dark-blue-gray: #303B61;
+$warm-yellow: #E9A139;
+$brick-red: #C04829;
+$burgundy: #68132E;
+$shadow-purple: #362E52;
+$leaf-emerald: #005B40;
+$tree-green: #00432C;
+$grass-green: #359245;
+$bright-green: #A5C151;
+
+/*-- scss:functions --*/
+
+/*-- scss:defaults --*/
+
+//
+// Color system
+//
+$white: #fff !default;
+$black: #000 !default;
+
+$rice-blue: #00205B;
+$light-gray: #E0E2E6;
+$dark-gray: #7C7E7F;
+$midnight-blue: #191970;
+$medium-blue: #4D9AD4;
+
+// Navbar
+$navbar-bg: $rice-blue !default;
+$navbar-fg: $light-gray !default;
+$navbar-hl: $white !default;
+
+// Links
+$link-color: $dark-gray !default;
+
+// Code blocks
+$code-block-bg: $light-gray !default;
+
+/* -- scss:mixins --*/
+
+/*-- scss:rules --*/
+// overrides selectors from Sandstone that take precedence
+// over $navbar-hl
+.navbar-dark .navbar-nav .nav-link:hover,
+.navbar-dark .navbar-nav .nav-link:focus {
+    color: $navbar-hl;
+}
+
+// overrides Sandstone selectors for tabset links
+.nav-tabs .nav-link,
+.nav-tabs .nav-link:hover,
+.nav-tabs .nav-link:focus {
+    color: $midnight-blue;
+}
+
+// make blockquote text dark enough
+.blockquote {
+    color: $medium-blue;
+}
+
+// Enable hover dropdowns for navbar (desktop only)
+@media (min-width: 992px) {
+    .navbar .dropdown:hover .dropdown-menu {
+        display: block;
+        margin-top: 0;
+    }
+
+    // Align rightmost dropdown menus to the right edge
+    .navbar-nav .dropdown:last-child .dropdown-menu,
+    .navbar-nav .dropdown:nth-last-child(2) .dropdown-menu {
+        right: 0;
+        left: auto;
+    }
+}
+
+// Reduce title size in default listings
+.quarto-listing-default h3.listing-title,
+.quarto-listing-default h3.listing-title a {
+    font-size: 0.9rem !important;
+    font-weight: normal !important;
+    margin: 0 !important;
+}
+
+// Research theme cards
+.research-card {
+    background-color: #f8f9fa;
+    border: 2px solid $rice-blue;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    height: 100%;
+}
+
+.research-card .callout-title-container {
+    font-weight: 600;
+    color: $rice-blue;
+}
