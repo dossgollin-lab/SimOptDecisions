@@ -1,12 +1,7 @@
 @testset "Recorders" begin
     @testset "NoRecorder" begin
         r = NoRecorder()
-        # Should not error and return nothing
         @test record!(r, "state", "record", 1) === nothing
-        @test record!(r, nothing, nothing, nothing) === nothing
-        @test record!(r, 42, 100, Date(2020)) === nothing
-        # Backwards compatibility (2-arg)
-        @test record!(r, "state", 1) === nothing
     end
 
     @testset "TraceRecorderBuilder and SimulationTrace" begin
@@ -50,25 +45,5 @@
 
         schema = Tables.schema(trace)
         @test schema.names == (:state, :step_record, :time)
-    end
-
-    @testset "TraceRecorder legacy Tables.jl interface" begin
-        recorder = TraceRecorder([1.0, 2.0, 3.0], [10, 20, 30])
-
-        @test Tables.istable(typeof(recorder))
-        @test Tables.columnaccess(typeof(recorder))
-        @test Tables.columnnames(recorder) == (:state, :time)
-        @test Tables.getcolumn(recorder, :state) == [1.0, 2.0, 3.0]
-        @test Tables.getcolumn(recorder, :time) == [10, 20, 30]
-        @test Tables.getcolumn(recorder, 1) == [1.0, 2.0, 3.0]
-        @test Tables.getcolumn(recorder, 2) == [10, 20, 30]
-
-        # Invalid column access
-        @test_throws ArgumentError Tables.getcolumn(recorder, :invalid)
-        @test_throws BoundsError Tables.getcolumn(recorder, 3)
-
-        schema = Tables.schema(recorder)
-        @test schema.names == (:state, :time)
-        @test schema.types == (Float64, Int)
     end
 end

@@ -160,8 +160,9 @@ end
 params = InvestmentParams(10, 100.0)  # 10 years, $100 initial
 sow = InvestmentSOW(0.05)              # 5% growth rate
 policy = InvestmentPolicy(0.8)         # invest 80%
+rng = Random.Xoshiro(42)
 
-result = simulate(params, sow, policy)
+result = simulate(params, sow, policy, rng)
 println("Final value: \$$(round(result.final_value, digits=2))")
 println("Total growth: \$$(round(result.total_growth, digits=2))")
 ```
@@ -179,7 +180,7 @@ sows = [InvestmentSOW(0.03 + 0.04 * rand(rng)) for _ in 1:500]  # rates from 3% 
 
 ```{julia}
 # Run simulations across all SOWs
-outcomes = [simulate(params, sow, policy) for sow in sows]
+outcomes = [simulate(params, sow, policy, rng) for sow in sows]
 final_values = [o.final_value for o in outcomes]
 
 println("Expected final value: \$$(round(mean(final_values), digits=2))")
@@ -223,16 +224,9 @@ backend = MetaheuristicsBackend(; algorithm=:ECA, max_iterations=100, population
 opt_result = SimOptDecisions.optimize(prob, backend)
 
 println("Optimal invest fraction: $(round(opt_result.best_policy.invest_fraction, digits=3))")
-println("Expected value: \$$(round(-opt_result.best_objectives[1], digits=2))")
+println("Expected value: \$$(round(opt_result.best_objectives[1], digits=2))")
 ```
 
-## Key Takeaways
-
-This example demonstrated:
-
-1. **Type definitions**: `AbstractConfig`, `AbstractSOW`, `AbstractPolicy` with parametric types
-2. **TimeStepping interface**: `initialize`, `run_timestep`, `time_axis`, `finalize`
-3. **Simulation**: Running single and multi-SOW simulations
-4. **Optimization**: Using `metric_calculator(outcomes)` to aggregate results
+## Next Steps
 
 For a more complex example with multi-objective optimization, see the [House Elevation Example](house_elevation.qmd).

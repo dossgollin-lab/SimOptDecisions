@@ -7,7 +7,6 @@ import SimOptDecisions:
     plot_pareto,
     plot_parallel,
     to_scalars,
-    TraceRecorder,
     SimulationTrace,
     OptimizationResult,
     AbstractState
@@ -18,9 +17,7 @@ using Makie: Figure, Axis, lines!, scatter!, axislegend
 # plot_trace Implementation
 # ============================================================================
 
-"""
-Plot simulation trace. Works with SimulationTrace or TraceRecorder.
-"""
+"""Plot simulation trace from SimulationTrace."""
 function SimOptDecisions.plot_trace(
     trace::SimulationTrace;
     fields::Union{Symbol,Vector{Symbol}}=:all,
@@ -58,44 +55,6 @@ function SimOptDecisions.plot_trace(
         push!(axes, ax)
 
         values = [r[field] for r in step_records]
-        lines!(ax, times, values; line_kwargs...)
-    end
-
-    return (fig, axes)
-end
-
-# Legacy support for TraceRecorder (uses to_scalars on states)
-function SimOptDecisions.plot_trace(
-    recorder::TraceRecorder;
-    figure_kwargs::NamedTuple=NamedTuple(),
-    axis_kwargs::NamedTuple=NamedTuple(),
-    line_kwargs::NamedTuple=NamedTuple(),
-)
-    times = recorder.times
-    states = recorder.states
-
-    scalars = [to_scalars(s) for s in states]
-
-    if isempty(scalars)
-        error("Cannot plot empty trace")
-    end
-
-    field_names = keys(scalars[1])
-    n_fields = length(field_names)
-
-    fig = Figure(; figure_kwargs...)
-    axes = Axis[]
-
-    for (i, field) in enumerate(field_names)
-        ax = Axis(
-            fig[i, 1];
-            xlabel=i == n_fields ? "Time" : "",
-            ylabel=String(field),
-            axis_kwargs...,
-        )
-        push!(axes, ax)
-
-        values = [s[field] for s in scalars]
         lines!(ax, times, values; line_kwargs...)
     end
 

@@ -185,11 +185,11 @@
             rng::AbstractRNG,
         )
             state = CounterState(0)
-            record!(recorder, state, nothing)
+            record!(recorder, state, nothing, nothing)
 
             for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
                 state = CounterState(state.value + policy.increment)
-                record!(recorder, state, ts.val)
+                record!(recorder, state, nothing, ts.val)
             end
 
             return (final_value=state.value,)
@@ -253,11 +253,11 @@
             rng::AbstractRNG,
         )
             state = TSCounterState(0.0)
-            record!(recorder, state, nothing)
+            record!(recorder, state, nothing, nothing)
 
             for ts in SimOptDecisions.Utils.timeindex(1:10)
                 state = TSCounterState(state.value + policy.increment)
-                record!(recorder, state, ts.val)
+                record!(recorder, state, nothing, ts.val)
             end
 
             return (final_value=state.value,)

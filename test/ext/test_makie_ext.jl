@@ -27,52 +27,40 @@ using CairoMakie
         end
 
         state = NoScalarsState(1.0)
-        @test_throws ErrorException to_scalars(state)
+        @test_throws ArgumentError to_scalars(state)
     end
 
     @testset "plot_trace" begin
-        # Define state type with to_scalars
-        struct TraceTestState <: AbstractState
-            position::Float64
-            velocity::Float64
-        end
-
-        SimOptDecisions.to_scalars(s::TraceTestState) = (position=s.position, velocity=s.velocity)
-
-        # Create a simple trace
-        states = [
-            TraceTestState(0.0, 1.0),
-            TraceTestState(1.0, 1.0),
-            TraceTestState(2.0, 0.5),
-            TraceTestState(2.5, 0.0),
+        # Create a simple SimulationTrace with NamedTuple step_records
+        states = [0.0, 1.0, 2.0, 2.5]
+        step_records = [
+            (position=0.0, velocity=1.0),
+            (position=1.0, velocity=1.0),
+            (position=2.0, velocity=0.5),
+            (position=2.5, velocity=0.0),
         ]
         times = [1, 2, 3, 4]
 
-        recorder = TraceRecorder(states, times)
+        trace = SimulationTrace(states, step_records, times)
 
         # Test plotting
-        fig, axes = plot_trace(recorder)
+        fig, axes = plot_trace(trace)
 
         @test fig isa Figure
         @test axes isa Vector{<:Axis}
-        @test length(axes) == 2  # One per scalar field (position, velocity)
+        @test length(axes) == 2  # One per field in step_record (position, velocity)
     end
 
     @testset "plot_trace with kwargs" begin
-        struct KwargsTestState <: AbstractState
-            value::Float64
-        end
+        states = [Float64(i) for i in 1:5]
+        step_records = [(value=Float64(i),) for i in 1:5]
+        times = collect(1:5)
 
-        SimOptDecisions.to_scalars(s::KwargsTestState) = (value=s.value,)
-
-        states = [KwargsTestState(Float64(i)) for i in 1:5]
-        times = 1:5
-
-        recorder = TraceRecorder(states, collect(times))
+        trace = SimulationTrace(states, step_records, times)
 
         # Test with custom kwargs
         fig, axes = plot_trace(
-            recorder; figure_kwargs=(; size=(800, 600)), line_kwargs=(; color=:red)
+            trace; figure_kwargs=(; size=(800, 600)), line_kwargs=(; color=:red)
         )
 
         @test fig isa Figure
@@ -80,15 +68,9 @@ using CairoMakie
     end
 
     @testset "plot_trace empty error" begin
-        struct EmptyTestState <: AbstractState
-            value::Float64
-        end
-
-        SimOptDecisions.to_scalars(s::EmptyTestState) = (value=s.value,)
-
-        # Create empty recorder and test that plot_trace throws an error
-        recorder = TraceRecorder(EmptyTestState[], Int[])
-        @test_throws ErrorException plot_trace(recorder)
+        # Create empty trace and test that plot_trace throws an error
+        trace = SimulationTrace(Float64[], NamedTuple[], Int[])
+        @test_throws ErrorException plot_trace(trace)
     end
 
     @testset "plot_pareto 2-objective" begin

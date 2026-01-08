@@ -41,7 +41,7 @@ using .TimeStepping: TimeSeriesParameter, TimeSeriesParameterBoundsError
 export TimeSeriesParameter, TimeSeriesParameterBoundsError
 
 # Recorders and traces
-export NoRecorder, TraceRecorderBuilder, TraceRecorder, SimulationTrace, record!, finalize
+export NoRecorder, TraceRecorderBuilder, SimulationTrace, record!, finalize
 
 # ---------- Phase 2 Exports ----------
 

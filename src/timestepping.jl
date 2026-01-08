@@ -67,49 +67,25 @@ function Base.getindex(ts::TimeSeriesParameter{T}, i::Integer) where {T}
 end
 
 Base.length(ts::TimeSeriesParameter) = length(ts.data)
-Base.size(ts::TimeSeriesParameter) = size(ts.data)
 Base.iterate(ts::TimeSeriesParameter) = iterate(ts.data)
 Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.data, state)
-Base.eltype(::Type{TimeSeriesParameter{T}}) where {T} = T
-Base.first(ts::TimeSeriesParameter) = first(ts.data)
-Base.last(ts::TimeSeriesParameter) = last(ts.data)
-Base.firstindex(ts::TimeSeriesParameter) = 1
-Base.lastindex(ts::TimeSeriesParameter) = length(ts.data)
-Base.eachindex(ts::TimeSeriesParameter) = eachindex(ts.data)
 
 # ============================================================================
 # User-Implemented Interface Functions
 # ============================================================================
 
-"""
-    initialize(config, sow, rng) -> state
-
-Create initial state. Default returns `nothing` (stateless models).
-"""
+"""Create initial state. Default returns `nothing` (stateless models)."""
 function initialize end
 
 initialize(::AbstractConfig, ::AbstractSOW, ::AbstractRNG) = nothing
 
-"""
-    run_timestep(state, config, sow, policy, t::TimeStep, rng) -> (new_state, step_record)
-
-Execute one timestep. Returns tuple of new state and step record (any type).
-"""
+"""Execute one timestep. Returns `(new_state, step_record)`."""
 function run_timestep end
 
-"""
-    time_axis(config, sow) -> iterable
-
-Return time points (e.g., `1:100`, `Date(2020):Year(1):Date(2100)`).
-Must have defined `length()`.
-"""
+"""Return time points iterable with defined `length()`."""
 function time_axis end
 
-"""
-    finalize(final_state, step_records::Vector, config, sow) -> Outcome
-
-Aggregate step records into final outcome. Default returns `final_state` unchanged.
-"""
+"""Aggregate step records into outcome. Default returns `final_state`."""
 function finalize end
 
 finalize(final_state, step_records::Vector, ::AbstractConfig, ::AbstractSOW) = final_state
@@ -153,16 +129,6 @@ function run_simulation(
     end
 
     return finalize(state, outputs, config, sow)
-end
-
-function run_simulation(
-    config::AbstractConfig,
-    sow::AbstractSOW,
-    policy::AbstractPolicy,
-    recorder::AbstractRecorder,
-    rng::AbstractRNG
-)
-    return run_simulation(config, sow, policy, rng; recorder=recorder)
 end
 
 end # module TimeStepping

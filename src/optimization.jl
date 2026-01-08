@@ -11,8 +11,7 @@ The optimizer uses `param_bounds` and the vector constructor instead.
 """
 function params end
 
-params(p::AbstractPolicy) =
-    error("Implement `SimOptDecisions.params(::$(typeof(p)))` to return parameter vector")
+params(p::AbstractPolicy) = interface_not_implemented(:params, typeof(p))
 
 """
     param_bounds(::Type{P}) -> Vector{Tuple{T,T}}
@@ -23,7 +22,7 @@ Override for your policy type.
 function param_bounds end
 
 param_bounds(::Type{T}) where {T<:AbstractPolicy} =
-    error("Implement `SimOptDecisions.param_bounds(::Type{$T})` to return bounds")
+    interface_not_implemented(:param_bounds, T, "::Type")
 
 # ============================================================================
 # Optimization Result
@@ -62,31 +61,14 @@ end
 # Optimization Problem
 # ============================================================================
 
-"""
-Defines a simulation-optimization problem.
-
-# Fields
-- `config`: Fixed configuration for the simulation
-- `sows`: Vector of States of the World to evaluate policies against
-- `policy_type`: The Type of policy to optimize (not an instance)
-- `metric_calculator`: Function `(outcomes) -> NamedTuple` of metrics
-- `objectives`: Vector of Objective specifying what to optimize
-- `batch_size`: How many SOWs to use per evaluation (default: FullBatch)
-- `constraints`: Optional vector of constraints
-"""
-struct OptimizationProblem{
-    P<:AbstractConfig,
-    S<:AbstractSOW,
-    T<:AbstractPolicy,
-    F<:Function,
-    B<:AbstractBatchSize,
-}
+"""Defines a simulation-optimization problem. See examples for usage."""
+struct OptimizationProblem{P<:AbstractConfig,S<:AbstractSOW,T<:AbstractPolicy}
     config::P
     sows::Vector{S}
     policy_type::Type{T}
-    metric_calculator::F
+    metric_calculator::Function
     objectives::Vector{Objective}
-    batch_size::B
+    batch_size::AbstractBatchSize
     constraints::Vector{AbstractConstraint}
 end
 

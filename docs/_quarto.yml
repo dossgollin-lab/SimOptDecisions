@@ -9,8 +9,12 @@ website:
     left:
       - href: index.qmd
         text: Home
-      - href: examples/house_elevation.qmd
-        text: Examples
+      - text: Examples
+        menu:
+          - href: examples/investment_growth.qmd
+            text: Investment Growth
+          - href: examples/house_elevation.qmd
+            text: House Elevation
     right:
       - icon: github
         href: https://github.com/dossgollin-lab/SimOptDecisions.jl

@@ -5,8 +5,6 @@
 struct NoRecorder <: AbstractRecorder end
 
 record!(::NoRecorder, state, step_record, t) = nothing
-# Backwards compatibility
-record!(r::NoRecorder, state, t) = record!(r, state, nothing, t)
 
 # ============================================================================
 # TraceRecorderBuilder - Flexible recording during simulation
@@ -30,9 +28,6 @@ function record!(r::TraceRecorderBuilder, state, step_record, t)
     push!(r.times, t)
     return nothing
 end
-
-# Backwards compatibility
-record!(r::TraceRecorderBuilder, state, t) = record!(r, state, nothing, t)
 
 # ============================================================================
 # SimulationTrace - Type-stable trace with states, step_records, and times
@@ -72,21 +67,6 @@ function finalize(r::TraceRecorderBuilder)
 end
 
 # ============================================================================
-# TraceRecorder - Legacy type for backwards compatibility
-# ============================================================================
-
-"""
-Legacy recorder type. Use SimulationTrace for new code.
-"""
-struct TraceRecorder{S,T} <: AbstractRecorder
-    states::Vector{S}
-    times::Vector{T}
-end
-
-# Convert SimulationTrace to TraceRecorder (drops step_records)
-TraceRecorder(trace::SimulationTrace) = TraceRecorder(trace.states, trace.times)
-
-# ============================================================================
 # Tables.jl Interface for SimulationTrace
 # ============================================================================
 
@@ -122,38 +102,4 @@ end
 
 function Tables.schema(t::SimulationTrace{S,R,T}) where {S,R,T}
     return Tables.Schema((:state, :step_record, :time), (S, R, T))
-end
-
-# ============================================================================
-# Tables.jl Interface for TraceRecorder (legacy)
-# ============================================================================
-
-Tables.istable(::Type{<:TraceRecorder}) = true
-Tables.columnaccess(::Type{<:TraceRecorder}) = true
-Tables.columns(r::TraceRecorder) = r
-
-Tables.columnnames(r::TraceRecorder) = (:state, :time)
-
-function Tables.getcolumn(r::TraceRecorder, nm::Symbol)
-    if nm === :state
-        return r.states
-    elseif nm === :time
-        return r.times
-    else
-        throw(ArgumentError("TraceRecorder has no column :$nm"))
-    end
-end
-
-function Tables.getcolumn(r::TraceRecorder, i::Int)
-    if i == 1
-        return r.states
-    elseif i == 2
-        return r.times
-    else
-        throw(BoundsError(r, i))
-    end
-end
-
-function Tables.schema(r::TraceRecorder{S,T}) where {S,T}
-    return Tables.Schema((:state, :time), (S, T))
 end

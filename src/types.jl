@@ -40,12 +40,7 @@ end
 """
     get_action(policy::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) -> action
 
-Compute the action given current state and available information.
-
-The policy is a function mapping states to actions. The SOW provides
-exogenous information that may be used in the decision (e.g., forecasts).
-
-Must be implemented for your policy type.
+Map state + SOW to action. Must be implemented for each policy type.
 """
 get_action(p::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) =
     interface_not_implemented(:get_action, typeof(p), "state, sow::AbstractSOW, t::TimeStep")

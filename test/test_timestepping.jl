@@ -300,38 +300,6 @@
         @test result2 == result  # Same result with or without recorder
     end
 
-    @testset "Positional recorder argument" begin
-        # Test the convenience overload with positional recorder
-        struct TSPosParams <: AbstractConfig end
-        struct TSPosSOW <: AbstractSOW end
-        struct TSPosPolicy <: AbstractPolicy end
-
-        function SimOptDecisions.TimeStepping.run_timestep(
-            state::Nothing, params::TSPosParams, sow::TSPosSOW,
-            policy::TSPosPolicy, t::TimeStep, ::AbstractRNG
-        )
-            return (nothing, t.t)
-        end
-
-        function SimOptDecisions.TimeStepping.time_axis(::TSPosParams, ::TSPosSOW)
-            return 1:3
-        end
-
-        function SimOptDecisions.TimeStepping.finalize(::Nothing, outputs::Vector, ::TSPosParams, ::TSPosSOW)
-            return (total=sum(outputs),)
-        end
-
-        params = TSPosParams()
-        sow = TSPosSOW()
-        policy = TSPosPolicy()
-        rng = Random.Xoshiro(42)
-
-        # Test positional recorder argument
-        builder = TraceRecorderBuilder()
-        result = SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, builder, rng)
-        @test result.total == 6  # 1+2+3
-    end
-
     @testset "Type stability" begin
         struct TSTypeParams <: AbstractConfig end
         struct TSTypeSOW <: AbstractSOW end
@@ -468,7 +436,6 @@
         # Construction
         ts = TimeSeriesParameter([1.0, 2.0, 3.0])
         @test length(ts) == 3
-        @test eltype(ts) == Float64
 
         # Integer indexing
         @test ts[1] == 1.0
@@ -486,13 +453,6 @@
 
         # Iteration
         @test collect(ts) == [1.0, 2.0, 3.0]
-        @test first(ts) == 1.0
-        @test last(ts) == 3.0
-
-        # Indexing helpers
-        @test firstindex(ts) == 1
-        @test lastindex(ts) == 3
-        @test collect(eachindex(ts)) == [1, 2, 3]
 
         # Empty not allowed
         @test_throws ArgumentError TimeSeriesParameter(Float64[])

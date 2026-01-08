@@ -12,15 +12,12 @@ Convert a state to a NamedTuple of scalar values for plotting.
 """
 function to_scalars end
 
-to_scalars(state::AbstractState) = error(
-    "Implement `SimOptDecisions.to_scalars(::$(typeof(state)))` returning a NamedTuple"
-)
+to_scalars(state::AbstractState) = interface_not_implemented(:to_scalars, typeof(state))
 
 """
-    plot_trace(trace; kwargs...) -> (Figure, Vector{Axis})
+    plot_trace(trace::SimulationTrace; kwargs...) -> (Figure, Vector{Axis})
 
-Plot simulation trace over time. Accepts SimulationTrace or TraceRecorder.
-Requires `using CairoMakie` or `using GLMakie`.
+Plot simulation trace over time. Requires `using CairoMakie` or `using GLMakie`.
 """
 function plot_trace end
 

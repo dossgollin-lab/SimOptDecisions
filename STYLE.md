@@ -130,7 +130,7 @@ SimOptDecisions.jl/
 │   ├── SimOptDecisions.jl    # Main module, exports
 │   ├── types.jl              # Abstract types, TimeStep, Objective
 │   ├── simulation.jl         # simulate, initialize, step, time_axis
-│   ├── recorders.jl          # NoRecorder, TraceRecorder, Tables.jl
+│   ├── recorders.jl          # NoRecorder, SimulationTrace, Tables.jl
 │   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
 │   ├── validation.jl         # _validate_* functions, constraints
 │   └── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
