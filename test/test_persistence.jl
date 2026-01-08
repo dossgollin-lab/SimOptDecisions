@@ -42,7 +42,7 @@ _checkpoint_metric_calc(outcomes) = (mean=sum(o.final for o in outcomes) / lengt
             x::Float64
         end
 
-        struct CheckpointParams <: AbstractFixedParams end
+        struct CheckpointParams <: AbstractConfig end
         struct CheckpointSOW <: AbstractSOW end
 
         # Simple for-loop implementation

@@ -15,6 +15,7 @@ import SimOptDecisions: finalize, step
     include("test_types.jl")
     include("test_recorders.jl")
     include("test_simulation.jl")
+    include("test_timestepping.jl")
     include("test_validation.jl")
     include("test_optimization.jl")
     include("test_persistence.jl")

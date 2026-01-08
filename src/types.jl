@@ -3,9 +3,22 @@
 
 abstract type AbstractState end
 abstract type AbstractPolicy end
-abstract type AbstractFixedParams end
+abstract type AbstractConfig end
 abstract type AbstractSOW end
 abstract type AbstractRecorder end
+
+"""
+Throw a helpful error for unimplemented interface methods.
+
+Use this when defining fallback methods for interface functions.
+"""
+function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
+    hint = isempty(signature) ? "" : ", $signature"
+    throw(ArgumentError(
+        "Interface method `$fn` not implemented for $T.\n" *
+        "Add: `SimOptDecisions.$fn(::$T$hint) = ...`"
+    ))
+end
 
 """
 Wraps time information passed to the `step` function.
@@ -19,6 +32,23 @@ struct TimeStep{V}
     val::V
     is_last::Bool
 end
+
+# ============================================================================
+# Action Interface
+# ============================================================================
+
+"""
+    get_action(policy::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) -> action
+
+Compute the action given current state and available information.
+
+The policy is a function mapping states to actions. The SOW provides
+exogenous information that may be used in the decision (e.g., forecasts).
+
+Must be implemented for your policy type.
+"""
+get_action(p::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) =
+    interface_not_implemented(:get_action, typeof(p), "state, sow::AbstractSOW, t::TimeStep")
 
 # Helper for validation - called at simulation start
 function _validate_time_axis(times)

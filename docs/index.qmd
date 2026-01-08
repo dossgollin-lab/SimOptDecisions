@@ -10,99 +10,214 @@ author: "Doss-Gollin Lab @ Rice CEVE"
 This package is under active development and the API may change.
 :::
 
-## Overview
+## What is SimOptDecisions.jl?
 
-**`SimOptDecisions.jl`** provides a structured framework for decision-making under uncertainty using simulation and optimization.
-`SimOptDecisions.jl` is designed as a **framework to help you build your own simulation-optimization models**, not as a standalone tool.
-The package separates concerns into composable components:
+SimOptDecisions.jl is a **framework** for building simulation-optimization models in Julia.
+It is **not** a turnkey solution—you write Julia code for your model. The framework provides:
 
-- **State of the World (SOW)**: Uncertain parameters that define a scenario
-- **Policy**: Decision rules that map states to actions
-- **Model**: System dynamics that evolve state over time
-- **State**: The evolving condition of the system
+1. **Structured vocabulary** — Clear concepts: Config, SOW, Policy, State, StepRecord, Outcome, Metric
+2. **Pluggable components** — Swap optimization backends, recording strategies
+3. **Boilerplate handled** — Batching, parallel evaluation, checkpointing, type stability
 
-This separation enables:
+**You still need to:**
 
-1. **Monte Carlo simulation** across many SOWs to characterize uncertainty
-2. **Policy optimization** to find robust decisions (single or multi-objective)
-3. **Exploratory modeling** to understand how outcomes depend on uncertain parameters
+- Define your system dynamics (the `run_timestep` function)
+- Specify your policy structure and action space
+- Implement your metric aggregation logic
 
-## Quick Example
+::: {.callout-tip}
+## Learn by Example
 
-To use SimOptDecisions.jl, you need to define **four types** and implement **three interface methods**.
+The best way to learn SimOptDecisions.jl is through the examples:
+
+- **[Investment Growth](examples/investment_growth.qmd)**: A minimal working example demonstrating all core concepts
+- **[House Elevation](examples/house_elevation.qmd)**: A complete tutorial with multi-objective optimization and visualization
+:::
+
+## Core Concepts
+
+### The `simulate` Function
+
+At the heart of SimOptDecisions.jl is the `simulate` function:
 
 ```julia
-using SimOptDecisions
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 1: Define your four types (subtyping the abstract types)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# SOW: uncertain parameters that vary across scenarios
-struct MySOW{T<:AbstractFloat} <: AbstractSOW
-    parameter::T
-end
-
-# Policy: the decision variables you're optimizing
-struct MyPolicy{T<:AbstractFloat} <: AbstractPolicy
-    decision::T
-end
-
-# State: the evolving system state during simulation
-struct MyState{T<:AbstractFloat} <: AbstractState
-    value::T
-end
-
-# Model: fixed parameters shared across all simulations
-struct MyModel <: AbstractSystemModel end
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 2: Implement the three required interface methods
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# time_axis: defines the simulation timeline
-SimOptDecisions.time_axis(::MyModel, ::MySOW) = 1:10
-
-# initialize: creates the initial state
-SimOptDecisions.initialize(::MyModel, sow::MySOW, rng) = MyState(0.0)
-
-# step: updates state at each time step
-SimOptDecisions.step(state::MyState, ::MyModel, sow::MySOW, policy::MyPolicy, t, rng) =
-    MyState(state.value + policy.decision * sow.parameter)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 3: Run simulations!
-# ═══════════════════════════════════════════════════════════════════════════════
-
-result = simulate(MyModel(), MySOW(1.5), MyPolicy(2.0))
+outcome = simulate(config, sow, policy, rng)
 ```
 
-## Key Concepts
+This runs one simulation given:
+
+- **config**: Fixed parameters that define your model (things that don't change across scenarios)
+- **sow**: A State of the World representing one uncertain scenario
+- **policy**: A decision rule that determines actions
+- **rng**: Random number generator for reproducibility
+
+By default, `simulate` automatically calls `TimeStepping.run_simulation`, which executes the four callbacks you implement. No boilerplate needed—just implement the callbacks and call `simulate()`.
+
+### Fixed Parameters
+
+Fixed parameters are shared across all scenarios—things that don't change with uncertainty.
+Subtype `AbstractConfig`:
+
+```julia
+struct MyConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int
+    initial_value::T
+end
+```
+
+### States of the World (SOW)
+
+The **State of the World (SOW)** represents exogenous information—things outside your control that affect outcomes.
+Use parametric types for type stability:
+
+```julia
+struct ClimateSOW{T<:AbstractFloat} <: AbstractSOW
+    temperature_trend::T
+    storm_arrival_rate::T
+end
+```
+
+Each SOW instance represents one possible realization of uncertain quantities.
+You typically sample many SOWs to evaluate policy robustness.
+
+For time-varying uncertainties, use `TimeSeriesParameter{T}` instead of `Vector{T}`.
+This wrapper provides safe indexing via `TimeStep`.
+
+### Policies and Actions
+
+A **Policy** is a parameterized decision rule—it specifies *how* to make decisions, not the decisions themselves.
+Define policies by subtyping `AbstractPolicy` and implementing `get_action`:
+
+```julia
+struct InventoryPolicy{T<:AbstractFloat} <: AbstractPolicy
+    reorder_point::T
+    order_quantity::T
+end
+
+function SimOptDecisions.get_action(
+    policy::InventoryPolicy, state, sow, t::TimeStep
+)
+    if state.level < policy.reorder_point
+        return (order=policy.order_quantity,)
+    else
+        return (order=0.0,)
+    end
+end
+```
+
+For **static policies** where parameters directly define the action:
+
+```julia
+SimOptDecisions.get_action(p::ElevationPolicy, state, sow, t) = (elevation=p.elevation_ft,)
+```
 
 ### Outcomes vs Metrics
 
-SimOptDecisions distinguishes between two important concepts:
+**Outcome**: The result of a *single* simulation (one policy × one SOW).
+What `simulate` returns—can be any type (typically a NamedTuple).
 
-- **Outcome**: The result of a *single* simulation (`simulate(model, sow, policy)`). Defined by your `aggregate_outcome` method—typically a `NamedTuple` of values like `(cost=..., risk=...)`.
-
-- **Metric**: A statistic computed by *aggregating outcomes across many SOWs*. For example, `mean(outcomes.cost)` or `quantile(outcomes.risk, 0.95)`. Metrics are what the optimizer tries to minimize or maximize.
-
-### Policy Parameters for Optimization
-
-To use automatic optimization, your policy needs to define how to convert between a parameter vector and a policy instance:
+**Metric**: A statistic computed by *aggregating outcomes across many SOWs*.
+This is what the optimizer tries to minimize or maximize.
 
 ```julia
-# Constructor from parameter vector
-MyPolicy(params::AbstractVector) = MyPolicy(params[1])
-
-# Extract parameters as vector
-SimOptDecisions.params(p::MyPolicy) = [p.decision]
-
-# Define bounds for each parameter
-SimOptDecisions.param_bounds(::Type{MyPolicy}) = [(0.0, 10.0)]
+function calculate_metrics(outcomes)
+    costs = [o.npv_cost for o in outcomes]
+    return (
+        expected_cost = mean(costs),
+        worst_case = maximum(costs),
+    )
+end
 ```
 
-This enables the optimizer to search over the continuous parameter space.
+## TimeStepping Interface
+
+Most simulations iterate through discrete time steps.
+Implement these four callbacks and `simulate()` will automatically use them:
+
+| Function | Purpose | Returns |
+|----------|---------|---------|
+| `initialize(config, sow, rng)` | Create initial state | `state` |
+| `run_timestep(state, config, sow, policy, t, rng)` | Execute one step | `(new_state, step_record)` |
+| `time_axis(config, sow)` | Define time points | Iterable |
+| `finalize(final_state, step_records, config, sow)` | Aggregate results | `Outcome` |
+
+**StepRecord**: Data tracked at each timestep, returned as the second element from `run_timestep`. All step records are collected and passed to `finalize`.
+
+No boilerplate needed—just implement the callbacks and call `simulate()`:
+
+```julia
+result = simulate(config, sow, policy, Random.Xoshiro(42))
+```
+
+For non-timestepped models (closed-form solutions, external simulators), override `simulate()` directly.
+
+## Optimization
+
+### Evaluating Policies Across SOWs
+
+Use `evaluate_policy` to run simulations across an ensemble of SOWs and compute aggregated metrics:
+
+```julia
+prob = OptimizationProblem(config, sows, MyPolicy, calculate_metrics, objectives)
+metrics = evaluate_policy(prob, policy)  # runs simulate on all SOWs, then aggregates via calculate_metrics
+```
+
+### Setting Up Optimization
+
+For optimization, your policy needs bounds and a vector constructor:
+
+```julia
+MyPolicy(params::AbstractVector) = MyPolicy(params[1], params[2])
+SimOptDecisions.param_bounds(::Type{MyPolicy}) = [(0.0, 1.0), (0.0, 10.0)]
+```
+
+Set up the optimization problem:
+
+```julia
+using Metaheuristics
+
+prob = OptimizationProblem(
+    config,
+    sows,                        # Vector of SOWs to evaluate on
+    MyPolicy,                    # Policy type (not instance)
+    calculate_metrics,           # Aggregation function: (outcomes) -> NamedTuple
+    [minimize(:expected_cost)],  # What to optimize
+)
+
+result = SimOptDecisions.optimize(prob, MetaheuristicsBackend())
+best_policy = result.best_policy
+```
+
+### Multi-Objective Optimization
+
+For Pareto front exploration:
+
+```julia
+prob = OptimizationProblem(
+    config, sows, MyPolicy, calculate_metrics,
+    [minimize(:expected_cost), minimize(:worst_case)],
+)
+
+result = SimOptDecisions.optimize(prob, MetaheuristicsBackend(algorithm=:NSGA2))
+
+for (params, objectives) in pareto_front(result)
+    println("Params: $params => $objectives")
+end
+```
+
+## Theoretical Background
+
+This framework implements a sequential decision problem formulation with five elements:
+
+1. **State variables $S_t$** — all information needed to model the system from time $t$ onward
+2. **Decision variables $x_t$** — determined by a policy $X^\pi(S_t)$
+3. **Exogenous information $W_{t+1}$** — information arriving after making decision $x_t$ (from SOW)
+4. **Transition function** — how $S_t$ evolves to $S_{t+1}$ given $x_t$ and $W_{t+1}$
+5. **Objective** — used to evaluate the policy over time
+
+The `get_action` function implements the policy mapping.
+The `run_timestep` function implements the transition function.
+The SOW provides exogenous information for the entire simulation trajectory.
 
 ## Installation
 
@@ -111,17 +226,13 @@ using Pkg
 Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
 ```
 
-## Documentation
-
-- [House Elevation Example](examples/house_elevation.qmd): A complete tutorial demonstrating flood risk decision-making under uncertainty
-- [README](https://github.com/dossgollin-lab/SimOptDecisions.jl#readme): Full documentation and API reference
-
 ## Key Features
 
 | Feature | Description |
 |---------|-------------|
 | Type-stable simulation | Zero-allocation hot loops with `NoRecorder` |
 | Flexible time axes | Works with integers, floats, or `Date` ranges |
+| Structured TimeStepping | Clean interface with `initialize`, `run_timestep`, `finalize` |
 | Optional recording | Trace simulation history for debugging |
 | Extensible optimization | Plug in Metaheuristics.jl or custom backends |
 | Multi-objective support | Pareto frontier extraction |

@@ -59,7 +59,7 @@
     end
 
     @testset "Validation hooks" begin
-        struct ValidatableParams <: AbstractFixedParams end
+        struct ValidatableParams <: AbstractConfig end
         struct ValidatablePolicy <: AbstractPolicy end
 
         # Default implementations return true

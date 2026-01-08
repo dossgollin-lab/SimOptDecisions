@@ -16,7 +16,7 @@ using Metaheuristics
         increment::Float64
     end
 
-    struct MHCounterParams <: AbstractFixedParams
+    struct MHCounterParams <: AbstractConfig
         n_steps::Int
     end
 
@@ -45,7 +45,7 @@ using Metaheuristics
         params = MHCounterParams(10)
         sows = [MHEmptySOW() for _ in 1:5]
 
-        function metric_calculator(outcomes, _policy)
+        function metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -81,7 +81,7 @@ using Metaheuristics
         params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function de_metric_calculator(outcomes, _policy)
+        function de_metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -101,7 +101,7 @@ using Metaheuristics
         params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function pso_metric_calculator(outcomes, _policy)
+        function pso_metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -144,7 +144,7 @@ using Metaheuristics
         params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function multi_metric_calculator(outcomes, _policy)
+        function multi_metric_calculator(outcomes)
             values = [o.final_value for o in outcomes]
             return (
                 mean_value=sum(values) / length(values),
@@ -182,7 +182,7 @@ using Metaheuristics
         params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function max_metric_calculator(outcomes, _policy)
+        function max_metric_calculator(outcomes)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -209,7 +209,7 @@ using Metaheuristics
         params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function fc_metric_calculator(outcomes, _policy)
+        function fc_metric_calculator(outcomes)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -240,7 +240,7 @@ using Metaheuristics
         params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
-        function pc_metric_calculator(outcomes, _policy)
+        function pc_metric_calculator(outcomes)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 

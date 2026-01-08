@@ -9,7 +9,7 @@
             increment::Float64
         end
 
-        struct OptCounterParams <: AbstractFixedParams
+        struct OptCounterParams <: AbstractConfig
             n_steps::Int
         end
 
@@ -38,7 +38,7 @@
         params = OptCounterParams(10)
         sows = [OptEmptySOW() for _ in 1:5]
 
-        function metric_calculator(outcomes, _policy)
+        function metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -46,7 +46,7 @@
             params, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
         )
 
-        @test prob.params === params
+        @test prob.config === params
         @test length(prob.sows) == 5
         @test prob.policy_type === OptCounterPolicy
         @test length(prob.objectives) == 1
@@ -76,7 +76,7 @@
             increment::Float64
         end
 
-        struct EvalCounterParams <: AbstractFixedParams
+        struct EvalCounterParams <: AbstractConfig
             n_steps::Int
         end
 
@@ -102,7 +102,7 @@
         params = EvalCounterParams(10)
         sows = [EvalEmptySOW() for _ in 1:5]
 
-        function eval_metric_calculator(outcomes, _policy)
+        function eval_metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
@@ -127,7 +127,7 @@
             x::Float64
         end
 
-        struct ExtTestParams <: AbstractFixedParams end
+        struct ExtTestParams <: AbstractConfig end
         struct ExtTestSOW <: AbstractSOW end
 
         # Simple for-loop implementation
@@ -147,7 +147,7 @@
         SimOptDecisions.param_bounds(::Type{ExtTestPolicy}) = [(0.0, 1.0)]
         ExtTestPolicy(x::AbstractVector) = ExtTestPolicy(x[1])
 
-        function ext_test_metric_calculator(outcomes, _policy)
+        function ext_test_metric_calculator(outcomes)
             return (mean=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 

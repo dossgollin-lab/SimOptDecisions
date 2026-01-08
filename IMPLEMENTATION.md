@@ -1,404 +1,436 @@
-# Implementation Details
-
-This document contains implementation-specific code and design decisions for building SimOptDecisions.jl. For user-facing documentation, see [README.md](README.md).
-
-## Time Axis Validation
-
-Validate at simulation start to catch `Vector{Any}` early:
-
-```julia
-function _validate_time_axis(times)
-    T = eltype(times)
-    if T === Any
-        throw(ArgumentError(
-            "time_axis must return a homogeneously-typed collection. " *
-            "Got eltype=Any. Use a concrete type like Vector{Int} or StepRange{Date}."
-        ))
-    end
-end
-```
-
-**Note:** The simulation loop calls `length(times)`, so `time_axis` must return something with a defined length (e.g., `Vector`, `UnitRange`, `StepRange`). True generators/iterators without known length are not supported.
-
-## TraceRecorder Implementation
-
-```julia
-# Parameterized to avoid Vector{Any} - critical for performance
-struct TraceRecorder{S, T}
-    states::Vector{S}
-    times::Vector{T}
-end
-
-# Factory that uses Vector{Any} during recording
-mutable struct TraceRecorderBuilder
-    states::Vector{Any}
-    times::Vector{Any}
-    TraceRecorderBuilder() = new([], [])
-end
-
-function record!(r::TraceRecorderBuilder, state, t)
-    push!(r.states, state)
-    push!(r.times, t)
-end
-
-# Convert to typed recorder after simulation
-function finalize(r::TraceRecorderBuilder)
-    S = typeof(r.states[2])  # Skip initial nothing/state pair
-    T = typeof(r.times[2])
-    TraceRecorder{S,T}(
-        convert(Vector{S}, r.states[2:end]),
-        convert(Vector{T}, r.times[2:end])
-    )
-end
-
-# Pre-allocated recorder when you know the types
-function TraceRecorder{S,T}(n::Int) where {S,T}
-    TraceRecorder{S,T}(Vector{S}(undef, n), Vector{T}(undef, n))
-end
-```
-
-### Tables.jl Integration
-
-`TraceRecorder` must implement `Tables.istable`, `Tables.rows`, `Tables.columns`.
-
-## Data Extraction Interface
-
-Users implement `to_scalars` for custom state types:
-
-```julia
-function to_scalars(state::HouseElevationState)
-    (; elevation=state.elevation, flood_damage=state.cumulative_damage,
-       npv=state.net_present_value)
-end
-```
-
-## Policy Interface Definitions
-
-```julia
-# Core defines these interface functions (throw "not implemented" by default)
-function params end      # policy -> AbstractVector{<:AbstractFloat}
-function param_bounds end  # Type -> Vector{Tuple{T,T}}
-
-# Default implementations that throw helpful errors
-params(p::AbstractPolicy) = error(
-    "Implement `SimOptDecisions.params(::$(typeof(p)))` to return parameter vector"
-)
-param_bounds(::Type{T}) where {T<:AbstractPolicy} = error(
-    "Implement `SimOptDecisions.param_bounds(::Type{$T})` to return bounds"
-)
-```
-
-## Batch Size Configuration
-
-Type hierarchy for batch size (maintains type stability):
-
-```julia
-abstract type AbstractBatchSize end
-
-struct FullBatch <: AbstractBatchSize end           # Use all SOWs
-
-struct FixedBatch <: AbstractBatchSize
-    n::Int
-end
-
-struct FractionBatch <: AbstractBatchSize
-    fraction::Float64  # in (0.0, 1.0]
-
-    function FractionBatch(f::Float64)
-        0.0 < f <= 1.0 || throw(ArgumentError("Fraction must be in (0, 1]"))
-        new(f)
-    end
-end
-```
-
-## OptimizationProblem Constructor
-
-Full constructor with validation:
-
-```julia
-function OptimizationProblem(model, sows, policy_type::Type{<:AbstractPolicy},
-                             calculator, objectives; batch_size=FullBatch())
-    _validate_sows(sows)
-    _validate_policy_interface(policy_type)
-    OptimizationProblem(model, sows, policy_type, calculator, objectives, batch_size)
-end
-```
-
-### Policy Interface Validation
-
-```julia
-function _validate_policy_interface(::Type{P}) where P<:AbstractPolicy
-    # Check param_bounds is implemented
-    try
-        bounds = param_bounds(P)
-        if !isa(bounds, AbstractVector)
-            throw(ArgumentError("param_bounds must return a Vector of tuples"))
-        end
-    catch e
-        e isa ErrorException && rethrow()
-        throw(ArgumentError("param_bounds(::Type{$P}) failed: $e"))
-    end
-
-    # Check constructor works with a sample vector
-    bounds = param_bounds(P)
-    sample_x = [(b[1] + b[2]) / 2 for b in bounds]
-    try
-        test_policy = P(sample_x)
-        if !(test_policy isa AbstractPolicy)
-            throw(ArgumentError("$P(x) must return an AbstractPolicy"))
-        end
-    catch e
-        throw(ArgumentError(
-            "$P must have a constructor accepting AbstractVector. " *
-            "Add: $P(x::AbstractVector{T}) where T<:AbstractFloat = ..."
-        ))
-    end
-end
-```
-
-## Policy Evaluation
-
-```julia
-function evaluate_policy(prob::OptimizationProblem, policy, rng::AbstractRNG)
-    outcomes = map(prob.training_sows) do sow
-        simulate(prob.model, sow, policy, NoRecorder(), rng)
-    end
-    return prob.metric_calculator(outcomes)
-end
-
-# Convenience: uses seeded RNG
-evaluate_policy(prob, policy; seed=1234) =
-    evaluate_policy(prob, policy, Xoshiro(seed))
-```
-
-## Backend Interface
-
-```julia
-abstract type AbstractOptimizationBackend end
-
-# Generic entry point
-function optimize(prob::OptimizationProblem, backend::AbstractOptimizationBackend)
-    validate(prob)
-    return optimize_backend(prob, backend)
-end
-
-function optimize_backend end # Empty function, methods added by Extensions
-```
-
-## Validation and Constraints
-
-### Validation Hooks
-
-```julia
-validate(model::AbstractSystemModel) = true          # Override for domain-specific
-validate(policy::AbstractPolicy, model) = true       # Override for domain-specific
-validate(prob::OptimizationProblem) = Bool           # Called by optimize()
-```
-
-`validate(prob)` checks model, SOWs, and that the policy type implements the required interface.
-
-### Constraint Handling
-
-For constrained optimization problems:
-
-```julia
-abstract type AbstractConstraint end
-
-struct FeasibilityConstraint <: AbstractConstraint
-    name::Symbol
-    func::Function  # policy -> Bool (true = feasible)
-end
-
-struct PenaltyConstraint <: AbstractConstraint
-    name::Symbol
-    func::Function  # policy -> Float64 (0.0 = no violation)
-    weight::Float64
-end
-```
-
-Constraints can be added to `OptimizationProblem` as an optional field. The extension applies them during fitness evaluation.
-
-## Metaheuristics Extension
-
-File: `ext/SimOptMetaheuristicsExt.jl`
-
-```julia
-module SimOptMetaheuristicsExt
-
-using SimOptDecisions: OptimizationProblem, MetaheuristicsBackend, OptimizationResult,
-                       evaluate_policy, optimize_backend, param_bounds
-using Metaheuristics
-
-function SimOptDecisions.optimize_backend(prob::OptimizationProblem, backend::MetaheuristicsBackend)
-    P = prob.policy_type
-    bounds_vec = param_bounds(P)
-
-    # Build bounds matrix for Metaheuristics: [lb ub] per row
-    bounds = hcat([b[1] for b in bounds_vec], [b[2] for b in bounds_vec])
-
-    # Fitness function: vector -> objectives
-    function f(x::AbstractVector{T}) where T<:AbstractFloat
-        policy = P(x)
-        metrics = evaluate_policy(prob, policy)
-        return _extract_objectives(metrics, prob.objectives)
-    end
-
-    # Select and run algorithm
-    algorithm = _get_algorithm(backend.algorithm, backend.population_size, backend.options)
-    result = Metaheuristics.optimize(f, bounds, algorithm;
-        iterations = backend.max_iterations,
-        parallel_evaluation = backend.parallel
-    )
-
-    return _wrap_result(result, P, prob)
-end
-
-function _wrap_result(mh_result, P, prob)
-    best_x = Metaheuristics.minimizer(mh_result)
-    best_f = Metaheuristics.minimum(mh_result)
-    # ... extract population, convergence status, etc.
-    OptimizationResult(best_x, best_f, P(best_x), ...)
-end
-
-end # module
-```
-
-**Notes:**
-
-- Metaheuristics.jl uses `[lower upper]` bounds matrix format
-- If user calls `optimize(prob, MetaheuristicsBackend())` without `using Metaheuristics`, throw: "Please run `using Metaheuristics` to use this backend."
-
-## Makie Extension
-
-File: `ext/SimOptMakieExt.jl`
-
-- `plot_trace(recorder)` - Uses Makie's `Observable` pattern if interactive (GLMakie)
-- `plot_pareto(optimization_result)` - Static scenes for CairoMakie
-
-## ExperimentConfig Full Definition
-
-```julia
-struct ExperimentConfig{S, B<:AbstractOptimizationBackend}
-    # Reproducibility
-    seed::Int
-    timestamp::DateTime
-
-    # Optional metadata (user provides strings, we don't auto-fetch)
-    git_commit::String
-    package_versions::String
-
-    # Data (passed in, not generated)
-    sows::Vector{S}
-    sow_source::String  # "LHS samples", "BRICK ensemble", etc.
-
-    # Shared parameters (not optimized)
-    shared::SharedParameters
-
-    # Optimization configuration
-    backend::B
-end
-
-# Convenience constructor
-function ExperimentConfig(seed, sows, shared, backend;
-                          timestamp=now(),
-                          git_commit="",
-                          package_versions="",
-                          sow_source="unspecified")
-    ExperimentConfig(seed, timestamp, git_commit, package_versions,
-                     sows, sow_source, shared, backend)
-end
-```
-
-**Note:** We don't auto-fetch git commits or package versions (loading `Pkg` is slow). Users provide these as strings if needed.
-
-## Project.toml Structure
-
-```toml
-[deps]
-Dates = "ade2ca70-..."
-JLD2 = "033835bb-..."
-Random = "9a3f8284-..."
-Tables = "bd369af6-..."
-
-[weakdeps]
-Metaheuristics = "bcdb8e00-..."
-CairoMakie = "13f3f980-..."
-GLMakie = "e9467ef8-..."
-
-[extensions]
-SimOptMetaheuristicsExt = "Metaheuristics"
-SimOptMakieExt = ["CairoMakie", "GLMakie"]
-
-[extras]
-Aqua = "4c88cf16-..."
-JuliaFormatter = "98e50ef6-..."
-Revise = "295af30f-..."
-Test = "8dfed614-..."
-
-[targets]
-test = ["Aqua", "Test"]
-```
-
-**Notes:**
-
-- Dev tools (`JuliaFormatter`, `Revise`, `Aqua`) go in `[extras]`, not weak dependencies
-- Weak deps are for runtime functionality that loads when users import a package
+# Implementation Roadmap
+
+Address documentation clarity, vocabulary consistency, interface simplification, visualization, and code cleanup.
+
+## Key Decisions
+
+| Issue | Decision |
+|-------|----------|
+| index.qmd clarity | Reframe as "framework that requires coding" |
+| Visualization | Convention + Interface approach (see Phase 6) |
+| is_first/is_last | Keep current (field for is_last) |
+| get_action deps | Keep flexible signature, document use cases |
+| Actions | Document NamedTuple convention |
+| Vocabulary | Rename `step_output` → `step_record` |
+| Interface | Callbacks only - simulate() auto-calls callbacks |
+| Naming | Rename `params`/`AbstractFixedParams` → `config`/`AbstractConfig` |
 
 ---
 
-## Implementation Roadmap
+## Phase 1: Vocabulary and Naming Changes
 
-### File Structure
+### 1.1 Rename AbstractFixedParams → AbstractConfig
 
-```text
-SimOptDecisions.jl/
-├── src/
-│   ├── SimOptDecisions.jl    # Main module, exports
-│   ├── types.jl              # Abstract types, TimeStep, Objective
-│   ├── simulation.jl         # simulate, initialize, step, time_axis
-│   ├── recorders.jl          # NoRecorder, TraceRecorder, Tables.jl
-│   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
-│   ├── validation.jl         # _validate_* functions, constraints
-│   └── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
-├── ext/
-│   ├── SimOptMetaheuristicsExt.jl
-│   └── SimOptMakieExt.jl
-├── test/
-│   ├── runtests.jl
-│   └── ext/                  # Extension tests (optional)
-├── Project.toml
-└── README.md
+**Files to modify:**
+
+- [src/types.jl](src/types.jl) - abstract type definition
+- [src/timestepping.jl](src/timestepping.jl) - all references
+- [src/simulation.jl](src/simulation.jl) - all references
+- [src/optimization.jl](src/optimization.jl) - OptimizationProblem field
+- [src/validation.jl](src/validation.jl) - validation functions
+- [docs/index.qmd](docs/index.qmd) - documentation
+- [docs/examples/investment_growth.qmd](docs/examples/investment_growth.qmd)
+- [docs/examples/house_elevation.qmd](docs/examples/house_elevation.qmd)
+- All test files
+
+**Changes:**
+
+```julia
+# Before
+abstract type AbstractFixedParams end
+function simulate(params::AbstractFixedParams, ...)
+
+# After
+abstract type AbstractConfig end
+function simulate(config::AbstractConfig, ...)
 ```
 
-### Phase 1: Core Framework
+### 1.2 Rename step_output → step_record
 
-- [x] Abstract types: `AbstractState`, `AbstractPolicy`, `AbstractSystemModel`, `AbstractSOW`, `AbstractRecorder`
-- [x] `TimeStep{V}` struct and `_validate_time_axis`
-- [x] Interface functions: `initialize`, `step`, `time_axis`, `aggregate_outcome`, `is_terminal`
-- [x] `simulate(model, sow, policy, recorder, rng)` with convenience overload
-- [x] Recorders: `NoRecorder`, `TraceRecorderBuilder`, `TraceRecorder{S,T}`, Tables.jl integration
+**Files to modify:**
 
-### Phase 2: Optimization
+- [src/timestepping.jl](src/timestepping.jl) - docstrings, comments, variable names
+- [docs/index.qmd](docs/index.qmd) - table and explanations
+- [docs/examples/*.qmd](docs/examples/) - comments
 
-- [x] Policy interface: `params`, `param_bounds`, `_validate_policy_interface`
-- [x] Objectives: `Objective` struct, `minimize`/`maximize` constructors
-- [x] Batch sizing: `AbstractBatchSize`, `FullBatch`, `FixedBatch`, `FractionBatch`
-- [x] `OptimizationProblem` struct with `_validate_sows` constructor
-- [x] `evaluate_policy` and `optimize` entry point
-- [x] Validation hooks and constraint types (`FeasibilityConstraint`, `PenaltyConstraint`)
-- [x] `SharedParameters`, `ExperimentConfig`, `save_checkpoint`/`load_checkpoint`
+**Changes:**
 
-### Phase 3: Extensions
+- All docstrings: "step_output" → "step_record"
+- Variable names in run_simulation: `outputs` → `step_records`
+- Add formal definition to docs
 
-- [x] `ext/SimOptMetaheuristicsExt.jl`: `optimize_backend`, algorithm selection, result wrapping
-- [x] `ext/SimOptMakieExt.jl`: `plot_trace`, `plot_pareto`
-- [x] Project.toml: `[weakdeps]` and `[extensions]` sections
-- [x] Error messages when extensions not loaded
+---
 
-### Phase 4: Verification
+## Phase 2: Interface Simplification
 
-- [x] Package structure: main module with includes, exports, Project.toml
-- [x] MWE test problem (CounterState in test_simulation.jl)
-- [x] `Aqua.test_all(SimOptDecisions)`
-- [x] Allocation test: `@test (@allocated simulate(...)) == 0`
-- [x] Type inference test: `@inferred simulate(...)` and interface functions
+### 2.1 Consolidate to Callbacks-Only Pattern
+
+**Current state:** Users can either:
+
+1. Implement simulate() directly
+2. Implement callbacks and call TimeStepping.run_simulation
+
+**New approach:** Auto-call callbacks. Users just implement the 4 callbacks.
+
+**Changes to [src/simulation.jl](src/simulation.jl):**
+
+- Remove the generic `simulate` fallback that throws "not implemented"
+- Make `simulate` automatically call `TimeStepping.run_simulation`
+- Users no longer need to write the connection boilerplate
+
+```julia
+# New default: simulate automatically uses TimeStepping callbacks
+function simulate(config::AbstractConfig, sow::AbstractSOW, policy::AbstractPolicy, rng::AbstractRNG)
+    return TimeStepping.run_simulation(config, sow, policy, rng)
+end
+
+# Users can still override for special cases (external simulators, closed-form)
+```
+
+**Update docs to reflect:**
+
+- "Implement the four callbacks: initialize, run_timestep, time_axis, finalize"
+- "simulate() automatically calls them - no boilerplate needed"
+- Brief note: "Override simulate() for non-timestepped models (rare)"
+
+### 2.2 Remove Utils.run_timesteps
+
+**Rationale:** With callbacks-only pattern, this low-level helper is redundant.
+
+**Changes to [src/utils.jl](src/utils.jl):**
+
+- Remove `run_timesteps` function (lines 76-152)
+- Keep `discount_factor` and `timeindex` utilities
+- Update module docstring to remove run_timesteps from list
+
+### 2.3 Update Documentation for Callbacks-Only
+
+**[docs/index.qmd](docs/index.qmd):**
+
+- Remove "When to use TimeStepping vs direct simulate" table (lines 147-154)
+- Make TimeStepping the primary and default pattern
+- Add brief note about overriding for special cases
+
+---
+
+## Phase 3: Documentation Improvements
+
+### 3.1 Reframe index.qmd Introduction
+
+**Current:** Makes it sound like a turnkey solution
+
+**New framing (lines 13-30 area):**
+
+```markdown
+## What is SimOptDecisions.jl?
+
+SimOptDecisions.jl is a **framework** for building simulation-optimization models in Julia.
+It is **not** a turnkey solution—you write Julia code for your model. The framework provides:
+
+1. **Structured vocabulary** — Clear concepts: Config, SOW, Policy, State, Outcome, Metric
+2. **Pluggable components** — Swap optimization backends, recording strategies
+3. **Boilerplate handled** — Batching, parallel evaluation, checkpointing, type stability
+
+**You still need to:**
+- Define your system dynamics (the `run_timestep` function)
+- Specify your policy structure and action space
+- Implement your metric aggregation logic
+```
+
+### 3.2 Add StepRecord Definition
+
+Add to docs/index.qmd in the vocabulary section:
+
+```markdown
+**StepRecord**: Data tracked at each timestep within a simulation.
+Returned as the second element of the tuple from `run_timestep`.
+All step records are collected into a Vector and passed to `finalize`.
+```
+
+### 3.3 Fix Style Violations
+
+**[docs/index.qmd:58](docs/index.qmd#L58):**
+
+```julia
+# Before
+struct MyParams <: AbstractFixedParams
+    horizon::Int
+    initial_value::Float64
+end
+
+# After
+struct MyConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int
+    initial_value::T
+end
+```
+
+### 3.4 Document get_action Use Cases
+
+Add section explaining when get_action might depend on different arguments:
+
+```markdown
+### get_action Dependencies
+
+The `get_action(policy, state, sow, t)` signature provides flexibility:
+
+| Dependency | Use case |
+|------------|----------|
+| state only | Most policies: "if inventory < threshold, order" |
+| state + sow | Using forecasts: "if expected demand > inventory, order" |
+| state + t | Time-adaptive: "be conservative early, aggressive later" |
+| state + sow + t | Complex adaptive policies with time-varying SOW data |
+
+If your policy doesn't need `sow` or `t`, simply ignore them:
+```julia
+get_action(p::MyPolicy, state, ::AbstractSOW, ::TimeStep) = (action=f(state),)
+```
+
+```
+
+### 3.5 Add CLAUDE.md
+
+Create `/CLAUDE.md`:
+
+```markdown
+# Claude Instructions
+
+Before making code changes, read [STYLE.md](STYLE.md) for project conventions.
+
+Key rules:
+- Use `T<:AbstractFloat` instead of `Float64` for numeric fields
+- Keep docstrings minimal (1-2 lines)
+- Interface methods should use `interface_not_implemented()` for fallbacks
+```
+
+---
+
+## Phase 4: Code Cleanup
+
+### 4.1 Fix Vestigial References
+
+**[src/simulation.jl](src/simulation.jl):** Remove/update comment that mentions `run_timestepped` (should be `run_simulation`)
+
+### 4.2 Review for Unused Code
+
+Check and remove:
+
+- Any unused functions
+- Dead code paths
+- Overly complex abstractions
+
+### 4.3 Type Stability Audit
+
+Verify these are acceptable:
+
+- `TraceRecorderBuilder` using `Vector{Any}` (acceptable - converted at finalization)
+- `MetaheuristicsBackend.options::Dict{Symbol,Any}` (acceptable - config, not hot path)
+
+---
+
+## Phase 5: Testing and Verification
+
+### 5.1 Update Tests
+
+- Rename all `params` → `config` in test files
+- Rename `step_output` references → `step_record`
+- Verify tests still pass
+
+### 5.2 Run Full Test Suite
+
+```bash
+julia --project -e 'using Pkg; Pkg.test()'
+```
+
+### 5.3 Run Aqua.jl Checks
+
+```julia
+using Aqua
+Aqua.test_all(SimOptDecisions)
+```
+
+### 5.4 Build Documentation
+
+```bash
+cd docs && quarto render
+```
+
+---
+
+## Phase 6: Visualization (Convention + Interface)
+
+### 6.1 Design Philosophy
+
+Inspired by [Mimi.jl's explore() function](https://www.mimiframework.org/Mimi.jl/stable/howto/howto_2/) but without requiring macros.
+
+**Approach:** Document NamedTuple conventions, provide plot functions that work when conventions are followed.
+
+**Two main use cases:**
+
+1. **Trace visualization** - View state variables and step records over time within a single simulation
+2. **Policy comparison** - Parallel axis plots comparing metrics across different policies
+
+### 6.2 Conventions to Document
+
+**Step records should be NamedTuples with scalar fields:**
+
+```julia
+function run_timestep(state, config, sow, policy, t, rng)
+    damage = compute_damage(...)
+    new_state = MyState(...)
+    step_record = (damage=damage, cost=cost, npv=discounted_cost)  # NamedTuple
+    return (new_state, step_record)
+end
+```
+
+**States should implement `to_scalars`:**
+
+```julia
+to_scalars(s::MyState) = (elevation=s.elevation, cumulative_damage=s.cumulative_damage)
+```
+
+**SOWs can optionally implement `to_scalars` for sensitivity plots:**
+
+```julia
+to_scalars(sow::MySOW) = (temperature=sow.temperature_trend, storm_rate=sow.storm_rate)
+```
+
+### 6.3 New Plot Functions
+
+**`plot_trace(result; fields=:all)`**
+
+Plot time series from a simulation trace.
+
+```julia
+# result contains states and step_records over time
+fig, axes = plot_trace(result)
+fig, axes = plot_trace(result; fields=[:damage, :npv])  # specific fields
+```
+
+Implementation:
+
+- Extract field names from step_record NamedTuple keys
+- Create one subplot per field (or selected fields)
+- X-axis: time (from TimeStep.val)
+- Y-axis: field values
+
+**`plot_parallel(results; objectives, decisions)`**
+
+Parallel axis plot for policy comparison.
+
+```julia
+# results: Vector of (policy_params, metrics) from evaluate_policy or optimization
+fig, ax = plot_parallel(results;
+    objectives=[:expected_cost, :worst_case],  # which metrics to show
+    decisions=[:threshold, :order_quantity],    # which policy params to show
+)
+```
+
+Implementation:
+
+- Each axis represents one dimension (decision parameter or objective)
+- Each line represents one policy configuration
+- Optional: highlight Pareto-optimal solutions
+
+### 6.4 Implementation in Extension
+
+**[ext/SimOptMakieExt.jl](ext/SimOptMakieExt.jl):**
+
+Add to existing extension:
+
+```julia
+# plot_trace implementation
+function SimOptDecisions.plot_trace(result::SimulationTrace; fields=:all, kwargs...)
+    # Extract step_records
+    # Get field names from first record
+    # Create subplots
+end
+
+# plot_parallel implementation
+function SimOptDecisions.plot_parallel(results::Vector; objectives, decisions, kwargs...)
+    # Build parallel coordinates plot
+    # Highlight Pareto front if requested
+end
+```
+
+**[src/plotting.jl](src/plotting.jl):**
+
+Add interface definitions:
+
+```julia
+"""
+    plot_trace(result; fields=:all) -> (Figure, Vector{Axis})
+
+Plot simulation trace over time.
+Requires step_records to be NamedTuples.
+"""
+function plot_trace end
+
+"""
+    plot_parallel(results; objectives, decisions) -> (Figure, Axis)
+
+Parallel axis plot for comparing policies.
+"""
+function plot_parallel end
+```
+
+### 6.5 SimulationTrace Type
+
+May need a new type to bundle trace data:
+
+```julia
+struct SimulationTrace{S, R, T}
+    states::Vector{S}
+    step_records::Vector{R}
+    times::Vector{T}
+end
+
+# run_simulation returns this when recording is enabled
+function run_simulation(...; record=true)
+    # ... simulation loop ...
+    return SimulationTrace(states, step_records, times)
+end
+```
+
+Or extend existing `TraceRecorder` to also capture step_records.
+
+### 6.6 Documentation
+
+Add to docs/index.qmd:
+
+- New "Visualization" section explaining conventions
+- Example showing `to_scalars` implementation
+- Example showing `plot_trace` usage
+- Example showing `plot_parallel` usage
+
+Add example to docs/examples/house_elevation.qmd demonstrating both plot types.
+
+---
+
+## Files Summary
+
+| File | Changes |
+|------|---------|
+| src/types.jl | Rename AbstractFixedParams → AbstractConfig |
+| src/timestepping.jl | Rename params → config, step_output → step_record, add SimulationTrace |
+| src/simulation.jl | Update to default to callbacks, fix comments |
+| src/optimization.jl | Rename params → config |
+| src/validation.jl | Rename params → config |
+| src/recorders.jl | Rename params → config if present |
+| src/utils.jl | Remove run_timesteps, update docstring |
+| src/plotting.jl | Add plot_parallel interface |
+| ext/SimOptMakieExt.jl | Add plot_trace and plot_parallel implementations |
+| docs/index.qmd | Major rewrite of intro, vocabulary, examples, add Visualization section |
+| docs/examples/*.qmd | Rename params → config, add visualization examples |
+| test/*.jl | Rename params → config |
+| test/ext/test_makie_ext.jl | Add tests for new plot functions |
+| CLAUDE.md | New file |
+
+---
+
+## Out of Scope (Deferred)
+
+- Interactive `explore()` browser UI (Mimi-style)
+- VegaLite integration
+- @tracked macros
+- is_first field addition

@@ -1,640 +1,96 @@
-# `SimOptDecisions.jl`
+# SimOptDecisions.jl
 
-A high-performance, type-stable Julia framework for simulation-optimization under deep uncertainty.
+A Julia framework for simulation-optimization under deep uncertainty.
 
-## Conceptual Framework
+## What is SimOptDecisions.jl?
 
-### What is Simulation-Optimization?
+Many real-world decisions must be made under deep uncertainty—we don't know exactly what the future holds, but we need to choose strategies that will perform well across a range of possible futures. SimOptDecisions.jl provides a structured approach for:
 
-Many real-world decisions must be made under deep uncertainty.
-We don't know exactly what the future holds, but we need to choose a strategy (a "policy") that will perform well across a range of possible futures.
-Simulation-optimization provides a framework for finding good policies by:
+1. **Simulating** how policies perform across many possible futures (States of World)
+2. **Aggregating** outcomes into performance metrics
+3. **Optimizing** policy parameters to improve those metrics
 
-1. **Simulating** how a policy performs across many possible futures
-2. **Aggregating** those results into performance metrics
-3. **Optimizing** the policy parameters to improve those metrics
+The core abstraction is simple: `outcome = simulate(config, sow, policy, rng)`.
 
-### The Core Loop
-
-At its heart, this framework evaluates how well a policy performs:
-
-```julia
-simulate(params, sow, policy) → Outcome
-```
-
-Given **fixed parameters** (problem configuration), a **State of the World** (the uncertain future conditions), and a **Policy** (the decision strategy), the simulation produces an **Outcome** describing how well things went.
-
-To evaluate a policy robustly, we don't just test it on one future—we run it across an ensemble of possible futures (SOWs) and aggregate the results into **performance metrics**.
-This aggregation requires making assumptions about how to weight different futures (uniform weights, probability-weighted, etc.), which the user specifies.
-
-### The Optimization Loop
-
-Given a fixed ensemble of SOWs, we search for policy parameters that optimize our objectives:
-
-1. The optimizer proposes candidate policy parameters
-2. We construct a policy from those parameters
-3. We simulate the policy across all SOWs
-4. We aggregate outcomes into performance metrics
-5. We extract the objective values and return them to the optimizer
-6. Repeat until convergence
-
-The framework currently uses Metaheuristics.jl as the optimization backend, supporting both single-objective algorithms (differential evolution, particle swarm, etc.) and multi-objective algorithms (NSGA-II, NSGA-III, SPEA2) for Pareto front exploration.
-
-## Core Vocabulary
-
-**State**
-: System variables that evolve through time as the simulation progresses.
-For example, in a flood risk problem: current house elevation, accumulated flood damages, net present value of costs.
-States are internal to the model and change based on decisions and external conditions.
-
-**State of the World (SOW)**
-: Exogenous uncertainties that are determined before the simulation runs.
-The user provides these—they might be sampled from distributions, loaded from climate model ensembles, or generated via Latin Hypercube sampling.
-Examples include: discount rates, sea level rise trajectories, storm intensity parameters, or economic growth scenarios.
-SOWs represent the "uncertain futures" we want our policy to be robust against.
-
-**Policy**
-: A parameterized function that maps the current state (and exogenous information) to actions or "levers."
-We focus on policies with relatively few parameters—if you have hundreds of parameters, heuristic optimization algorithms will struggle.
-Examples: "elevate the house in year X to height Y" or "invest fraction Z of budget when reserves drop below threshold W."
-
-**Outcome**
-: The result of simulating one (SOW, Policy) pair through the model.
-Typically a set of scalar values like total cost, reliability, or environmental impact.
-Outcomes are noisy because they depend on stochastic elements in the simulation.
-
-**Performance Metrics**
-: Aggregated outcomes across an ensemble of SOWs.
-If you have J outcome metrics and K SOWs, you get a J x K matrix of results.
-Performance metrics reduce this to summary statistics (expected cost, 95th percentile damage, probability of failure, etc.).
-The aggregation method is user-specified.
-
-**Objectives**
-: Which performance metrics to optimize, and in which direction.
-For example: minimize expected cost, maximize reliability, minimize worst-case regret.
-Multi-objective optimization is supported for exploring trade-offs.
-
----
-
-## For Users
-
-This section is for people who want to use this framework to build simulation-optimization models.
-
-### Quick Start Example
-
-A minimal working example demonstrating the core interface:
+## Quick Start
 
 ```julia
 using SimOptDecisions
 using Random
-using Metaheuristics  # Required for optimization
-using Statistics: mean  # For metric calculator
 
-# 1. Define your state (parameterized for type flexibility)
-struct CounterState{T<:AbstractFloat} <: AbstractState
-    value::T
-    cumulative::T
+# 1. Define your types
+struct MyConfig <: AbstractConfig
+    horizon::Int
 end
 
-# 2. Define your fixed params (problem configuration)
-struct RandomWalkParams <: AbstractFixedParams end
-
-# 3. Define your policy (parameterized) with optimization interface
-struct DriftPolicy{T<:AbstractFloat} <: AbstractPolicy
-    drift::T
+struct MySOW <: AbstractSOW
+    growth_rate::Float64
 end
 
-# Policy interface for optimization
-SimOptDecisions.params(p::DriftPolicy) = [p.drift]
-SimOptDecisions.param_bounds(::Type{<:DriftPolicy}) = [(-1.0, 1.0)]
-DriftPolicy(x::AbstractVector{T}) where T<:AbstractFloat = DriftPolicy(x[1])
-
-# 4. Define your SOW (States of the World)
-struct NoiseSOW{T<:AbstractFloat} <: AbstractSOW
-    scale::T
+struct MyPolicy <: AbstractPolicy
+    invest_fraction::Float64
 end
 
-# 5. Implement time-stepping interface (for time-stepped simulations)
-function SimOptDecisions.TimeStepping.initialize(::RandomWalkParams, sow::NoiseSOW{T}, rng) where T
-    CounterState(zero(T), zero(T))
-end
-
-function SimOptDecisions.TimeStepping.step(state::CounterState{T}, params, sow::NoiseSOW{T},
-                                           policy::DriftPolicy, t::TimeStep, rng) where T
-    noise = randn(rng) * sow.scale
-    new_value = state.value + policy.drift + noise
-    CounterState(new_value, state.cumulative + abs(new_value))
-end
-
-SimOptDecisions.TimeStepping.time_axis(::RandomWalkParams, sow::NoiseSOW) = 1:100
-
-function SimOptDecisions.TimeStepping.aggregate_outcome(state::CounterState, ::RandomWalkParams)
-    (final_value = state.value, total_movement = state.cumulative)
-end
-
-# 6. Connect to main simulate interface
-function SimOptDecisions.simulate(params::RandomWalkParams, sow::NoiseSOW, policy::DriftPolicy, rng)
-    SimOptDecisions.TimeStepping.run_timestepped(params, sow, policy, rng)
-end
-
-# 7. Run a simulation
-params = RandomWalkParams()
-sow = NoiseSOW(0.1)
-policy = DriftPolicy(0.05)
-
-result = simulate(params, sow, policy)  # uses default rng
-# result.final_value ≈ 5.0, result.total_movement ≈ 250.0
-
-# 8. Run optimization
-prob = OptimizationProblem(
-    params,
-    [NoiseSOW(0.1), NoiseSOW(0.2), NoiseSOW(0.5)],  # Multiple SOWs
-    DriftPolicy,  # Policy type (not a builder function!)
-    outcomes -> (mean_final = mean(o.final_value for o in outcomes),),  # Metric calculator
-    [minimize(:mean_final)],  # Objectives
+# 2. Implement TimeStepping callbacks (simulate() auto-calls these)
+function SimOptDecisions.TimeStepping.run_timestep(
+    state::Float64, config::MyConfig, sow::MySOW,
+    policy::MyPolicy, t::TimeStep, rng::AbstractRNG
 )
-
-# Note: Both SimOptDecisions and Metaheuristics export `optimize`.
-# Use the fully qualified name to avoid ambiguity:
-result = SimOptDecisions.optimize(prob, MetaheuristicsBackend())
-best = result.best_policy  # DriftPolicy with optimal parameters
-```
-
-**Why parameterize with `T<:AbstractFloat`?** This enables:
-
-- `Float32` for GPU computing (half the memory, faster on consumer GPUs)
-- `Float64` for standard CPU work (default)
-- `BigFloat` for high-precision applications
-
-Julia infers `T` from the inputs, so users just write `CounterState(0.0, 0.0)` and get `CounterState{Float64}`.
-
-### Defining Your Types
-
-#### The Abstract Hierarchy
-
-```julia
-abstract type AbstractState end
-abstract type AbstractPolicy end
-abstract type AbstractFixedParams end
-abstract type AbstractSOW end
-abstract type AbstractRecorder end
-```
-
-We keep abstract types simple and unparameterized.
-Julia's multiple dispatch catches type mismatches via `MethodError` at runtime.
-
-#### States of the World (SOWs)
-
-All SOWs must subtype `AbstractSOW`. Define your own to represent uncertain futures:
-
-```julia
-struct ClimateSOW{T<:AbstractFloat} <: AbstractSOW
-    sea_level_rise::T
-    storm_intensity::T
-    temperature_trajectory::Vector{T}
+    growth = state * sow.growth_rate * policy.invest_fraction
+    return (state + growth, growth)  # (new_state, step_record)
 end
 
-# Optional: implement to_scalars for plotting/tables integration
-function to_scalars(s::ClimateSOW)
-    (; slr=s.sea_level_rise, storm=s.storm_intensity,
-       temp_mean=mean(s.temperature_trajectory))
-end
-```
+SimOptDecisions.TimeStepping.time_axis(config::MyConfig, sow::MySOW) = 1:config.horizon
+SimOptDecisions.TimeStepping.initialize(::MyConfig, ::MySOW, ::AbstractRNG) = 100.0
 
-**SOW Homogeneity Requirement:** All SOWs in a problem must be the same concrete type. This is enforced at construction time for performance reasons.
-
-```julia
-# VALID
-sows = [ClimateSOW(0.1, 1.0, temps1), ClimateSOW(0.2, 1.5, temps2)]
-
-# INVALID - rejected at construction (mixed types)
-sows = AbstractSOW[ClimateSOW(...), OtherSOW(...)]
-```
-
-#### Required Methods
-
-You must implement the core simulation function:
-
-**`SimOptDecisions.simulate(params, sow, policy, rng) -> outcome`**
-   The main simulation entry point. Returns whatever outcome type you define.
-
-For **time-stepped simulations**, you can use the `TimeStepping` helper by implementing these in the `SimOptDecisions.TimeStepping` module:
-
-1. **`initialize(params, sow, rng) -> state`**
-   Create the initial state for a simulation.
-
-2. **`step(state, params, sow, policy, t::TimeStep, rng) -> new_state`**
-   The core simulation step. Takes current state, returns new state.
-   This is a pure function (no mutation) for easier debugging and parallel safety.
-
-3. **`time_axis(params, sow) -> iterable`**
-   Returns the time points for simulation. Examples: `1:100`, `Date(2020):Year(1):Date(2050)`.
-
-4. **`aggregate_outcome(state, params) -> outcome`** (Optional)
-   Extracts final metrics from the terminal state. Default returns state unchanged.
-
-5. **`is_terminal(state, params, t) -> Bool`** (Optional)
-   For early termination. Default is `false`.
-
-Then connect to the main interface:
-
-```julia
-function SimOptDecisions.simulate(params::MyParams, sow::MySOW, policy::MyPolicy, rng)
-    SimOptDecisions.TimeStepping.run_timestepped(params, sow, policy, rng)
-end
-```
-
-For **non-time-stepped simulations** (analytical solutions, external simulators, optimization-based models), implement `simulate` directly without using `TimeStepping`.
-
-#### Policy Interface for Optimization
-
-If you want to optimize your policy, implement:
-
-```julia
-struct MyPolicy{T<:AbstractFloat} <: AbstractPolicy
-    threshold::T
-    risk_aversion::T
+function SimOptDecisions.TimeStepping.finalize(final_state, outputs, config::MyConfig, sow::MySOW)
+    return (final_value=final_state, total_growth=sum(outputs))
 end
 
-# Extract parameters as vector
-SimOptDecisions.params(p::MyPolicy) = [p.threshold, p.risk_aversion]
+# 3. Run simulation (RNG required for reproducibility)
+config = MyConfig(10)
+sow = MySOW(0.05)
+policy = MyPolicy(0.5)
+rng = Random.Xoshiro(42)
 
-# Define bounds for each parameter
-SimOptDecisions.param_bounds(::Type{<:MyPolicy}) = [(0.0, 1.0), (0.0, 10.0)]
-
-# Constructor from vector (optimizer calls this)
-MyPolicy(x::AbstractVector{T}) where T<:AbstractFloat = MyPolicy(x[1], x[2])
+result = simulate(config, sow, policy, rng)
+# result.final_value ≈ 128, result.total_growth ≈ 28
 ```
 
-### Running Simulations
+## Documentation
 
-#### Basic Usage
+See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions.jl/) for:
 
-```julia
-result = simulate(params, sow, policy)
-```
+- Detailed API reference
+- The TimeStepping interface for time-stepped simulations
+- Optimization with multi-objective support
+- The house elevation example demonstrating flood risk decision-making
 
-#### With Recording (for debugging/visualization)
-
-```julia
-builder = TraceRecorderBuilder()
-result = simulate(params, sow, policy, builder)
-recorder = finalize(builder)
-
-# Works with Tables.jl ecosystem
-using DataFrames; df = DataFrame(recorder)
-using CSV; CSV.write("trajectory.csv", recorder)
-```
-
-#### Recorder Options
-
-| Recorder | Use Case | Performance |
-|----------|----------|-------------|
-| `NoRecorder` | Production/Optimization | Zero overhead |
-| `TraceRecorderBuilder` | Debugging/REPL | Flexible but slower |
-| `TraceRecorder{S,T}(n)` | Batch analysis | Pre-allocated, fast |
-
-#### Time Handling
-
-The `step` function receives a `TimeStep` struct:
-
-```julia
-struct TimeStep{V}
-    t::Int       # 1-based index
-    val::V       # Actual time value (Int, Float64, Date, etc.)
-    is_last::Bool
-end
-```
-
-**Important:** `time_axis` must return a homogeneously-typed collection for performance:
-
-```julia
-# GOOD
-time_axis(params, sow) = 1:100
-time_axis(params, sow) = Date(2020):Year(1):Date(2050)
-
-# BAD - causes dynamic dispatch
-time_axis(params, sow) = Any[1, 2.0, Date(2020)]
-```
-
-### Running Optimization
-
-#### Setting Up the Problem
-
-```julia
-prob = OptimizationProblem(
-    params,                   # Your AbstractFixedParams
-    sows,                     # Vector of SOWs to train on
-    PolicyType,               # The TYPE of your policy (not an instance)
-    metric_calculator,        # Function: Vector{Outcomes} -> NamedTuple
-    objectives,               # Vector of Objective
-)
-```
-
-#### Defining Objectives
-
-```julia
-# Convenience constructors
-minimize(:expected_cost)
-maximize(:reliability)
-
-# Or explicitly
-Objective(:worst_case_damage, Minimize)
-```
-
-#### Running the Optimizer
-
-```julia
-using Metaheuristics  # Loads the extension
-
-result = optimize(prob, MetaheuristicsBackend(
-    algorithm = :ECA,        # or :DE, :PSO, :NSGA2, :NSGA3, etc.
-    max_iterations = 1000,
-    population_size = 100,
-    parallel = true,
-))
-
-# Access results
-result.best_policy          # Constructed policy with optimal parameters
-result.best_params          # Raw parameter vector
-result.best_objectives      # Objective values at optimum
-```
-
-#### Multi-Objective Optimization
-
-For Pareto front exploration:
-
-```julia
-prob = OptimizationProblem(
-    params, sows, PolicyType, calculator,
-    [minimize(:cost), maximize(:reliability)],
-)
-
-result = optimize(prob, MetaheuristicsBackend(algorithm = :NSGA2))
-
-# Access Pareto front
-for (params, objectives) in pareto_front(result)
-    println("Params: $params => $objectives")
-end
-```
-
-### Reproducibility
-
-#### Shared Parameters
-
-For parameters constant across all SOWs (not optimized):
-
-```julia
-struct SharedParameters{T<:NamedTuple}
-    params::T
-end
-
-shared = SharedParameters((
-    discount_rate = 0.03,
-    planning_horizon = 50,
-))
-
-# Access via params
-struct MyParams <: AbstractFixedParams
-    shared::SharedParameters
-end
-
-function SimOptDecisions.TimeStepping.step(state, params::MyParams, sow, policy, t, rng)
-    discount = params.shared.params.discount_rate
-    # ...
-end
-```
-
-#### Checkpointing
-
-```julia
-# Save state for crash recovery
-save_checkpoint("run_001.jld2", prob, optimizer_state; metadata = "halfway done")
-
-# Resume later
-checkpoint = load_checkpoint("run_001.jld2")
-```
-
-#### Experiment Configuration
-
-```julia
-config = ExperimentConfig(
-    seed = 42,
-    sows = my_sows,
-    shared = SharedParameters(...),
-    backend = MetaheuristicsBackend(...),
-    sow_source = "Latin Hypercube, n=1000",
-)
-```
-
-## For Developers
-
-This section is for people who want to contribute to or extend the framework itself. See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed implementation code and struct definitions.
-
-### File Structure
-
-```text
-SimOptDecisions.jl/
-├── src/
-│   ├── SimOptDecisions.jl    # Main module, exports
-│   ├── types.jl              # Abstract types, TimeStep, Objective
-│   ├── timestepping.jl       # TimeStepping submodule (helper for time-stepped sims)
-│   ├── simulation.jl         # simulate interface
-│   ├── recorders.jl          # NoRecorder, TraceRecorder, Tables.jl
-│   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
-│   ├── validation.jl         # _validate_* functions, constraints
-│   └── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
-├── ext/
-│   ├── SimOptMetaheuristicsExt.jl
-│   └── SimOptMakieExt.jl
-├── test/
-│   ├── runtests.jl
-│   └── ext/                  # Extension tests (optional)
-├── Project.toml
-└── README.md
-```
-
-### Development Guidelines
-
-#### Code Style
-
-- **Variables:** `snake_case`
-- **Constants:** `UPPERCASE`
-- **Types/Structs:** `TitleCase`
-- **Unicode:** Use appropriately (e.g., `α`, `β` for parameters, `Δ` for differences)
-- **Naming:** Prefer descriptive names over concise but confusing ones. `sea_level_rise` beats `slr`.
-- **Formatting:** Use [BlueStyle](https://github.com/invenia/BlueStyle) via JuliaFormatter
-
-#### Docstrings
-
-Keep docstrings minimal. Add them only where the function signature isn't self-explanatory. Public API functions should have brief docstrings; internal helpers usually don't need them.
-
-#### Error Handling
-
-Fail fast with clear error messages. Throw errors early at validation time rather than letting bad inputs propagate. The `_validate_*` functions catch configuration errors before expensive optimization runs.
-
-#### Testing Philosophy
-
-Be sparing with unit tests—test only the most important things. We don't need comprehensive coverage of every edge case.
-
-- Rely heavily on the `validate_*` functions to catch user errors
-- Create a simple MWE problem (e.g., biased coin flipping) that exercises the full pipeline
-- Run a few optimizer iterations to verify everything connects correctly
-- This integration test catches most wiring issues without exhaustive unit tests
-- Use `Aqua.jl` to catch type instabilities and ambiguities automatically
-
-#### Dependencies
-
-**Never edit `Project.toml` by hand.** Always use Julia's package manager:
-
-```julia
-pkg> add SomePackage           # Regular dependency
-pkg> add SomePackage --weak    # Weak dependency (for extensions)
-```
-
-### Setting Up the Dev Environment
-
-Clone the repo and set up a development environment:
-
-```bash
-cd SimOptDecisions
-julia --project=.
-```
+## Installation
 
 ```julia
 using Pkg
-Pkg.instantiate()  # Install core dependencies from Project.toml
+Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
 ```
 
-**Understanding the Project.toml sections:**
+## Key Features
 
-- **`[deps]`**: Core runtime dependencies (JLD2, Tables, etc.) - installed by `Pkg.instantiate()`
-- **`[weakdeps]`**: Optional dependencies that trigger extensions (Metaheuristics, CairoMakie) - NOT installed automatically
-- **`[extras]`**: Test dependencies (Aqua, Test) - installed when running `Pkg.test()`
+- **Type-stable simulation** — Zero-allocation hot loops with `NoRecorder`
+- **Flexible time axes** — Works with integers, floats, or `Date` ranges
+- **Structured TimeStepping** — Clean interface with `initialize`, `run_timestep`, `time_axis`, `finalize`
+- **Optional recording** — Trace simulation history for debugging
+- **Extensible optimization** — Plug in Metaheuristics.jl or custom backends
+- **Multi-objective support** — Pareto frontier extraction
 
-**To develop/test extensions**, add the weak deps to your local project environment:
+## Development
+
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for implementation details and development guidelines.
 
 ```julia
-# Weak deps - needed to trigger and test extensions
-Pkg.add(["Metaheuristics", "CairoMakie"])
-```
+# Development setup
+julia --project=.
+using Pkg; Pkg.instantiate()
 
-This modifies your local `Manifest.toml` (which is gitignored) but not `Project.toml`.
-
-**Personal dev tools** like Revise and JuliaFormatter should go in your **global** Julia environment, not the project. This keeps the project's `Project.toml` clean. Add them *before* activating the project:
-
-```bash
-# From any directory, add to your global environment
-julia -e 'using Pkg; Pkg.add(["Revise", "JuliaFormatter"])'
-```
-
-Or if you're already in the project REPL, switch to the global environment temporarily:
-
-```julia
-# Switch to global environment, add tools, switch back
-pkg> activate @v1.11    # or whatever your Julia version is
-pkg> add Revise JuliaFormatter
-pkg> activate .         # back to project
-```
-
-Tools in your global environment are always available, even when working in project-specific environments.
-
-**Development workflow:**
-
-```julia
-using Revise
-using SimOptDecisions
-using Metaheuristics  # This triggers the extension to load
-
-# Now changes to src/ or ext/ will hot-reload
-```
-
-**Running tests:**
-
-```julia
-Pkg.test()                           # Core tests only
-ENV["TEST_EXTENSIONS"] = "true"
-Pkg.test()                           # Includes extension tests
-```
-
-### Package Architecture
-
-#### The Hub-and-Spoke Model
-
-The ecosystem uses weak dependencies (package extensions) to keep the core lightweight:
-
-1. **SimOptDecisions.jl (The Hub)**
-   - Defines `AbstractFixedParams`, `AbstractPolicy`, `simulate`
-   - Provides `TimeStepping` submodule for time-stepped simulations
-   - Defines `OptimizationProblem` and `AbstractOptimizationBackend`
-   - Defines backend structs (`MetaheuristicsBackend`, etc.) so users can construct them directly
-   - Provides `save_checkpoint`, `load_checkpoint` for persistence
-   - **Dependencies:** `Random`, `Dates`, `JLD2`, `Tables`
-   - **Weak Dependencies:** `Metaheuristics`, `CairoMakie`, `GLMakie`
-
-2. **Extensions (The Spokes)**
-   - `SimOptMetaheuristicsExt`: Implements `optimize_backend` for `MetaheuristicsBackend`
-   - `SimOptMakieExt`: Implements `plot_trace`, `plot_pareto`
-
-3. **Domain Packages**
-   - User-implemented models (e.g., `HouseElevation.jl`)
-
-#### Design Philosophy
-
-- **Flexible Simulation:** Users implement `simulate` directly - time-stepping is optional via `TimeStepping` helper.
-- **Functional Core:** Pure `step` function (State to State) instead of mutation. Easier parallel debugging, no race conditions.
-- **Policy-Owned Parameters:** Each policy type defines its own parameters, bounds, and construction.
-- **Composability:** Inputs typed as `AbstractVector` allow memory-mapped arrays or distributed data.
-
-### Extensions
-
-#### Metaheuristics Extension
-
-**Trigger:** `using Metaheuristics`
-
-Implements optimization via Metaheuristics.jl algorithms:
-
-- Single-objective: `:DE`, `:ECA`, `:PSO`, `:ABC`, `:SA`
-- Multi-objective: `:NSGA2`, `:NSGA3`, `:SPEA2`, `:MOEAD`
-
-**Note on reproducibility:** During optimization, the RNG is seeded deterministically based on the parameter vector hash. This ensures the same parameters always produce the same fitness value, which is important for optimizer convergence. However, it means stochastic variation within each evaluation is fixed for a given parameter set.
-
-#### Makie Extension
-
-**Trigger:** `using CairoMakie` (or `GLMakie`)
-
-- `plot_trace(recorder)` - Plot state trajectories
-- `plot_pareto(optimization_result)` - Plot Pareto fronts
-
-#### Adding a New Backend
-
-1. Define a struct in core: `struct MyBackend <: AbstractOptimizationBackend ... end`
-2. Create extension in `ext/SimOptMyBackendExt.jl`
-3. Implement `SimOptDecisions.optimize_backend(prob, backend::MyBackend)`
-4. Add to `[weakdeps]` and `[extensions]` in Project.toml
-
-### Test Structure
-
-```text
-test/
-├── runtests.jl           # Main entry point
-├── core/                 # Core tests (no extra deps)
-└── ext/                  # Extension tests (require Metaheuristics, Makie)
-```
-
-#### Testing Checklist
-
-1. **Allocation Check:** `@test (@allocated simulate(...)) == 0` (for scalar states)
-2. **Inference Check:** `@inferred simulate(...)`
-3. **Extension Check:** `optimize` throws helpful error if Metaheuristics isn't loaded
-4. **Aqua.jl Checks:** `Aqua.test_all(SimOptDecisions)`
-
-#### Formatting
-
-Before committing:
-
-```julia
-using JuliaFormatter
-format("src/", BlueStyle())
-format("test/", BlueStyle())
+# Run tests
+Pkg.test()
 ```

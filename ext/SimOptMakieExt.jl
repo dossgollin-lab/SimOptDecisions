@@ -2,17 +2,16 @@ module SimOptMakieExt
 
 using SimOptDecisions
 
-# Import types and functions we need
 import SimOptDecisions:
     plot_trace,
     plot_pareto,
+    plot_parallel,
     to_scalars,
     TraceRecorder,
+    SimulationTrace,
     OptimizationResult,
     AbstractState
 
-# For Julia extensions, we use the Makie common interface
-# The extension is loaded when either CairoMakie or GLMakie is imported by the user
 using Makie: Figure, Axis, lines!, scatter!, axislegend
 
 # ============================================================================
@@ -20,20 +19,52 @@ using Makie: Figure, Axis, lines!, scatter!, axislegend
 # ============================================================================
 
 """
-    plot_trace(recorder::TraceRecorder; kwargs...) -> (Figure, Vector{Axis})
-
-Plot the simulation trace from a TraceRecorder.
-Creates one subplot per scalar field returned by `to_scalars`.
-
-# Keyword Arguments
-- `figure_kwargs`: NamedTuple of kwargs passed to Figure()
-- `axis_kwargs`: NamedTuple of kwargs passed to each Axis()
-- `line_kwargs`: NamedTuple of kwargs passed to lines!()
-
-# Returns
-- `fig`: Makie Figure object
-- `axes`: Vector of Axis objects, one per scalar field
+Plot simulation trace. Works with SimulationTrace or TraceRecorder.
 """
+function SimOptDecisions.plot_trace(
+    trace::SimulationTrace;
+    fields::Union{Symbol,Vector{Symbol}}=:all,
+    figure_kwargs::NamedTuple=NamedTuple(),
+    axis_kwargs::NamedTuple=NamedTuple(),
+    line_kwargs::NamedTuple=NamedTuple(),
+)
+    times = trace.times
+    step_records = trace.step_records
+
+    if isempty(step_records)
+        error("Cannot plot empty trace")
+    end
+
+    # Get field names from step_records (assumed to be NamedTuples)
+    first_record = step_records[1]
+    if !(first_record isa NamedTuple)
+        error("step_records must be NamedTuples for plotting")
+    end
+
+    all_fields = keys(first_record)
+    plot_fields = fields === :all ? collect(all_fields) : fields
+    n_fields = length(plot_fields)
+
+    fig = Figure(; figure_kwargs...)
+    axes = Axis[]
+
+    for (i, field) in enumerate(plot_fields)
+        ax = Axis(
+            fig[i, 1];
+            xlabel=i == n_fields ? "Time" : "",
+            ylabel=String(field),
+            axis_kwargs...,
+        )
+        push!(axes, ax)
+
+        values = [r[field] for r in step_records]
+        lines!(ax, times, values; line_kwargs...)
+    end
+
+    return (fig, axes)
+end
+
+# Legacy support for TraceRecorder (uses to_scalars on states)
 function SimOptDecisions.plot_trace(
     recorder::TraceRecorder;
     figure_kwargs::NamedTuple=NamedTuple(),
@@ -43,17 +74,15 @@ function SimOptDecisions.plot_trace(
     times = recorder.times
     states = recorder.states
 
-    # Convert states to scalars
     scalars = [to_scalars(s) for s in states]
 
-    # Get field names from first scalar
     if isempty(scalars)
         error("Cannot plot empty trace")
     end
+
     field_names = keys(scalars[1])
     n_fields = length(field_names)
 
-    # Create figure with subplots
     fig = Figure(; figure_kwargs...)
     axes = Axis[]
 
@@ -66,7 +95,6 @@ function SimOptDecisions.plot_trace(
         )
         push!(axes, ax)
 
-        # Extract values for this field
         values = [s[field] for s in scalars]
         lines!(ax, times, values; line_kwargs...)
     end
@@ -78,23 +106,6 @@ end
 # plot_pareto Implementation
 # ============================================================================
 
-"""
-    plot_pareto(result::OptimizationResult; kwargs...) -> (Figure, Axis)
-
-Plot the Pareto front from a multi-objective optimization result.
-For 2-objective problems, creates a 2D scatter plot.
-
-# Keyword Arguments
-- `figure_kwargs`: NamedTuple of kwargs passed to Figure()
-- `axis_kwargs`: NamedTuple of kwargs passed to Axis()
-- `scatter_kwargs`: NamedTuple of kwargs passed to scatter!()
-- `highlight_best`: Bool, whether to highlight the best solution (default: true)
-- `objective_names`: Vector{String} of names for axes (default: ["Objective 1", "Objective 2"])
-
-# Returns
-- `fig`: Makie Figure object
-- `ax`: Axis object
-"""
 function SimOptDecisions.plot_pareto(
     result::OptimizationResult;
     figure_kwargs::NamedTuple=NamedTuple(),
@@ -107,7 +118,7 @@ function SimOptDecisions.plot_pareto(
     n_solutions = length(pareto_objs)
 
     if n_solutions == 0
-        error("No Pareto front data in result. Is this a multi-objective optimization?")
+        error("No Pareto front data. Is this a multi-objective optimization?")
     end
 
     n_objectives = length(pareto_objs[1])
@@ -116,16 +127,13 @@ function SimOptDecisions.plot_pareto(
         error("plot_pareto requires at least 2 objectives, got $n_objectives")
     end
 
-    # Default objective names
     if isempty(objective_names)
         objective_names = ["Objective $i" for i in 1:n_objectives]
     end
 
-    # Extract objective values
     obj1 = [o[1] for o in pareto_objs]
     obj2 = [o[2] for o in pareto_objs]
 
-    # Create figure
     fig = Figure(; figure_kwargs...)
     ax = Axis(
         fig[1, 1];
@@ -135,10 +143,8 @@ function SimOptDecisions.plot_pareto(
         axis_kwargs...,
     )
 
-    # Plot Pareto front
     scatter!(ax, obj1, obj2; label="Pareto solutions", scatter_kwargs...)
 
-    # Highlight best solution if requested
     if highlight_best
         best_obj = result.best_objectives
         scatter!(
@@ -150,10 +156,77 @@ function SimOptDecisions.plot_pareto(
             marker=:star5,
             label="Best",
         )
+        axislegend(ax; position=:rt)
     end
 
-    # Add legend if we have labels
+    return (fig, ax)
+end
+
+# ============================================================================
+# plot_parallel Implementation
+# ============================================================================
+
+"""
+Parallel coordinates plot for comparing policies.
+
+`results` should be a vector of (params, metrics) tuples or an OptimizationResult.
+"""
+function SimOptDecisions.plot_parallel(
+    result::OptimizationResult;
+    objectives::Vector{Symbol}=Symbol[],
+    decisions::Vector{Symbol}=Symbol[],
+    figure_kwargs::NamedTuple=NamedTuple(),
+    axis_kwargs::NamedTuple=NamedTuple(),
+    line_kwargs::NamedTuple=NamedTuple(),
+    highlight_best::Bool=true,
+)
+    pareto_params = result.pareto_params
+    pareto_objs = result.pareto_objectives
+
+    if isempty(pareto_params)
+        error("No Pareto data available for parallel plot")
+    end
+
+    n_params = length(pareto_params[1])
+    n_objs = length(pareto_objs[1])
+
+    # Build axis labels
+    param_labels = isempty(decisions) ? [Symbol("p$i") for i in 1:n_params] : decisions
+    obj_labels = isempty(objectives) ? [Symbol("obj$i") for i in 1:n_objs] : objectives
+
+    all_labels = vcat(param_labels, obj_labels)
+    n_axes = length(all_labels)
+
+    # Normalize data to [0,1] for each axis
+    all_data = [vcat(pareto_params[i], pareto_objs[i]) for i in eachindex(pareto_params)]
+
+    mins = [minimum(d[j] for d in all_data) for j in 1:n_axes]
+    maxs = [maximum(d[j] for d in all_data) for j in 1:n_axes]
+
+    function normalize(data)
+        return [(maxs[j] == mins[j] ? 0.5 : (data[j] - mins[j]) / (maxs[j] - mins[j])) for j in 1:n_axes]
+    end
+
+    fig = Figure(; figure_kwargs...)
+    ax = Axis(
+        fig[1, 1];
+        xticks=(1:n_axes, String.(all_labels)),
+        ylabel="Normalized Value",
+        title="Parallel Coordinates",
+        axis_kwargs...,
+    )
+
+    # Plot each solution as a line
+    for data in all_data
+        norm_data = normalize(data)
+        lines!(ax, 1:n_axes, norm_data; color=(:blue, 0.3), line_kwargs...)
+    end
+
+    # Highlight best
     if highlight_best
+        best_data = vcat(result.best_params, result.best_objectives)
+        norm_best = normalize(best_data)
+        lines!(ax, 1:n_axes, norm_best; color=:red, linewidth=2, label="Best")
         axislegend(ax; position=:rt)
     end
 

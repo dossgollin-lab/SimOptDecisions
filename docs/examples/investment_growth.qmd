@@ -1,0 +1,238 @@
+---
+title: "Investment Growth Model"
+subtitle: "A minimal working example"
+author: "Doss-Gollin Lab @ Rice CEVE"
+engine: julia
+execute:
+  exeflags: ["+1.12", "--threads=auto"]
+  freeze: false
+  cache: false
+---
+
+## Overview
+
+This minimal example demonstrates the core concepts of `SimOptDecisions.jl` using a simple investment growth model.
+You have an initial portfolio and must decide what fraction to invest each year.
+The uncertain quantity is the annual growth rate.
+
+## Setup
+
+```{julia}
+#| output: false
+using Pkg: Pkg
+Pkg.activate(dirname(dirname(@__FILE__)))
+```
+
+```{julia}
+#| output: false
+using Revise
+using SimOptDecisions
+using Random
+using Statistics: mean
+```
+
+## Defining the Problem
+
+### Fixed Parameters
+
+Parameters shared across all scenarios:
+
+```{julia}
+#| output: false
+struct InvestmentParams <: AbstractConfig
+    horizon::Int          # years to simulate
+    initial_value::Float64  # starting portfolio value
+end
+```
+
+### State of the World (SOW)
+
+The uncertain quantity is the annual growth rate.
+We use parametric types for type stability:
+
+```{julia}
+#| output: false
+struct InvestmentSOW{T<:AbstractFloat} <: AbstractSOW
+    growth_rate::T  # annual growth rate (e.g., 0.05 = 5%)
+end
+```
+
+### Policy
+
+The policy determines what fraction of the portfolio to invest (vs. keep in cash):
+
+```{julia}
+#| output: false
+struct InvestmentPolicy{T<:AbstractFloat} <: AbstractPolicy
+    invest_fraction::T  # fraction to invest (0 to 1)
+end
+
+# For optimization
+InvestmentPolicy(params::AbstractVector) = InvestmentPolicy(params[1])
+SimOptDecisions.params(p::InvestmentPolicy) = [p.invest_fraction]
+SimOptDecisions.param_bounds(::Type{<:InvestmentPolicy}) = [(0.0, 1.0)]
+
+# Action: return the investment fraction
+function SimOptDecisions.get_action(
+    policy::InvestmentPolicy, state, sow::InvestmentSOW, t::TimeStep
+)
+    return (invest_fraction=policy.invest_fraction,)
+end
+```
+
+## Implementing the Simulation
+
+We use the `TimeStepping` interface with four callbacks:
+
+```{julia}
+#| output: false
+# State tracks current portfolio value
+struct PortfolioState{T<:AbstractFloat} <: AbstractState
+    value::T
+end
+
+# Initialize: start with initial portfolio value
+function SimOptDecisions.TimeStepping.initialize(
+    params::InvestmentParams, ::InvestmentSOW, ::AbstractRNG
+)
+    return PortfolioState(params.initial_value)
+end
+
+# Time axis: years 1 to horizon
+function SimOptDecisions.TimeStepping.time_axis(params::InvestmentParams, ::InvestmentSOW)
+    return 1:params.horizon
+end
+
+# Run one timestep: compute growth based on rate and investment fraction
+function SimOptDecisions.TimeStepping.run_timestep(
+    state::PortfolioState,
+    params::InvestmentParams,
+    sow::InvestmentSOW,
+    policy::InvestmentPolicy,
+    t::TimeStep,
+    rng::AbstractRNG,
+)
+    action = get_action(policy, state, sow, t)
+
+    # Portfolio growth: only invested fraction earns the growth rate
+    invested = state.value * action.invest_fraction
+    cash = state.value * (1 - action.invest_fraction)
+    growth = invested * sow.growth_rate
+
+    new_value = invested + growth + cash
+    new_state = PortfolioState(new_value)
+
+    # Step output: record the growth this year
+    return (new_state, (value=new_value, growth=growth))
+end
+
+# Finalize: return final value and total growth
+function SimOptDecisions.TimeStepping.finalize(
+    final_state::PortfolioState,
+    step_records::Vector,
+    params::InvestmentParams,
+    sow::InvestmentSOW,
+)
+    total_growth = sum(o.growth for o in step_records)
+    return (
+        final_value=final_state.value,
+        total_growth=total_growth,
+        annual_values=[o.value for o in step_records],
+    )
+end
+
+# Connect to main simulate interface
+function SimOptDecisions.simulate(
+    params::InvestmentParams,
+    sow::InvestmentSOW,
+    policy::InvestmentPolicy,
+    rng::AbstractRNG,
+)
+    SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
+end
+```
+
+## Running Simulations
+
+### Single Simulation
+
+```{julia}
+params = InvestmentParams(10, 100.0)  # 10 years, $100 initial
+sow = InvestmentSOW(0.05)              # 5% growth rate
+policy = InvestmentPolicy(0.8)         # invest 80%
+
+result = simulate(params, sow, policy)
+println("Final value: \$$(round(result.final_value, digits=2))")
+println("Total growth: \$$(round(result.total_growth, digits=2))")
+```
+
+### Multiple SOWs
+
+To evaluate policy robustness, simulate across many possible growth rates:
+
+```{julia}
+#| output: false
+# Sample SOWs with varying growth rates
+rng = Random.Xoshiro(42)
+sows = [InvestmentSOW(0.03 + 0.04 * rand(rng)) for _ in 1:500]  # rates from 3% to 7%
+```
+
+```{julia}
+# Run simulations across all SOWs
+outcomes = [simulate(params, sow, policy) for sow in sows]
+final_values = [o.final_value for o in outcomes]
+
+println("Expected final value: \$$(round(mean(final_values), digits=2))")
+println("Min: \$$(round(minimum(final_values), digits=2))")
+println("Max: \$$(round(maximum(final_values), digits=2))")
+```
+
+## Optimization
+
+For optimization, define a metric calculator that aggregates outcomes:
+
+```{julia}
+#| output: false
+function calculate_metrics(outcomes)
+    final_values = [o.final_value for o in outcomes]
+    return (
+        expected_value=mean(final_values),
+        worst_case=minimum(final_values),
+    )
+end
+```
+
+Set up and run optimization:
+
+```{julia}
+#| output: false
+using Metaheuristics: Metaheuristics
+
+prob = OptimizationProblem(
+    params,
+    sows,
+    InvestmentPolicy,
+    calculate_metrics,
+    [maximize(:expected_value)],
+)
+
+backend = MetaheuristicsBackend(; algorithm=:ECA, max_iterations=100, population_size=30)
+```
+
+```{julia}
+opt_result = SimOptDecisions.optimize(prob, backend)
+
+println("Optimal invest fraction: $(round(opt_result.best_policy.invest_fraction, digits=3))")
+println("Expected value: \$$(round(-opt_result.best_objectives[1], digits=2))")
+```
+
+## Key Takeaways
+
+This example demonstrated:
+
+1. **Type definitions**: `AbstractConfig`, `AbstractSOW`, `AbstractPolicy` with parametric types
+2. **TimeStepping interface**: `initialize`, `run_timestep`, `time_axis`, `finalize`
+3. **Simulation**: Running single and multi-SOW simulations
+4. **Optimization**: Using `metric_calculator(outcomes)` to aggregate results
+
+For a more complex example with multi-objective optimization, see the [House Elevation Example](house_elevation.qmd).

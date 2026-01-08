@@ -11,6 +11,7 @@ include("types.jl")
 include("recorders.jl")
 include("validation.jl")
 include("utils.jl")
+include("timestepping.jl")
 include("simulation.jl")
 include("optimization.jl")
 include("persistence.jl")
@@ -21,19 +22,26 @@ include("plotting.jl")
 # ============================================================================
 
 # Abstract types (users subtype these)
-export AbstractState, AbstractPolicy, AbstractFixedParams, AbstractSOW, AbstractRecorder
+export AbstractState, AbstractPolicy, AbstractConfig, AbstractSOW, AbstractRecorder
 
 # TimeStep struct
 export TimeStep
 
 # Core simulation
-export simulate
+export simulate, get_action
 
 # Utils helper submodule
 export Utils
 
-# Recorders
-export NoRecorder, TraceRecorderBuilder, TraceRecorder, record!, finalize
+# TimeStepping submodule
+export TimeStepping
+
+# TimeSeriesParameter (from TimeStepping module)
+using .TimeStepping: TimeSeriesParameter, TimeSeriesParameterBoundsError
+export TimeSeriesParameter, TimeSeriesParameterBoundsError
+
+# Recorders and traces
+export NoRecorder, TraceRecorderBuilder, TraceRecorder, SimulationTrace, record!, finalize
 
 # ---------- Phase 2 Exports ----------
 
@@ -68,6 +76,6 @@ export save_experiment, load_experiment
 # ---------- Phase 3 Exports ----------
 
 # Plotting (requires Makie extension)
-export to_scalars, plot_trace, plot_pareto
+export to_scalars, plot_trace, plot_pareto, plot_parallel
 
 end # module SimOptDecisions

@@ -3,22 +3,120 @@
         # Define minimal concrete types for testing
         struct TestState <: AbstractState end
         struct TestPolicy <: AbstractPolicy end
-        struct TestParams <: AbstractFixedParams end
+        struct TestConfig <: AbstractConfig end
         struct TestSOW <: AbstractSOW end
 
-        params = TestParams()
+        config = TestConfig()
         sow = TestSOW()
         policy = TestPolicy()
         rng = Random.Xoshiro(42)
 
-        # simulate should throw helpful error if not implemented
-        @test_throws ErrorException simulate(params, sow, policy, rng)
+        # simulate calls TimeStepping.run_simulation by default,
+        # which throws MethodError if callbacks aren't implemented
+        @test_throws MethodError simulate(config, sow, policy, rng)
+
+        # get_action should throw helpful error if not implemented
+        ts = TimeStep(1, 1, false)
+        @test_throws ArgumentError get_action(policy, TestState(), sow, ts)
+    end
+
+    @testset "get_action interface" begin
+        @testset "custom get_action (state-dependent)" begin
+            struct InventoryPolicy <: AbstractPolicy
+                reorder_point::Float64
+                order_size::Float64
+            end
+
+            struct InventoryState <: AbstractState
+                level::Float64
+            end
+
+            struct DemandSOW <: AbstractSOW
+                demand::Float64
+            end
+
+            # Custom action computation
+            function SimOptDecisions.get_action(
+                policy::InventoryPolicy,
+                state::InventoryState,
+                sow::DemandSOW,
+                t::TimeStep,
+            )
+                if state.level < policy.reorder_point
+                    return (order=policy.order_size,)
+                else
+                    return (order=0.0,)
+                end
+            end
+
+            policy = InventoryPolicy(10.0, 50.0)
+            sow = DemandSOW(5.0)
+            ts = TimeStep(1, 1, false)
+
+            # Low inventory -> order
+            low_state = InventoryState(5.0)
+            action_low = get_action(policy, low_state, sow, ts)
+            @test action_low.order == 50.0
+
+            # High inventory -> no order
+            high_state = InventoryState(15.0)
+            action_high = get_action(policy, high_state, sow, ts)
+            @test action_high.order == 0.0
+        end
+
+        @testset "get_action with nothing state" begin
+            struct StatelessPolicy <: AbstractPolicy
+                multiplier::Float64
+            end
+
+            struct InfoSOW <: AbstractSOW
+                base_value::Float64
+            end
+
+            function SimOptDecisions.get_action(
+                policy::StatelessPolicy,
+                state::Nothing,
+                sow::InfoSOW,
+                t::TimeStep,
+            )
+                return (action_value=sow.base_value * policy.multiplier * t.t,)
+            end
+
+            policy = StatelessPolicy(2.0)
+            sow = InfoSOW(10.0)
+            ts = TimeStep(3, 3, false)
+
+            action = get_action(policy, nothing, sow, ts)
+            @test action.action_value == 60.0  # 10 * 2 * 3
+        end
+
+        @testset "get_action for static policy" begin
+            struct StaticElevationPolicy <: AbstractPolicy
+                elevation_ft::Float64
+            end
+
+            struct FloodSOW <: AbstractSOW end
+
+            # Static policy: action is just the policy parameter
+            function SimOptDecisions.get_action(
+                policy::StaticElevationPolicy, state, sow::FloodSOW, t::TimeStep
+            )
+                return (elevation=policy.elevation_ft,)
+            end
+
+            policy = StaticElevationPolicy(8.0)
+            sow = FloodSOW()
+            ts = TimeStep(1, 1, false)
+
+            action = get_action(policy, nothing, sow, ts)
+            @test action.elevation == 8.0
+        end
     end
 
     @testset "Direct simulate (non-time-stepped)" begin
         # Test analytical/direct computation without time-stepping
 
-        struct AnalyticalParams <: AbstractFixedParams
+        struct AnalyticalParams <: AbstractConfig
             multiplier::Float64
         end
 
@@ -43,7 +141,7 @@
         sow = AnalyticalSOW(3.0)
         policy = AnalyticalPolicy(4.0)
 
-        result = simulate(params, sow, policy)
+        result = simulate(params, sow, policy, Random.Xoshiro(42))
         @test result.result == 24.0  # 2.0 * 3.0 * 4.0
     end
 
@@ -58,7 +156,7 @@
             increment::Int
         end
 
-        struct CounterParams <: AbstractFixedParams
+        struct CounterParams <: AbstractConfig
             n_steps::Int
         end
 
@@ -102,12 +200,12 @@
         sow = EmptySOW()
         policy = IncrementPolicy(5)
 
-        result = simulate(params, sow, policy)
+        result = simulate(params, sow, policy, Random.Xoshiro(42))
         @test result.final_value == 50  # 10 steps * 5 increment
 
         # With recorder
         builder = TraceRecorderBuilder()
-        result2 = simulate(params, sow, policy, builder)
+        result2 = simulate(params, sow, policy, builder, Random.Xoshiro(42))
         recorder = finalize(builder)
 
         @test result2.final_value == 50
@@ -117,7 +215,7 @@
 
         # With explicit RNG
         rng = Random.Xoshiro(42)
-        result3 = simulate(params, sow, policy; rng=rng)
+        result3 = simulate(params, sow, policy, rng)
         @test result3.final_value == 50
     end
 
@@ -130,7 +228,7 @@
             increment::Float64
         end
 
-        struct TSCounterParams <: AbstractFixedParams end
+        struct TSCounterParams <: AbstractConfig end
         struct TSEmptySOW <: AbstractSOW end
 
         # Simple for-loop implementation
@@ -184,7 +282,7 @@
         end
 
         struct TermPolicy <: AbstractPolicy end
-        struct TermParams <: AbstractFixedParams end
+        struct TermParams <: AbstractConfig end
         struct TermSOW <: AbstractSOW end
 
         # Simple for-loop with early termination
@@ -209,7 +307,7 @@
         sow = TermSOW()
         policy = TermPolicy()
 
-        result = simulate(params, sow, policy)
+        result = simulate(params, sow, policy, Random.Xoshiro(42))
         # Should terminate early at value 5, not 100
         @test result.final_value == 5
     end
@@ -254,97 +352,4 @@ end
         @test times3[1] == TimeStep(1, 1, true)
     end
 
-    @testset "run_timesteps" begin
-        @testset "scalar output" begin
-            # Simple accumulator - state is cumulative sum, output is step value
-            final_state, outputs = SimOptDecisions.Utils.run_timesteps(0.0, 1:5) do state, ts
-                new_state = state + ts.val
-                return (new_state, Float64(ts.val))
-            end
-
-            @test final_state == 15.0  # 1+2+3+4+5
-            @test length(outputs) == 5
-            @test outputs == [1.0, 2.0, 3.0, 4.0, 5.0]
-        end
-
-        @testset "stateless model (nothing state)" begin
-            # No state, just collecting outputs
-            final_state, outputs = SimOptDecisions.Utils.run_timesteps(nothing, 1:3) do state, ts
-                return (state, ts.val^2)
-            end
-
-            @test final_state === nothing
-            @test outputs == [1, 4, 9]
-        end
-
-        @testset "NamedTuple output" begin
-            # Multiple outputs per step
-            final_state, results = SimOptDecisions.Utils.run_timesteps(0.0, 1:4) do state, ts
-                damage = Float64(ts.val * 10)
-                cost = Float64(ts.val * 2)
-                new_state = state + damage
-                return (new_state, (damage=damage, cost=cost))
-            end
-
-            @test final_state == 100.0  # 10+20+30+40
-            @test length(results) == 4
-            @test results[1] == (damage=10.0, cost=2.0)
-            @test results[4] == (damage=40.0, cost=8.0)
-            @test [r.damage for r in results] == [10.0, 20.0, 30.0, 40.0]
-            @test [r.cost for r in results] == [2.0, 4.0, 6.0, 8.0]
-        end
-
-        @testset "custom struct output" begin
-            struct StepResult
-                value::Float64
-                is_last::Bool
-            end
-
-            final_state, results = SimOptDecisions.Utils.run_timesteps(1, 1:3) do state, ts
-                return (state + 1, StepResult(Float64(state * ts.val), ts.is_last))
-            end
-
-            @test final_state == 4  # 1 + 3 increments
-            @test length(results) == 3
-            @test results[1].value == 1.0  # state=1, ts.val=1
-            @test results[2].value == 4.0  # state=2, ts.val=2
-            @test results[3].value == 9.0  # state=3, ts.val=3
-            @test !results[1].is_last
-            @test !results[2].is_last
-            @test results[3].is_last
-        end
-
-        @testset "non-1-based time axis" begin
-            # Date-like range (using years 2020-2022)
-            final_state, outputs = SimOptDecisions.Utils.run_timesteps(0, 2020:2022) do state, ts
-                return (state + 1, ts.val)  # output is the year value
-            end
-
-            @test final_state == 3
-            @test outputs == [2020, 2021, 2022]
-        end
-
-        @testset "single timestep" begin
-            final_state, outputs = SimOptDecisions.Utils.run_timesteps(10, 1:1) do state, ts
-                @test ts.is_last  # should be true for single step
-                return (state * 2, state + ts.val)
-            end
-
-            @test final_state == 20
-            @test outputs == [11]
-        end
-
-        @testset "type inference" begin
-            # Test that output type is properly inferred
-            _, outputs = SimOptDecisions.Utils.run_timesteps(0.0, 1:3) do state, ts
-                return (state, Float64(ts.val))
-            end
-            @test eltype(outputs) === Float64
-
-            _, outputs2 = SimOptDecisions.Utils.run_timesteps(0, 1:3) do state, ts
-                return (state, (a=ts.val, b=ts.val * 2))
-            end
-            @test eltype(outputs2) <: NamedTuple
-        end
-    end
 end

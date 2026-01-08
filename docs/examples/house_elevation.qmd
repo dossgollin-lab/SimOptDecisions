@@ -22,7 +22,7 @@ The challenge is that you face deep uncertainty about:
 - The relationship between flood depth and damage
 - Future economic conditions (discount rates)
 
-This tutorial demonstrates how to frame this problem using **SimOptDecisions.jl** and explore the trade-off between upfront costs and expected damages.
+This tutorial demonstrates how to frame this problem using `SimOptDecisions.jl` and explore the trade-off between upfront costs and expected damages.
 
 ## Setup
 
@@ -116,6 +116,17 @@ end
 ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
 SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
 SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
+
+# Define the action: for a static policy, x_t = X^π(S_t) is just the policy's elevation
+# This is a Policy Function Approximation (PFA) - a direct mapping from state to action
+function SimOptDecisions.get_action(
+    policy::ElevationPolicy,
+    state,  # unused for static policy
+    sow::HouseElevationSOW,
+    t::TimeStep,
+)
+    return (elevation_ft=policy.elevation_ft,)
+end
 ```
 
 The optimizer will search over continuous elevation values in [0, 14].
@@ -131,7 +142,7 @@ We use values from [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/20
 
 ```{julia}
 #| output: false
-Base.@kwdef struct HouseElevationParams{T<:AbstractFloat} <: AbstractFixedParams
+Base.@kwdef struct HouseElevationParams{T<:AbstractFloat} <: AbstractConfig
     horizon::Int = 70                  # planning horizon (years)
     gauge_to_house::T = 5.0            # surge level at which water reaches house floor (ft)
     house_area_ft2::T = 1500.0         # floor area in square feet
@@ -258,52 +269,97 @@ end
 
 ## Implementing the Simulation
 
-Now we implement the core `simulate` function.
-For each simulation, we loop through years, sample storm surges, compute damages, and then discount at the end.
+Now we implement the simulation using the `TimeStepping` interface.
+This provides a structured way to define time-stepped simulations with four callbacks:
+
+1. `initialize` - Create initial state (this model is stateless, so returns `nothing`)
+2. `run_timestep` - Execute one year: sample surge, compute damage
+3. `time_axis` - Define the time points (years 1 to horizon)
+4. `finalize` - Aggregate annual damages into NPV
 
 ```{julia}
 #| output: false
+# Initialize: this model has no state between years
+function SimOptDecisions.TimeStepping.initialize(
+    ::HouseElevationParams, ::HouseElevationSOW, ::AbstractRNG
+)
+    return nothing
+end
+
+# Run one timestep: sample surge, compute damage
+function SimOptDecisions.TimeStepping.run_timestep(
+    state::Nothing,
+    params::HouseElevationParams,
+    sow::HouseElevationSOW,
+    policy::ElevationPolicy,
+    t::TimeStep,
+    rng::AbstractRNG,
+)
+    # Get the action (elevation) from the policy
+    action = get_action(policy, state, sow, t)
+
+    # Construction cost is incurred at t=1 only
+    construction_cost = t.t == 1 ? elevation_cost(action.elevation_ft, params.house_area_ft2, params.house_value) : 0.0
+
+    # Sample annual maximum surge at the gauge (exogenous information)
+    surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
+    surge_at_gauge = rand(rng, surge_dist)
+
+    # Compute flood depth given action and exogenous info
+    # gauge_to_house is the surge level at which water reaches the (unelevated) house floor
+    # With elevation, we need (gauge_to_house + elevation) surge to start flooding
+    flood_depth_at_house = surge_at_gauge - (params.gauge_to_house + action.elevation_ft)
+
+    # Compute fractional damage this year
+    damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
+
+    # Return step output with both construction cost and damage
+    step_record = (construction_cost=construction_cost, damage_fraction=damage_fraction)
+    return (nothing, step_record)
+end
+
+# Time axis: years 1 to horizon
+function SimOptDecisions.TimeStepping.time_axis(params::HouseElevationParams, ::HouseElevationSOW)
+    return 1:(params.horizon)
+end
+
+# Finalize: aggregate construction cost and discount annual damages to NPV
+function SimOptDecisions.TimeStepping.finalize(
+    ::Nothing,
+    step_records::Vector,
+    params::HouseElevationParams,
+    sow::HouseElevationSOW,
+)
+    # Extract construction cost (only non-zero at t=1)
+    construction_cost = step_records[1].construction_cost
+
+    # Compute NPV of damages
+    npv_damages = sum(
+        step_records[t].damage_fraction * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t)
+        for t in eachindex(step_records)
+    )
+
+    return (
+        construction_cost=construction_cost,
+        npv_damages=npv_damages,
+        annual_damages=[o.damage_fraction for o in step_records],
+    )
+end
+
+# Connect to the main simulate interface
 function SimOptDecisions.simulate(
     params::HouseElevationParams,
     sow::HouseElevationSOW,
     policy::ElevationPolicy,
     rng::AbstractRNG,
 )
-    # Use run_timesteps to handle the loop with preallocation
-    # This model has no state between years, so we pass `nothing`
-    _, annual_damages =
-        SimOptDecisions.Utils.run_timesteps(nothing, 1:(params.horizon)) do state, ts
-            # Sample annual maximum surge at the gauge
-            surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
-            surge_at_gauge = rand(rng, surge_dist)
-
-            # Convert to depth at house floor (accounting for elevation)
-            # gauge_to_house is the surge level at which water reaches the (unelevated) house floor
-            # With elevation, we need (gauge_to_house + elevation) surge to start flooding
-            flood_depth_at_house =
-                surge_at_gauge - (params.gauge_to_house + policy.elevation_ft)
-
-            # Compute fractional damage this year
-            damage_fraction = depth_damage(
-                flood_depth_at_house, sow.dd_threshold, sow.dd_saturation
-            )
-
-            return (state, damage_fraction)  # state unchanged, output is damage
-        end
-
-    # Discount damages at the end (cleaner than accumulating during simulation)
-    npv_damages = sum(
-        annual_damages[t] * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t) for
-        t in eachindex(annual_damages)
-    )
-
-    return (npv_damages=npv_damages, annual_damages=annual_damages)
+    SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
 end
 ```
 
-The `Utils.run_timesteps` helper handles the loop with preallocation—no `push!` needed.
-The step function returns `(new_state, output)`, and all outputs are collected into a vector.
-The `Utils.discount_factor` helper handles the discounting calculation at the end.
+The `TimeStepping.run_simulation` function handles the time loop with preallocation---no `push!` needed.
+Each callback has a clear responsibility, making the code easier to understand and maintain.
+The `Utils.discount_factor` helper handles the discounting calculation in `finalize`.
 
 ## Running the Analysis
 
@@ -513,13 +569,13 @@ end
 ## Multi-Objective Optimization
 
 The grid search above explored the trade-offs manually.
-SimOptDecisions.jl can automate this with multi-objective optimization.
+`SimOptDecisions.jl` can automate this with multi-objective optimization.
 
 ### Understanding Outcomes vs Metrics
 
 Before setting up optimization, it's important to understand two key concepts:
 
-- **Outcome**: The result of a *single* simulation (one policy × one SOW). This is what `simulate` returns—in our case, a `NamedTuple` with `npv_damages` and `annual_damages`.
+- **Outcome**: The result of a *single* simulation (one policy × one SOW). This is what `simulate` returns—in our case, a `NamedTuple` with `construction_cost`, `npv_damages`, and `annual_damages`.
 
 - **Metric**: An *aggregated* statistic computed across many SOWs for a given policy. For example, `mean(outcomes.npv_damages)` or `quantile(outcomes.npv_damages, 0.95)`.
 
@@ -536,14 +592,11 @@ using Statistics: mean, quantile
 """
 Compute metrics from outcomes across many SOWs.
 Returns a NamedTuple that the optimizer can reference.
-
-Note: construction_cost is computed from the policy elevation, not from outcomes.
-We pass it through the metric calculator by extracting from the first outcome's context.
 """
-function calculate_metrics(outcomes, policy)
+function calculate_metrics(outcomes)
     damages = [o.npv_damages for o in outcomes]
-    # Construction cost depends only on the policy, not the SOW outcomes
-    construction = elevation_cost(policy.elevation_ft)
+    # Construction cost is now part of the outcome (same for all SOWs with same policy)
+    construction = outcomes[1].construction_cost
     return (
         construction_cost=construction,
         expected_damage=mean(damages),
@@ -661,8 +714,8 @@ This toy problem illustrates several key concepts:
 This example demonstrated:
 
 - Defining the three core types (SOW, Policy, Params)
-- Implementing the simulation with a simple for-loop
-- Using `Utils.timeindex` and `Utils.discount_factor` helpers
+- Using the `TimeStepping` interface with `initialize`, `run_timestep`, `time_axis`, and `finalize` callbacks
+- Connecting TimeStepping to the main `simulate` interface
 - Running Monte Carlo analysis across SOWs
 - Setting up multi-objective optimization with custom metrics
 

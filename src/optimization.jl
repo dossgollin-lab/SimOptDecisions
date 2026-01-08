@@ -66,22 +66,22 @@ end
 Defines a simulation-optimization problem.
 
 # Fields
-- `params`: Fixed parameters for the simulation
+- `config`: Fixed configuration for the simulation
 - `sows`: Vector of States of the World to evaluate policies against
 - `policy_type`: The Type of policy to optimize (not an instance)
-- `metric_calculator`: Function `(outcomes, policy) -> NamedTuple` of metrics
+- `metric_calculator`: Function `(outcomes) -> NamedTuple` of metrics
 - `objectives`: Vector of Objective specifying what to optimize
 - `batch_size`: How many SOWs to use per evaluation (default: FullBatch)
 - `constraints`: Optional vector of constraints
 """
 struct OptimizationProblem{
-    P<:AbstractFixedParams,
+    P<:AbstractConfig,
     S<:AbstractSOW,
     T<:AbstractPolicy,
     F<:Function,
     B<:AbstractBatchSize,
 }
-    params::P
+    config::P
     sows::Vector{S}
     policy_type::Type{T}
     metric_calculator::F
@@ -92,7 +92,7 @@ end
 
 # Primary constructor with validation
 function OptimizationProblem(
-    params::AbstractFixedParams,
+    config::AbstractConfig,
     sows::AbstractVector{<:AbstractSOW},
     policy_type::Type{T},
     metric_calculator::Function,
@@ -111,7 +111,7 @@ function OptimizationProblem(
     const_vec = collect(constraints)
 
     return OptimizationProblem(
-        params, sows_vec, policy_type, metric_calculator, obj_vec, batch_size, const_vec
+        config, sows_vec, policy_type, metric_calculator, obj_vec, batch_size, const_vec
     )
 end
 
@@ -156,13 +156,11 @@ function evaluate_policy(
 
     # Run simulations
     outcomes = map(batch_sows) do sow
-        simulate(prob.params, sow, policy, rng)
+        simulate(prob.config, sow, policy, rng)
     end
 
     # Aggregate to metrics
-    # Pass both outcomes and policy so metric calculator can use policy info
-    # (e.g., for computing construction cost based on policy parameters)
-    return prob.metric_calculator(outcomes, policy)
+    return prob.metric_calculator(outcomes)
 end
 
 # Convenience overload with seed

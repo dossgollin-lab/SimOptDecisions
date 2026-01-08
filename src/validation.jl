@@ -149,20 +149,20 @@ end
 # ============================================================================
 
 """
-    validate(params::AbstractFixedParams) -> Bool
+    validate(params::AbstractConfig) -> Bool
 
 Override this to add domain-specific validation for your params.
 Default returns true (valid).
 """
-validate(params::AbstractFixedParams) = true
+validate(params::AbstractConfig) = true
 
 """
-    validate(policy::AbstractPolicy, params::AbstractFixedParams) -> Bool
+    validate(policy::AbstractPolicy, params::AbstractConfig) -> Bool
 
 Override this to add domain-specific validation for policy/params compatibility.
 Default returns true (valid).
 """
-validate(policy::AbstractPolicy, params::AbstractFixedParams) = true
+validate(policy::AbstractPolicy, params::AbstractConfig) = true
 
 # ============================================================================
 # Constraint Types
@@ -208,9 +208,9 @@ function _validate_problem(prob)
     _validate_policy_interface(prob.policy_type)
     _validate_objectives(prob.objectives)
 
-    # Validate params
-    if !validate(prob.params)
-        throw(ArgumentError("Params validation failed"))
+    # Validate config
+    if !validate(prob.config)
+        throw(ArgumentError("Config validation failed"))
     end
 
     # Validate batch size against SOW count
