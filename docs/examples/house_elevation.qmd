@@ -3,6 +3,8 @@ title: "House Elevation Under Flood Risk"
 subtitle: "A toy problem for decision-making under uncertainty"
 author: "Doss-Gollin Lab @ Rice CEVE"
 engine: julia
+execute:
+  project: ..
 ---
 
 ## The Problem
