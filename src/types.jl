@@ -6,6 +6,7 @@ abstract type AbstractPolicy end
 abstract type AbstractConfig end
 abstract type AbstractSOW end
 abstract type AbstractRecorder end
+abstract type AbstractAction end
 
 """
 Throw a helpful error for unimplemented interface methods.
@@ -21,7 +22,7 @@ function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
 end
 
 """
-Wraps time information passed to the `step` function.
+Wraps time information passed to simulation callbacks.
 
 - `t`: 1-based index into time_axis
 - `val`: Actual time value (Int, Float64, Date, etc.)
@@ -38,9 +39,11 @@ end
 # ============================================================================
 
 """
-    get_action(policy::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) -> action
+    get_action(policy::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) -> AbstractAction
 
-Map state + SOW to action. Must be implemented for each policy type.
+Map state + SOW to action. Called by the framework before each `run_timestep`.
+
+Must be implemented for each policy type. Return value must be `<:AbstractAction`.
 """
 get_action(p::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) =
     interface_not_implemented(:get_action, typeof(p), "state, sow::AbstractSOW, t::TimeStep")
@@ -121,12 +124,12 @@ end
 """
 Use a fraction of the SOWs per evaluation.
 """
-struct FractionBatch <: AbstractBatchSize
-    fraction::Float64
+struct FractionBatch{T<:AbstractFloat} <: AbstractBatchSize
+    fraction::T
 
-    function FractionBatch(f::Float64)
+    function FractionBatch(f::T) where {T<:AbstractFloat}
         0.0 < f <= 1.0 || throw(ArgumentError("Fraction must be in (0, 1], got $f"))
-        new(f)
+        new{T}(f)
     end
 end
 
@@ -148,7 +151,7 @@ The actual optimization is implemented in the extension.
 - `algorithm::Symbol`: Algorithm name (e.g., :ECA, :DE, :PSO)
 - `max_iterations::Int`: Maximum number of iterations
 - `population_size::Int`: Population size for evolutionary algorithms
-- `parallel::Bool`: Whether to use parallel evaluation
+- `parallel::Bool`: Enable parallel fitness evaluation (requires Julia threads)
 - `options::Dict{Symbol,Any}`: Additional algorithm-specific options
 """
 struct MetaheuristicsBackend <: AbstractOptimizationBackend

@@ -12,7 +12,7 @@
         rng = Random.Xoshiro(42)
 
         # simulate calls TimeStepping.run_simulation by default,
-        # which throws MethodError if callbacks aren't implemented
+        # which throws MethodError for time_axis (no fallback implementation)
         @test_throws MethodError simulate(config, sow, policy, rng)
 
         # get_action should throw helpful error if not implemented
@@ -22,6 +22,10 @@
 
     @testset "get_action interface" begin
         @testset "custom get_action (state-dependent)" begin
+            struct InventoryAction <: AbstractAction
+                order::Float64
+            end
+
             struct InventoryPolicy <: AbstractPolicy
                 reorder_point::Float64
                 order_size::Float64
@@ -43,9 +47,9 @@
                 t::TimeStep,
             )
                 if state.level < policy.reorder_point
-                    return (order=policy.order_size,)
+                    return InventoryAction(policy.order_size)
                 else
-                    return (order=0.0,)
+                    return InventoryAction(0.0)
                 end
             end
 
@@ -56,6 +60,7 @@
             # Low inventory -> order
             low_state = InventoryState(5.0)
             action_low = get_action(policy, low_state, sow, ts)
+            @test action_low isa AbstractAction
             @test action_low.order == 50.0
 
             # High inventory -> no order
@@ -65,6 +70,10 @@
         end
 
         @testset "get_action with nothing state" begin
+            struct StatelessAction <: AbstractAction
+                action_value::Float64
+            end
+
             struct StatelessPolicy <: AbstractPolicy
                 multiplier::Float64
             end
@@ -79,7 +88,7 @@
                 sow::InfoSOW,
                 t::TimeStep,
             )
-                return (action_value=sow.base_value * policy.multiplier * t.t,)
+                return StatelessAction(sow.base_value * policy.multiplier * t.t)
             end
 
             policy = StatelessPolicy(2.0)
@@ -87,10 +96,15 @@
             ts = TimeStep(3, 3, false)
 
             action = get_action(policy, nothing, sow, ts)
+            @test action isa AbstractAction
             @test action.action_value == 60.0  # 10 * 2 * 3
         end
 
         @testset "get_action for static policy" begin
+            struct ElevationAction <: AbstractAction
+                elevation::Float64
+            end
+
             struct StaticElevationPolicy <: AbstractPolicy
                 elevation_ft::Float64
             end
@@ -101,7 +115,7 @@
             function SimOptDecisions.get_action(
                 policy::StaticElevationPolicy, state, sow::FloodSOW, t::TimeStep
             )
-                return (elevation=policy.elevation_ft,)
+                return ElevationAction(policy.elevation_ft)
             end
 
             policy = StaticElevationPolicy(8.0)
@@ -109,14 +123,16 @@
             ts = TimeStep(1, 1, false)
 
             action = get_action(policy, nothing, sow, ts)
+            @test action isa AbstractAction
             @test action.elevation == 8.0
         end
     end
 
     @testset "Direct simulate (non-time-stepped)" begin
         # Test analytical/direct computation without time-stepping
+        # Users can override simulate() completely to bypass TimeStepping
 
-        struct AnalyticalParams <: AbstractConfig
+        struct AnalyticalConfig <: AbstractConfig
             multiplier::Float64
         end
 
@@ -129,24 +145,30 @@
         end
 
         function SimOptDecisions.simulate(
-            params::AnalyticalParams,
+            config::AnalyticalConfig,
             sow::AnalyticalSOW,
             policy::AnalyticalPolicy,
+            recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
-            return (result=params.multiplier * sow.value * policy.factor,)
+            return (result=config.multiplier * sow.value * policy.factor,)
         end
 
-        params = AnalyticalParams(2.0)
+        config = AnalyticalConfig(2.0)
         sow = AnalyticalSOW(3.0)
         policy = AnalyticalPolicy(4.0)
 
-        result = simulate(params, sow, policy, Random.Xoshiro(42))
+        result = simulate(config, sow, policy, Random.Xoshiro(42))
         @test result.result == 24.0  # 2.0 * 3.0 * 4.0
     end
 
     @testset "Time-stepped simulation (simple for loop)" begin
         # Counter that increments each step - using simple for loop
+        # This tests directly overriding simulate() with custom for-loop
+
+        struct CounterAction <: AbstractAction
+            increment::Int
+        end
 
         struct CounterState <: AbstractState
             value::Int
@@ -156,70 +178,61 @@
             increment::Int
         end
 
-        struct CounterParams <: AbstractConfig
+        struct CounterConfig <: AbstractConfig
             n_steps::Int
         end
 
         struct EmptySOW <: AbstractSOW end
 
-        # Simple for-loop implementation
+        # Custom for-loop implementation
         function SimOptDecisions.simulate(
-            params::CounterParams,
-            sow::EmptySOW,
-            policy::IncrementPolicy,
-            rng::AbstractRNG,
-        )
-            value = 0
-            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
-                value += policy.increment
-            end
-            return (final_value=value,)
-        end
-
-        # With recorder support
-        function SimOptDecisions.simulate(
-            params::CounterParams,
+            config::CounterConfig,
             sow::EmptySOW,
             policy::IncrementPolicy,
             recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
             state = CounterState(0)
-            record!(recorder, state, nothing, nothing)
+            action = CounterAction(policy.increment)
+            record!(recorder, state, nothing, nothing, nothing)
 
-            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+            for ts in SimOptDecisions.Utils.timeindex(1:config.n_steps)
                 state = CounterState(state.value + policy.increment)
-                record!(recorder, state, nothing, ts.val)
+                record!(recorder, state, (increment=policy.increment,), ts.val, action)
             end
 
             return (final_value=state.value,)
         end
 
         # Run simulation
-        params = CounterParams(10)
+        config = CounterConfig(10)
         sow = EmptySOW()
         policy = IncrementPolicy(5)
 
-        result = simulate(params, sow, policy, Random.Xoshiro(42))
+        result = simulate(config, sow, policy, Random.Xoshiro(42))
         @test result.final_value == 50  # 10 steps * 5 increment
 
         # With recorder
         builder = TraceRecorderBuilder()
-        result2 = simulate(params, sow, policy, builder, Random.Xoshiro(42))
-        recorder = finalize(builder)
+        result2 = simulate(config, sow, policy, builder, Random.Xoshiro(42))
+        trace = build_trace(builder)
 
         @test result2.final_value == 50
-        @test length(recorder.states) == 10
-        @test recorder.states[end].value == 50
-        @test recorder.times == collect(1:10)
+        @test length(trace.states) == 10
+        @test trace.states[end].value == 50
+        @test trace.times == collect(1:10)
 
         # With explicit RNG
         rng = Random.Xoshiro(42)
-        result3 = simulate(params, sow, policy, rng)
+        result3 = simulate(config, sow, policy, rng)
         @test result3.final_value == 50
     end
 
     @testset "Type stability" begin
+        struct TSCounterAction <: AbstractAction
+            increment::Float64
+        end
+
         struct TSCounterState <: AbstractState
             value::Float64
         end
@@ -228,51 +241,39 @@
             increment::Float64
         end
 
-        struct TSCounterParams <: AbstractConfig end
+        struct TSCounterConfig <: AbstractConfig end
         struct TSEmptySOW <: AbstractSOW end
 
-        # Simple for-loop implementation
+        # Custom for-loop implementation
         function SimOptDecisions.simulate(
-            params::TSCounterParams,
-            sow::TSEmptySOW,
-            policy::TSIncrementPolicy,
-            rng::AbstractRNG,
-        )
-            value = 0.0
-            for ts in SimOptDecisions.Utils.timeindex(1:10)
-                value += policy.increment
-            end
-            return (final_value=value,)
-        end
-
-        function SimOptDecisions.simulate(
-            params::TSCounterParams,
+            config::TSCounterConfig,
             sow::TSEmptySOW,
             policy::TSIncrementPolicy,
             recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
             state = TSCounterState(0.0)
-            record!(recorder, state, nothing, nothing)
+            action = TSCounterAction(policy.increment)
+            record!(recorder, state, nothing, nothing, nothing)
 
             for ts in SimOptDecisions.Utils.timeindex(1:10)
                 state = TSCounterState(state.value + policy.increment)
-                record!(recorder, state, nothing, ts.val)
+                record!(recorder, state, (increment=policy.increment,), ts.val, action)
             end
 
             return (final_value=state.value,)
         end
 
-        params = TSCounterParams()
+        config = TSCounterConfig()
         sow = TSEmptySOW()
         policy = TSIncrementPolicy(1.0)
         rng = Random.Xoshiro(42)
 
         # Test type inference for simulate
-        @test @inferred(simulate(params, sow, policy, NoRecorder(), rng)) isa NamedTuple
+        @test @inferred(simulate(config, sow, policy, NoRecorder(), rng)) isa NamedTuple
 
         # Test basic functionality
-        result = simulate(params, sow, policy, rng)
+        result = simulate(config, sow, policy, rng)
         @test result.final_value == 10.0
     end
 
@@ -282,14 +283,15 @@
         end
 
         struct TermPolicy <: AbstractPolicy end
-        struct TermParams <: AbstractConfig end
+        struct TermConfig <: AbstractConfig end
         struct TermSOW <: AbstractSOW end
 
         # Simple for-loop with early termination
         function SimOptDecisions.simulate(
-            params::TermParams,
+            config::TermConfig,
             sow::TermSOW,
             policy::TermPolicy,
+            recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
             value = 0
@@ -303,11 +305,11 @@
             return (final_value=value,)
         end
 
-        params = TermParams()
+        config = TermConfig()
         sow = TermSOW()
         policy = TermPolicy()
 
-        result = simulate(params, sow, policy, Random.Xoshiro(42))
+        result = simulate(config, sow, policy, Random.Xoshiro(42))
         # Should terminate early at value 5, not 100
         @test result.final_value == 5
     end

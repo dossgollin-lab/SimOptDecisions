@@ -22,7 +22,7 @@ include("plotting.jl")
 # ============================================================================
 
 # Abstract types (users subtype these)
-export AbstractState, AbstractPolicy, AbstractConfig, AbstractSOW, AbstractRecorder
+export AbstractState, AbstractPolicy, AbstractConfig, AbstractSOW, AbstractRecorder, AbstractAction
 
 # TimeStep struct
 export TimeStep
@@ -41,7 +41,7 @@ using .TimeStepping: TimeSeriesParameter, TimeSeriesParameterBoundsError
 export TimeSeriesParameter, TimeSeriesParameterBoundsError
 
 # Recorders and traces
-export NoRecorder, TraceRecorderBuilder, SimulationTrace, record!, finalize
+export NoRecorder, TraceRecorderBuilder, SimulationTrace, record!, build_trace
 
 # ---------- Phase 2 Exports ----------
 

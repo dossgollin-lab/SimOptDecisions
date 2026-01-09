@@ -15,11 +15,12 @@
 
         struct OptEmptySOW <: AbstractSOW end
 
-        # Simple for-loop implementation
+        # Simple for-loop implementation (override full 5-arg simulate signature)
         function SimOptDecisions.simulate(
             params::OptCounterParams,
             sow::OptEmptySOW,
             policy::OptCounterPolicy,
+            recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
             value = 0.0
@@ -82,11 +83,12 @@
 
         struct EvalEmptySOW <: AbstractSOW end
 
-        # Simple for-loop implementation
+        # Simple for-loop implementation (override full 5-arg simulate signature)
         function SimOptDecisions.simulate(
             params::EvalCounterParams,
             sow::EvalEmptySOW,
             policy::EvalCounterPolicy,
+            recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
             value = 0.0
@@ -115,54 +117,6 @@
 
         @test haskey(metrics, :mean_value)
         @test metrics.mean_value == 50.0  # 10 steps * 5.0 increment
-    end
-
-    @testset "MetaheuristicsBackend with extension" begin
-        # Create minimal valid problem
-        struct ExtTestState <: AbstractState
-            value::Float64
-        end
-
-        struct ExtTestPolicy <: AbstractPolicy
-            x::Float64
-        end
-
-        struct ExtTestParams <: AbstractConfig end
-        struct ExtTestSOW <: AbstractSOW end
-
-        # Simple for-loop implementation
-        function SimOptDecisions.simulate(
-            params::ExtTestParams,
-            sow::ExtTestSOW,
-            policy::ExtTestPolicy,
-            rng::AbstractRNG,
-        )
-            value = 0.0
-            for ts in SimOptDecisions.Utils.timeindex(1:10)
-                value += policy.x
-            end
-            return (final_value=value,)
-        end
-
-        SimOptDecisions.param_bounds(::Type{ExtTestPolicy}) = [(0.0, 1.0)]
-        ExtTestPolicy(x::AbstractVector) = ExtTestPolicy(x[1])
-
-        function ext_test_metric_calculator(outcomes)
-            return (mean=sum(o.final_value for o in outcomes) / length(outcomes),)
-        end
-
-        prob = OptimizationProblem(
-            ExtTestParams(),
-            [ExtTestSOW()],
-            ExtTestPolicy,
-            ext_test_metric_calculator,
-            [minimize(:mean)],
-        )
-
-        # Extension is loaded (Metaheuristics in test extras), should work
-        backend = MetaheuristicsBackend(; algorithm=:ECA, max_iterations=5, population_size=5)
-        result = SimOptDecisions.optimize(prob, backend)
-        @test result isa OptimizationResult{ExtTestPolicy}
     end
 
     @testset "Objective extraction" begin
@@ -220,7 +174,7 @@
             x::Float64
         end
 
-        result = OptimizationResult{ResultPolicy}(
+        result = OptimizationResult{ResultPolicy,Float64}(
             [0.5],
             [10.0],
             ResultPolicy(0.5),

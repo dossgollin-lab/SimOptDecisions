@@ -12,7 +12,7 @@ function _validate_policy_interface(::Type{P}) where {P<:AbstractPolicy}
     bounds = try
         param_bounds(P)
     catch e
-        if e isa ErrorException && contains(string(e), "Implement")
+        if e isa ArgumentError && contains(e.msg, "not implemented")
             throw(
                 ArgumentError(
                     "Policy type $P must implement `param_bounds(::Type{$P})` " *
@@ -145,24 +145,24 @@ function _validate_objectives(objectives)
 end
 
 # ============================================================================
-# Params Validation Hooks
+# Config Validation Hooks
 # ============================================================================
 
 """
-    validate(params::AbstractConfig) -> Bool
+    validate(config::AbstractConfig) -> Bool
 
-Override this to add domain-specific validation for your params.
+Override this to add domain-specific validation for your config.
 Default returns true (valid).
 """
-validate(params::AbstractConfig) = true
+validate(config::AbstractConfig) = true
 
 """
-    validate(policy::AbstractPolicy, params::AbstractConfig) -> Bool
+    validate(policy::AbstractPolicy, config::AbstractConfig) -> Bool
 
-Override this to add domain-specific validation for policy/params compatibility.
+Override this to add domain-specific validation for policy/config compatibility.
 Default returns true (valid).
 """
-validate(policy::AbstractPolicy, params::AbstractConfig) = true
+validate(policy::AbstractPolicy, config::AbstractConfig) = true
 
 # ============================================================================
 # Constraint Types
@@ -183,14 +183,14 @@ end
 A constraint that adds a penalty to the objective(s) when violated.
 The function should return 0.0 for no violation, positive for violation.
 """
-struct PenaltyConstraint <: AbstractConstraint
+struct PenaltyConstraint{T<:AbstractFloat} <: AbstractConstraint
     name::Symbol
     func::Function  # policy -> Float64 (0.0 = no violation)
-    weight::Float64
+    weight::T
 
-    function PenaltyConstraint(name::Symbol, func::Function, weight::Float64)
+    function PenaltyConstraint(name::Symbol, func::Function, weight::T) where {T<:AbstractFloat}
         weight >= 0 || throw(ArgumentError("Penalty weight must be non-negative"))
-        new(name, func, weight)
+        new{T}(name, func, weight)
     end
 end
 
