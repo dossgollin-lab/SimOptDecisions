@@ -28,20 +28,28 @@ Select the appropriate Metaheuristics algorithm based on the symbol and number o
 Metaheuristics.jl v3 uses the algorithm's internal iteration handling.
 """
 function _get_algorithm(
-    sym::Symbol, n_objectives::Int, pop_size::Int, max_iters::Int, user_options::Dict{Symbol,Any}
+    sym::Symbol,
+    n_objectives::Int,
+    pop_size::Int,
+    max_iters::Int,
+    parallel::Bool,
+    user_options::Dict{Symbol,Any},
 )
+    # Create options with parallel evaluation setting
+    options = Metaheuristics.Options(; iterations=max_iters, parallel_evaluation=parallel)
+
     if n_objectives == 1
         # Single-objective algorithms
         if sym == :ECA
-            alg = Metaheuristics.ECA(; N=pop_size, user_options...)
+            alg = Metaheuristics.ECA(; N=pop_size, options=options, user_options...)
         elseif sym == :DE
-            alg = Metaheuristics.DE(; N=pop_size, user_options...)
+            alg = Metaheuristics.DE(; N=pop_size, options=options, user_options...)
         elseif sym == :PSO
-            alg = Metaheuristics.PSO(; N=pop_size, user_options...)
+            alg = Metaheuristics.PSO(; N=pop_size, options=options, user_options...)
         elseif sym == :ABC
-            alg = Metaheuristics.ABC(; N=pop_size, user_options...)
+            alg = Metaheuristics.ABC(; N=pop_size, options=options, user_options...)
         elseif sym == :SA
-            alg = Metaheuristics.SA(; user_options...)
+            alg = Metaheuristics.SA(; options=options, user_options...)
         else
             error(
                 "Unknown single-objective algorithm: $sym. " *
@@ -51,13 +59,13 @@ function _get_algorithm(
     else
         # Multi-objective algorithms
         if sym == :NSGA2
-            alg = Metaheuristics.NSGA2(; N=pop_size, user_options...)
+            alg = Metaheuristics.NSGA2(; N=pop_size, options=options, user_options...)
         elseif sym == :NSGA3
-            alg = Metaheuristics.NSGA3(; N=pop_size, user_options...)
+            alg = Metaheuristics.NSGA3(; N=pop_size, options=options, user_options...)
         elseif sym == :SPEA2
-            alg = Metaheuristics.SPEA2(; N=pop_size, user_options...)
+            alg = Metaheuristics.SPEA2(; N=pop_size, options=options, user_options...)
         elseif sym == :MOEAD
-            alg = Metaheuristics.MOEA_DE(; N=pop_size, user_options...)
+            alg = Metaheuristics.MOEA_DE(; N=pop_size, options=options, user_options...)
         else
             error(
                 "Unknown multi-objective algorithm: $sym. " *
@@ -65,9 +73,6 @@ function _get_algorithm(
             )
         end
     end
-
-    # Set iteration limit via the algorithm's options
-    alg.options.iterations = max_iters
 
     return alg
 end
@@ -231,14 +236,17 @@ function SimOptDecisions.optimize_backend(
         end
     end
 
-    # Select algorithm with iteration limit
+    # Select algorithm with iteration limit and parallel evaluation setting
     algorithm = _get_algorithm(
-        backend.algorithm, n_objectives, backend.population_size, backend.max_iterations, backend.options
+        backend.algorithm,
+        n_objectives,
+        backend.population_size,
+        backend.max_iterations,
+        backend.parallel,
+        backend.options,
     )
 
     # Run optimization
-    # Note: backend.parallel is reserved for future use; Metaheuristics.jl
-    # handles parallelism internally based on Julia's threading configuration
     mh_result = Metaheuristics.optimize(fitness, bounds, algorithm)
 
     # Wrap result

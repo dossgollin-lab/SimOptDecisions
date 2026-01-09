@@ -151,7 +151,7 @@ The actual optimization is implemented in the extension.
 - `algorithm::Symbol`: Algorithm name (e.g., :ECA, :DE, :PSO)
 - `max_iterations::Int`: Maximum number of iterations
 - `population_size::Int`: Population size for evolutionary algorithms
-- `parallel::Bool`: Reserved for future use (Metaheuristics.jl uses Julia's threading)
+- `parallel::Bool`: Enable parallel fitness evaluation (requires Julia threads)
 - `options::Dict{Symbol,Any}`: Additional algorithm-specific options
 """
 struct MetaheuristicsBackend <: AbstractOptimizationBackend
