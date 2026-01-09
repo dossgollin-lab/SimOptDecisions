@@ -2,6 +2,7 @@
 title: "Investment Growth Model"
 subtitle: "A minimal working example"
 author: "Doss-Gollin Lab @ Rice CEVE"
+engine: julia
 ---
 
 ## Overview
