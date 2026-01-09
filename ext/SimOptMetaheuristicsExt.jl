@@ -208,8 +208,8 @@ function SimOptDecisions.optimize_backend(
         bounds[2, i] = b[2]  # upper bound
     end
 
-    # Build fitness function
-    function fitness(x::AbstractVector{T}) where {T<:AbstractFloat}
+    # Core fitness evaluation for a single solution
+    function _evaluate_single(x::AbstractVector{T}) where {T<:AbstractFloat}
         # Create policy from parameters
         policy = P(x)
 
@@ -225,14 +225,41 @@ function SimOptDecisions.optimize_backend(
         # Apply constraints
         objectives = _apply_constraints(objectives, policy, prob.constraints)
 
-        # Return single value for single-objective, (f, g, h) Tuple for multi-objective
-        # Metaheuristics.jl requires Tuple{Vector, Vector, Vector} for multi-objective:
-        # (objectives, inequality_constraints, equality_constraints)
+        return objectives
+    end
+
+    # Single solution fitness (used when parallel_evaluation=false)
+    function fitness(x::AbstractVector{T}) where {T<:AbstractFloat}
+        objectives = _evaluate_single(x)
         if n_objectives == 1
             return objectives[1]
         else
-            # Return (f, g, h) tuple with empty constraint vectors
             return (objectives, Float64[], Float64[])
+        end
+    end
+
+    # Batch fitness for parallel evaluation (Matrix input: each row is a solution)
+    function fitness(X::AbstractMatrix{T}) where {T<:AbstractFloat}
+        n_solutions = size(X, 1)
+
+        if n_objectives == 1
+            # Single objective: return vector of fitness values
+            results = Vector{Float64}(undef, n_solutions)
+            Threads.@threads for i in 1:n_solutions
+                objectives = _evaluate_single(view(X, i, :))
+                results[i] = objectives[1]
+            end
+            return results
+        else
+            # Multi-objective: return (F, G, H) where F is n_solutions × n_objectives
+            F = Matrix{Float64}(undef, n_solutions, n_objectives)
+            Threads.@threads for i in 1:n_solutions
+                objectives = _evaluate_single(view(X, i, :))
+                F[i, :] = objectives
+            end
+            G = zeros(n_solutions, 0)  # No inequality constraints
+            H = zeros(n_solutions, 0)  # No equality constraints
+            return (F, G, H)
         end
     end
 
