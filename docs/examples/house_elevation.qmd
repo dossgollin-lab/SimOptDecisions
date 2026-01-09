@@ -78,6 +78,13 @@ This represents our uncertainty about the true values.
 We use GEV parameters inspired by the Sewells Point tide gauge in Norfolk, VA (NOAA Station 8638610).
 Annual maximum water levels at this location are typically 2-4 ft above Mean Higher High Water (MHHW), with major hurricanes producing 6-8+ ft surges (e.g., Hurricane Isabel in 2003 reached ~7.9 ft above MHHW).
 
+::: {.callout-note}
+## Simplified Uncertainty Model
+
+This is an intentionally simplified approach to uncertainty for pedagogical purposes.
+In a real application, you would want to consider non-stationary extremes (climate change effects on storm intensity), spatial correlation between gauge and house, and more sophisticated uncertainty quantification methods.
+:::
+
 ```{julia}
 #| output: false
 function sample_sow(rng::AbstractRNG)
@@ -93,8 +100,8 @@ function sample_sow(rng::AbstractRNG)
     dd_threshold = rand(rng, Normal(0.0, 0.25))
     dd_saturation = rand(rng, Normal(8.0, 0.5))
 
-    # Discount rate: ~2.5% with uncertainty (following Doss-Gollin et al. 2022)
-    discount_rate = rand(rng, truncated(Normal(0.025, 0.01); lower=0.01, upper=0.06))
+    # Discount rate: uncertain, ranging from ~1% to 7%
+    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
 
     return HouseElevationSOW(
         gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate
@@ -128,7 +135,9 @@ end
 # For optimization, we need to define how to convert between policy and parameter vector
 ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
 SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
-SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
+# Note: We optimize over [1, 14] ft. The "don't elevate" option (0 ft) is a distinct
+# choice that should be evaluated separately - you either elevate or you don't.
+SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(1.0, 14.0)]
 
 # Define the action: for a static policy, x_t = X^π(S_t) is just the policy's elevation
 # This is a Policy Function Approximation (PFA) - a direct mapping from state to action
@@ -157,7 +166,7 @@ We use values from [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/20
 #| output: false
 Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
     horizon::Int = 70                  # planning horizon (years)
-    gauge_to_house::T = 5.0            # surge level at which water reaches house floor (ft)
+    gauge_to_house::T = 4.0            # surge level at which water reaches house floor (ft)
     house_area_ft2::T = 1500.0         # floor area in square feet
     house_value::T = 200_000.0         # house value in dollars (not land)
 end
@@ -291,17 +300,37 @@ This provides a structured way to define time-stepped simulations with five call
 4. `time_axis` - Define the time points (years 1 to horizon)
 5. `finalize` - Aggregate annual damages into NPV
 
+### Initialize
+
+Since flood damage in one year doesn't affect the house's vulnerability in the next year (beyond the elevation decision), this model has no persistent state between timesteps:
+
 ```{julia}
 #| output: false
-# Initialize: this model has no state between years
 function SimOptDecisions.TimeStepping.initialize(
     ::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG
 )
     return nothing
 end
+```
 
-# Run one timestep: sample surge, compute damage
-# The framework calls get_action before this, so we receive the action directly
+### Time Axis
+
+We simulate year-by-year over the planning horizon:
+
+```{julia}
+#| output: false
+function SimOptDecisions.TimeStepping.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
+    return 1:(config.horizon)
+end
+```
+
+### Run Timestep
+
+Each year, we sample a storm surge from the GEV distribution and compute the resulting damage.
+The framework calls `get_action(policy, state, sow, t)` before this function, so we receive the elevation decision directly as `action`:
+
+```{julia}
+#| output: false
 function SimOptDecisions.TimeStepping.run_timestep(
     state::Nothing,
     action::ElevationAction,
@@ -311,41 +340,43 @@ function SimOptDecisions.TimeStepping.run_timestep(
     rng::AbstractRNG,
 )
     # Construction cost is incurred at t=1 only
-    construction_cost = t.t == 1 ? elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
+    construction_cost = if t.t == 1
+        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value)
+    else
+        0.0
+    end
 
-    # Sample annual maximum surge at the gauge (exogenous information)
+    # Sample annual maximum surge at the gauge
     surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
     surge_at_gauge = rand(rng, surge_dist)
 
-    # Compute flood depth given action and exogenous info
+    # Compute flood depth at house
     # gauge_to_house is the surge level at which water reaches the (unelevated) house floor
     # With elevation, we need (gauge_to_house + elevation) surge to start flooding
     flood_depth_at_house = surge_at_gauge - (config.gauge_to_house + action.elevation_ft)
 
-    # Compute fractional damage this year
+    # Compute fractional damage
     damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
 
-    # Return step output with both construction cost and damage
     step_record = (construction_cost=construction_cost, damage_fraction=damage_fraction)
     return (nothing, step_record)
 end
+```
 
-# Time axis: years 1 to horizon
-function SimOptDecisions.TimeStepping.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
-    return 1:(config.horizon)
-end
+### Finalize
 
-# Finalize: aggregate construction cost and discount annual damages to NPV
+After all timesteps, we aggregate the annual damages into a net present value (NPV) using the SOW's discount rate:
+
+```{julia}
+#| output: false
 function SimOptDecisions.TimeStepping.finalize(
     ::Nothing,
     step_records::Vector,
     config::HouseElevationConfig,
     sow::HouseElevationSOW,
 )
-    # Extract construction cost (only non-zero at t=1)
     construction_cost = step_records[1].construction_cost
 
-    # Compute NPV of damages
     npv_damages = sum(
         step_records[t].damage_fraction * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t)
         for t in eachindex(step_records)
@@ -359,8 +390,7 @@ function SimOptDecisions.TimeStepping.finalize(
 end
 ```
 
-Note: No need to override `simulate()` - the framework automatically calls the TimeStepping callbacks.
-The `Utils.discount_factor` helper handles the discounting calculation in `finalize`.
+Note: No need to override `simulate()` - the framework automatically calls these TimeStepping callbacks in sequence.
 
 ## Running the Analysis
 
@@ -528,7 +558,7 @@ How does the "optimal" elevation depend on the discount rate?
 #| code-fold: true
 let
     # Group SOWs by discount rate bins
-    rate_bins = [0.015, 0.02, 0.025, 0.03, 0.035, 0.04]
+    rate_bins = [0.015, 0.025, 0.035, 0.045, 0.055, 0.065]
     optimal_by_rate = Float64[]
 
     for rate in rate_bins
@@ -614,7 +644,7 @@ These are **conflicting objectives**: higher elevation costs more upfront but re
 
 ```{julia}
 #| output: false
-using Metaheuristics: Metaheuristics  # avoid name collision with SimOptDecisions.optimize
+import Metaheuristics  # loads extension for SimOptDecisions.optimize
 
 # Create the optimization problem
 prob = OptimizationProblem(
@@ -630,11 +660,22 @@ prob = OptimizationProblem(
 
 ```{julia}
 # Run multi-objective optimization using NSGA-II
-backend = MetaheuristicsBackend(; algorithm=:NSGA2, max_iterations=200, population_size=50)
+# The backend stores algorithm parameters; options is for advanced algorithm-specific settings
+backend = MetaheuristicsBackend(; algorithm=:NSGA2, max_iterations=100, population_size=30)
 ```
 
 ```{julia}
 opt_result = SimOptDecisions.optimize(prob, backend)
+```
+
+We should also evaluate the "don't elevate" baseline (0 ft) separately, since that's a distinct decision:
+
+```{julia}
+#| output: false
+# Evaluate no-elevation baseline
+no_elevate_outcomes = [simulate(config, sow, ElevationPolicy(0.0)) for sow in sows]
+no_elevate_metrics = calculate_metrics(no_elevate_outcomes)
+println("No elevation: cost=0.0, expected_damage=$(round(no_elevate_metrics.expected_damage, digits=3))")
 ```
 
 ### Visualizing the Pareto Front
@@ -643,7 +684,7 @@ The optimization returns a set of Pareto-optimal solutions—policies where you 
 
 ```{julia}
 #| label: fig-pareto
-#| fig-cap: "Pareto front showing trade-off between construction cost and expected NPV damages. Each point is a non-dominated elevation choice."
+#| fig-cap: "Pareto front showing trade-off between construction cost and expected NPV damages. The red diamond shows the no-elevation baseline."
 #| code-fold: true
 let
     fig = Figure(; size=(700, 500))
@@ -654,7 +695,11 @@ let
         title="Pareto Front: Construction Cost vs Expected Damage",
     )
 
-    # Extract Pareto front
+    # Plot the no-elevation baseline
+    scatter!(ax, [0.0], [no_elevate_metrics.expected_damage];
+        markersize=20, color=:red, marker=:diamond, label="No elevation (0 ft)")
+
+    # Extract Pareto front from optimization
     pareto_pts = collect(SimOptDecisions.pareto_front(opt_result))
 
     if !isempty(pareto_pts)
@@ -662,21 +707,21 @@ let
         expected = [obj[2] for (_, obj) in pareto_pts]
         elevations = [round(p[1]; digits=1) for (p, _) in pareto_pts]
 
-        scatter!(ax, construction, expected; markersize=15, color=:steelblue)
+        scatter!(ax, construction, expected; markersize=12, color=:steelblue, label="Pareto front")
 
-        # Label points with elevation
+        # Label a subset of points with elevation (avoid clutter)
+        labeled = Set{Float64}()
         for (i, elev) in enumerate(elevations)
-            text!(
-                ax,
-                construction[i],
-                expected[i];
-                text=string(elev),
-                align=(:left, :bottom),
-                offset=(5, 5),
-            )
+            # Only label if not too close to already-labeled point
+            if all(abs(elev - l) > 1.5 for l in labeled)
+                text!(ax, construction[i], expected[i];
+                    text=string(round(Int, elev)), align=(:left, :bottom), offset=(5, 5))
+                push!(labeled, elev)
+            end
         end
     end
 
+    axislegend(ax; position=:rt)
     fig
 end
 ```
@@ -685,8 +730,9 @@ end
 
 The Pareto front reveals the fundamental trade-off:
 
-- **Lower elevations** have lower construction costs but higher expected damages over the planning horizon
-- **Higher elevations** reduce expected damages but cost more upfront
+- **No elevation (0 ft)** has zero construction cost but the highest expected damages
+- **Lower elevations (1-4 ft)** have moderate construction costs with significant damage reduction
+- **Higher elevations (8+ ft)** provide excellent protection but at substantial upfront cost
 - The "best" choice depends on your **risk tolerance** and **budget constraints**
 
 ```{julia}

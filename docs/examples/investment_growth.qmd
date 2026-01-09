@@ -39,9 +39,9 @@ Parameters shared across all scenarios:
 
 ```{julia}
 #| output: false
-struct InvestmentConfig <: AbstractConfig
+struct InvestmentConfig{T<:AbstractFloat} <: AbstractConfig
     horizon::Int            # years to simulate
-    initial_value::Float64  # starting portfolio value
+    initial_value::T        # starting portfolio value
 end
 ```
 
@@ -208,7 +208,7 @@ Set up and run optimization:
 
 ```{julia}
 #| output: false
-using Metaheuristics: Metaheuristics
+import Metaheuristics  # loads extension for SimOptDecisions.optimize
 
 prob = OptimizationProblem(
     config,
