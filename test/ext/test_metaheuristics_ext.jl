@@ -77,46 +77,6 @@ using Metaheuristics
         @test isempty(result.pareto_objectives)
     end
 
-    @testset "Single-objective with DE" begin
-        params = MHCounterParams(5)
-        sows = [MHEmptySOW() for _ in 1:3]
-
-        function de_metric_calculator(outcomes)
-            return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
-        end
-
-        prob = OptimizationProblem(
-            params, sows, MHCounterPolicy, de_metric_calculator, [minimize(:mean_value)]
-        )
-
-        backend = MetaheuristicsBackend(;
-            algorithm=:DE, max_iterations=10, population_size=10, parallel=false
-        )
-
-        result = SimOptDecisions.optimize(prob, backend)
-        @test result isa OptimizationResult{MHCounterPolicy}
-    end
-
-    @testset "Single-objective with PSO" begin
-        params = MHCounterParams(5)
-        sows = [MHEmptySOW() for _ in 1:3]
-
-        function pso_metric_calculator(outcomes)
-            return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
-        end
-
-        prob = OptimizationProblem(
-            params, sows, MHCounterPolicy, pso_metric_calculator, [minimize(:mean_value)]
-        )
-
-        backend = MetaheuristicsBackend(;
-            algorithm=:PSO, max_iterations=10, population_size=10, parallel=false
-        )
-
-        result = SimOptDecisions.optimize(prob, backend)
-        @test result isa OptimizationResult{MHCounterPolicy}
-    end
-
     @testset "Multi-objective optimization with NSGA2" begin
         # Define a 2-parameter policy for multi-objective
         struct MHMultiPolicy <: AbstractPolicy

@@ -78,6 +78,29 @@ function _get_algorithm(
 end
 
 # ============================================================================
+# Parameter Normalization
+# ============================================================================
+
+"""
+Denormalize parameters from [0,1] space to actual bounds.
+"""
+function _denormalize(x_normalized::AbstractVector, bounds_vec::Vector{Tuple{Float64,Float64}})
+    return [lo + x * (hi - lo) for (x, (lo, hi)) in zip(x_normalized, bounds_vec)]
+end
+
+"""
+Denormalize a matrix of parameters (each row is a solution).
+"""
+function _denormalize(X_normalized::AbstractMatrix, bounds_vec::Vector{Tuple{Float64,Float64}})
+    X_denorm = similar(X_normalized)
+    for j in eachindex(bounds_vec)
+        lo, hi = bounds_vec[j]
+        @views X_denorm[:, j] .= lo .+ X_normalized[:, j] .* (hi - lo)
+    end
+    return X_denorm
+end
+
+# ============================================================================
 # Constraint Application
 # ============================================================================
 
@@ -113,17 +136,20 @@ end
 """
 Convert Metaheuristics result to SimOptDecisions OptimizationResult.
 Handles both single and multi-objective cases.
+Denormalizes parameters from [0,1] space back to actual bounds.
 """
 function _wrap_result(
     mh_result,
     ::Type{P},
     prob::OptimizationProblem,
+    bounds_vec::Vector{Tuple{Float64,Float64}},
 ) where {P<:AbstractPolicy}
     n_objectives = length(prob.objectives)
 
     if n_objectives == 1
-        # Single-objective: extract best solution
-        best_x = Metaheuristics.minimizer(mh_result)
+        # Single-objective: extract best solution (in normalized space)
+        best_x_norm = Vector{Float64}(Metaheuristics.minimizer(mh_result))
+        best_x = _denormalize(best_x_norm, bounds_vec)
         best_f_raw = [Metaheuristics.minimum(mh_result)]
 
         # Un-negate maximized objectives
@@ -150,13 +176,14 @@ function _wrap_result(
         pareto_objectives = Vector{Vector{Float64}}()
 
         for sol in nds
-            push!(pareto_params, Vector{Float64}(Metaheuristics.get_position(sol)))
+            x_norm = Vector{Float64}(Metaheuristics.get_position(sol))
+            push!(pareto_params, _denormalize(x_norm, bounds_vec))
             raw_obj = Vector{Float64}(Metaheuristics.fval(sol))
             push!(pareto_objectives, _unnegate_objectives(raw_obj, prob.objectives))
         end
 
         # Select best as first Pareto solution (or could use hypervolume)
-        best_x = isempty(pareto_params) ? zeros(length(param_bounds(P))) : pareto_params[1]
+        best_x = isempty(pareto_params) ? zeros(length(bounds_vec)) : pareto_params[1]
         best_f = isempty(pareto_objectives) ? zeros(n_objectives) : pareto_objectives[1]
 
         return OptimizationResult{P,Float64}(
@@ -198,20 +225,19 @@ function SimOptDecisions.optimize_backend(
     P = prob.policy_type
     n_objectives = length(prob.objectives)
 
-    # Build bounds matrix for Metaheuristics: 2 x n_params matrix
-    # Row 1 = lower bounds, Row 2 = upper bounds
-    bounds_vec = param_bounds(P)
+    # Get actual bounds for denormalization
+    bounds_vec = [(Float64(lo), Float64(hi)) for (lo, hi) in param_bounds(P)]
     n_params = length(bounds_vec)
-    bounds = zeros(2, n_params)
-    for (i, b) in enumerate(bounds_vec)
-        bounds[1, i] = b[1]  # lower bound
-        bounds[2, i] = b[2]  # upper bound
-    end
 
-    # Evaluate a single solution vector and return objectives
-    function _evaluate_one(x)
-        policy = P(x)
-        rng = Random.Xoshiro(hash(x))
+    # Optimizer works in normalized [0,1] space
+    normalized_bounds = zeros(2, n_params)
+    normalized_bounds[2, :] .= 1.0  # All upper bounds are 1.0
+
+    # Evaluate a single solution vector (in normalized space) and return objectives
+    function _evaluate_one(x_normalized)
+        x_real = _denormalize(x_normalized, bounds_vec)
+        policy = P(x_real)
+        rng = Random.Xoshiro(hash(x_normalized))
         metrics = evaluate_policy(prob, policy, rng)
         objectives = _extract_objectives(metrics, prob.objectives)
         return _apply_constraints(objectives, policy, prob.constraints)
@@ -263,11 +289,11 @@ function SimOptDecisions.optimize_backend(
         backend.options,
     )
 
-    # Run optimization
-    mh_result = Metaheuristics.optimize(fitness, bounds, algorithm)
+    # Run optimization in normalized space
+    mh_result = Metaheuristics.optimize(fitness, normalized_bounds, algorithm)
 
-    # Wrap result
-    return _wrap_result(mh_result, P, prob)
+    # Wrap result (denormalizing parameters back to real space)
+    return _wrap_result(mh_result, P, prob, bounds_vec)
 end
 
 end # module SimOptMetaheuristicsExt

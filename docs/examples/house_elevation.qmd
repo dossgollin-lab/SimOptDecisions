@@ -139,28 +139,37 @@ end
 
 ### Policy
 
+The policy has two parameters that work together to determine the elevation:
+
+1. **`elevate_gate`** (0–1): A soft binary choice. If > 0.5, the house is elevated; otherwise it stays at ground level.
+2. **`elevation_amount`** (0–14 ft): How high to elevate if we choose to elevate.
+
+This two-parameter formulation lets the optimizer discover that "no elevation" may be optimal for some objectives, without requiring a separate policy type.
+
 ```{julia}
 #| output: false
 struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::T  # feet above current ground level (0-14)
+    elevate_gate::T      # in (0, 1): if > 0.5 then elevate, else don't
+    elevation_amount::T  # feet above current ground level (0-14)
 end
 
 # For optimization, we need to define how to convert between policy and parameter vector
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
-SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
-SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1], params[2])
+SimOptDecisions.params(p::ElevationPolicy) = [p.elevate_gate, p.elevation_amount]
+SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 1.0), (0.0, 14.0)]
 ```
 
 ```{julia}
 #| output: false
-# Define the action: for a static policy, x_t = X^π(S_t) is just the policy's elevation
+# Define the action: elevation is gated by the binary decision parameter
 function SimOptDecisions.get_action(
     policy::ElevationPolicy,
     state,  # unused for static policy
     sow::HouseElevationSOW,
     t::TimeStep,
 )
-    return ElevationAction(policy.elevation_ft)
+    elevation = policy.elevate_gate > 0.5 ? policy.elevation_amount : 0.0
+    return ElevationAction(elevation)
 end
 ```
 
@@ -428,7 +437,9 @@ elevations = 0:14
 results = Dict{Int,Vector{Float64}}()
 
 for elev in elevations
-    policy = ElevationPolicy(Float64(elev))
+    # For elev=0, use gate < 0.5 (no elevation); for elev > 0, use gate > 0.5
+    gate = elev == 0 ? 0.0 : 1.0
+    policy = ElevationPolicy(gate, Float64(elev))
     outcomes = [simulate(config, sow, policy).npv_damages for sow in sows]
     results[elev] = outcomes
 end
@@ -583,7 +594,8 @@ let
         best_elev = 0
         best_cost = Inf
         for elev in elevations
-            policy = ElevationPolicy(Float64(elev))
+            gate = elev == 0 ? 0.0 : 1.0
+            policy = ElevationPolicy(gate, Float64(elev))
             outcomes = [simulate(config, sow, policy).npv_damages for sow in filtered_sows]
             total = elevation_cost(elev) + mean(outcomes)
             if total < best_cost

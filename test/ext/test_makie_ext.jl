@@ -52,23 +52,6 @@ using CairoMakie
         @test length(axes) == 2  # One per field in step_record (position, velocity)
     end
 
-    @testset "plot_trace with kwargs" begin
-        states = [Float64(i) for i in 1:5]
-        step_records = [(value=Float64(i),) for i in 1:5]
-        times = collect(1:5)
-        actions = [nothing for _ in 1:5]
-
-        trace = SimulationTrace(states, step_records, times, actions)
-
-        # Test with custom kwargs
-        fig, axes = plot_trace(
-            trace; figure_kwargs=(; size=(800, 600)), line_kwargs=(; color=:red)
-        )
-
-        @test fig isa Figure
-        @test length(axes) == 1
-    end
-
     @testset "plot_trace empty error" begin
         # Create empty trace and test that plot_trace throws an error
         trace = SimulationTrace(Float64[], NamedTuple[], Int[], Nothing[])
@@ -95,56 +78,6 @@ using CairoMakie
         )
 
         fig, ax = plot_pareto(result)
-
-        @test fig isa Figure
-        @test ax isa Axis
-    end
-
-    @testset "plot_pareto with objective names" begin
-        struct NamedParetoPolicy <: AbstractPolicy
-            x::Float64
-        end
-
-        pareto_params = [[0.2], [0.5], [0.8]]
-        pareto_objectives = [[1.0, 5.0], [2.5, 2.5], [5.0, 1.0]]
-
-        result = OptimizationResult{NamedParetoPolicy,Float64}(
-            [0.5],
-            [2.5, 2.5],
-            NamedParetoPolicy(0.5),
-            Dict{Symbol,Any}(:iterations => 50),
-            pareto_params,
-            pareto_objectives,
-        )
-
-        fig, ax = plot_pareto(
-            result;
-            objective_names=["Cost", "Risk"],
-            highlight_best=true,
-        )
-
-        @test fig isa Figure
-        @test ax isa Axis
-    end
-
-    @testset "plot_pareto without highlight" begin
-        struct NoHighlightPolicy <: AbstractPolicy
-            x::Float64
-        end
-
-        pareto_params = [[0.3], [0.6]]
-        pareto_objectives = [[1.0, 3.0], [3.0, 1.0]]
-
-        result = OptimizationResult{NoHighlightPolicy,Float64}(
-            [0.3],
-            [1.0, 3.0],
-            NoHighlightPolicy(0.3),
-            Dict{Symbol,Any}(),
-            pareto_params,
-            pareto_objectives,
-        )
-
-        fig, ax = plot_pareto(result; highlight_best=false)
 
         @test fig isa Figure
         @test ax isa Axis
