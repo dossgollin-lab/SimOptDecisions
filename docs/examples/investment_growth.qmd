@@ -15,6 +15,19 @@ This minimal example demonstrates the core concepts of `SimOptDecisions.jl` usin
 You have an initial portfolio and must decide what fraction to invest each year.
 The uncertain quantity is the annual growth rate.
 
+::: {.callout-tip}
+## The Framework Pattern
+
+Every SimOptDecisions model follows the same structure:
+
+1. **Define your types**: Config (fixed params), SOW (uncertainty), Action (decision), Policy (decision rule), State (system state)
+2. **Implement five callbacks**: `initialize`, `get_action`, `time_axis`, `run_timestep`, `finalize`
+3. **Run simulations**: Call `simulate(config, sow, policy)` - the framework handles the rest
+4. **Optimize**: Define metrics, create `OptimizationProblem`, call `optimize`
+
+This example walks through each step so you can adapt it to your own problem.
+:::
+
 ## Setup
 
 ```{julia}
@@ -31,11 +44,14 @@ using Random
 using Statistics: mean
 ```
 
-## Defining the Problem
+## Step 1: Define Your Types
 
-### Fixed Parameters (Config)
+The first step in any SimOptDecisions model is defining the core types that describe your problem.
 
-Parameters shared across all scenarios:
+### Config — Fixed Parameters
+
+The **Config** holds parameters that are the same across all scenarios.
+These are things you know for certain or have decided upfront.
 
 ```{julia}
 #| output: false
@@ -45,10 +61,22 @@ struct InvestmentConfig{T<:AbstractFloat} <: AbstractConfig
 end
 ```
 
-### State of the World (SOW)
+::: {.callout-note}
+## Adapting for Your Model
 
-The uncertain quantity is the annual growth rate.
-We use parametric types for type stability:
+**What goes in Config?** Model constants, time horizon, physical properties, grid sizes—anything that doesn't vary with uncertainty or decisions.
+
+**Examples from other domains:**
+
+- Flood model: house area, house value, planning horizon
+- Inventory model: storage capacity, ordering lead time
+- Energy model: plant capacities, demand profile
+:::
+
+### SOW — State of the World (Uncertainty)
+
+The **SOW** captures exogenous uncertainty—things outside your control that affect outcomes.
+Each SOW represents one possible future scenario.
 
 ```{julia}
 #| output: false
@@ -57,9 +85,22 @@ struct InvestmentSOW{T<:AbstractFloat} <: AbstractSOW
 end
 ```
 
-### Action
+::: {.callout-note}
+## Adapting for Your Model
 
-The action represents the decision at each timestep - what fraction to invest:
+**What goes in SOW?** Random quantities you're uncertain about. You'll sample many SOWs to test policy robustness.
+
+**Examples:**
+
+- Flood model: storm parameters, discount rate, damage curve
+- Inventory model: demand distribution, supplier reliability
+- Energy model: fuel prices, renewable generation, demand shocks
+:::
+
+### Action — What You Decide
+
+The **Action** represents a decision at a specific timestep.
+Separating Action from Policy makes the framework flexible—the same policy can produce different actions based on state.
 
 ```{julia}
 #| output: false
@@ -68,9 +109,10 @@ struct InvestmentAction{T<:AbstractFloat} <: AbstractAction
 end
 ```
 
-### Policy
+### Policy — How You Decide
 
-The policy determines what fraction of the portfolio to invest (vs. keep in cash):
+The **Policy** is a decision *rule*—it determines how to compute actions.
+For optimization, you'll search over policy parameters to find the best rule.
 
 ```{julia}
 #| output: false
@@ -78,43 +120,89 @@ struct InvestmentPolicy{T<:AbstractFloat} <: AbstractPolicy
     invest_fraction::T  # fraction to invest (0 to 1)
 end
 
-# For optimization
+# These methods are required for optimization:
 InvestmentPolicy(params::AbstractVector) = InvestmentPolicy(params[1])
 SimOptDecisions.params(p::InvestmentPolicy) = [p.invest_fraction]
 SimOptDecisions.param_bounds(::Type{<:InvestmentPolicy}) = [(0.0, 1.0)]
 ```
 
-## Implementing the Simulation
+::: {.callout-note}
+## Static vs Dynamic Policies
 
-We use the `TimeStepping` interface with five required callbacks:
+This is a **static policy**—the same action every timestep regardless of state.
+
+For **dynamic policies** (actions depend on current state), `get_action` would include logic like:
+
+```julia
+function get_action(policy, state, sow, t)
+    if state.value < policy.threshold
+        return ConservativeAction()
+    else
+        return AggressiveAction()
+    end
+end
+```
+:::
+
+## Step 2: Implement the Five Callbacks
+
+The framework needs five functions to run your simulation.
+These are the "plugs" where you insert your model logic.
+
+### State — Tracking System Evolution
+
+First, define what state you need to track between timesteps:
 
 ```{julia}
 #| output: false
-# State tracks current portfolio value
 struct PortfolioState{T<:AbstractFloat} <: AbstractState
     value::T
 end
+```
 
-# 1. Initialize: start with initial portfolio value
+### Callback 1: Initialize
+
+Create the initial state at `t=0`:
+
+```{julia}
+#| output: false
 function SimOptDecisions.TimeStepping.initialize(
     config::InvestmentConfig, ::InvestmentSOW, ::AbstractRNG
 )
     return PortfolioState(config.initial_value)
 end
+```
 
-# 2. Get action: policy determines investment fraction
+### Callback 2: Get Action
+
+Map (policy, state, sow, time) → action. The framework calls this automatically before each timestep:
+
+```{julia}
+#| output: false
 function SimOptDecisions.get_action(
     policy::InvestmentPolicy, state::PortfolioState, sow::InvestmentSOW, t::TimeStep
 )
     return InvestmentAction(policy.invest_fraction)
 end
+```
 
-# 3. Time axis: years 1 to horizon
+### Callback 3: Time Axis
+
+Define the timesteps to simulate:
+
+```{julia}
+#| output: false
 function SimOptDecisions.TimeStepping.time_axis(config::InvestmentConfig, ::InvestmentSOW)
     return 1:config.horizon
 end
+```
 
-# 4. Run one timestep: compute growth based on action
+### Callback 4: Run Timestep
+
+The core simulation logic. Receives the action computed by `get_action`:
+
+```{julia}
+#| output: false
 function SimOptDecisions.TimeStepping.run_timestep(
     state::PortfolioState,
     action::InvestmentAction,
@@ -131,11 +219,17 @@ function SimOptDecisions.TimeStepping.run_timestep(
     new_value = invested + growth + cash
     new_state = PortfolioState(new_value)
 
-    # Step record: track the value and growth this year
+    # Return (new_state, step_record) - step_record can be any type
     return (new_state, (value=new_value, growth=growth))
 end
+```
 
-# 5. Finalize: return final value and total growth
+### Callback 5: Finalize
+
+Aggregate step records into the outcome returned by `simulate`:
+
+```{julia}
+#| output: false
 function SimOptDecisions.TimeStepping.finalize(
     final_state::PortfolioState,
     step_records::Vector,
@@ -151,9 +245,14 @@ function SimOptDecisions.TimeStepping.finalize(
 end
 ```
 
-Note: No need to override `simulate()` - the framework automatically calls the TimeStepping callbacks.
+::: {.callout-tip}
+## That's It!
 
-## Running Simulations
+With these five callbacks implemented, `simulate(config, sow, policy)` works automatically.
+No need to write a simulation loop—the framework handles it.
+:::
+
+## Step 3: Run Simulations
 
 ### Single Simulation
 
@@ -168,15 +267,15 @@ println("Final value: \$$(round(result.final_value, digits=2))")
 println("Total growth: \$$(round(result.total_growth, digits=2))")
 ```
 
-### Multiple SOWs
+### Multiple SOWs — Testing Robustness
 
-To evaluate policy robustness, simulate across many possible growth rates:
+A key feature of SimOptDecisions is evaluating policies across many uncertain scenarios:
 
 ```{julia}
 #| output: false
-# Sample SOWs with varying growth rates
+# Sample SOWs with varying growth rates (3% to 7%)
 rng = Random.Xoshiro(42)
-sows = [InvestmentSOW(0.03 + 0.04 * rand(rng)) for _ in 1:500]  # rates from 3% to 7%
+sows = [InvestmentSOW(0.03 + 0.04 * rand(rng)) for _ in 1:500]
 ```
 
 ```{julia}
@@ -189,9 +288,11 @@ println("Min: \$$(round(minimum(final_values), digits=2))")
 println("Max: \$$(round(maximum(final_values), digits=2))")
 ```
 
-## Optimization
+## Step 4: Optimization
 
-For optimization, define a metric calculator that aggregates outcomes:
+### Define Metrics
+
+The optimizer needs a function that aggregates outcomes across SOWs into metrics:
 
 ```{julia}
 #| output: false
@@ -204,16 +305,25 @@ function calculate_metrics(outcomes)
 end
 ```
 
-Set up and run optimization:
+::: {.callout-note}
+## Outcomes vs Metrics
+
+- **Outcome**: Result of *one* simulation (one policy × one SOW)
+- **Metric**: Statistic computed by *aggregating* outcomes across many SOWs
+
+The optimizer searches policy space to optimize metrics, not individual outcomes.
+:::
+
+### Set Up and Run Optimization
 
 ```{julia}
 #| output: false
-import Metaheuristics  # loads extension for SimOptDecisions.optimize
+import Metaheuristics  # loads the optimization extension
 
 prob = OptimizationProblem(
     config,
     sows,
-    InvestmentPolicy,
+    InvestmentPolicy,      # Policy TYPE, not instance
     calculate_metrics,
     [maximize(:expected_value)],
 )
@@ -225,9 +335,23 @@ backend = MetaheuristicsBackend(; algorithm=:ECA, max_iterations=100, population
 opt_result = SimOptDecisions.optimize(prob, backend)
 
 println("Optimal invest fraction: $(round(opt_result.best_policy.invest_fraction, digits=3))")
-println("Expected value: \$$(round(opt_result.best_objectives[1], digits=2))")
+println("Expected value: \$$(round(-opt_result.best_objectives[1], digits=2))")
 ```
+
+## Summary: Adapting This Example
+
+To build your own model, replace these components:
+
+| Component | This Example | Your Model |
+|-----------|--------------|------------|
+| **Config** | horizon, initial_value | Your fixed parameters |
+| **SOW** | growth_rate | Your uncertain quantities |
+| **Action** | invest_fraction | Your decision variables |
+| **Policy** | invest_fraction rule | Your decision rule |
+| **State** | portfolio value | What you track over time |
+| **run_timestep** | portfolio growth | Your transition dynamics |
+| **finalize** | total growth, final value | Your outcome metrics |
 
 ## Next Steps
 
-For a more complex example with multi-objective optimization, see the [House Elevation Example](house_elevation.qmd).
+For a more complex example with multi-objective optimization and visualization, see the [House Elevation Example](house_elevation.qmd).

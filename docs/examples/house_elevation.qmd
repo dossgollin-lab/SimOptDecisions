@@ -24,6 +24,19 @@ The challenge is that you face deep uncertainty about:
 
 This tutorial demonstrates how to frame this problem using `SimOptDecisions.jl` and explore the trade-off between upfront costs and expected damages.
 
+::: {.callout-tip}
+## What You'll Learn
+
+This example builds on the [Investment Growth Example](investment_growth.qmd) and demonstrates:
+
+- **Multi-dimensional uncertainty**: SOW with 6 uncertain parameters
+- **Domain-specific physics**: Depth-damage curves, elevation costs
+- **Multi-objective optimization**: Trading off construction cost vs expected damages
+- **Handling discrete choices**: "Don't elevate" vs "elevate by X feet"
+
+If you haven't read the Investment example, start there first.
+:::
+
 ## Setup
 
 ```{julia}
@@ -135,12 +148,35 @@ end
 # For optimization, we need to define how to convert between policy and parameter vector
 ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
 SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
-# Note: We optimize over [1, 14] ft. The "don't elevate" option (0 ft) is a distinct
-# choice that should be evaluated separately - you either elevate or you don't.
 SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(1.0, 14.0)]
+```
 
+::: {.callout-note}
+## Modeling Choice: Binary vs Continuous Decisions
+
+Note that `param_bounds` is `[(1.0, 14.0)]`, not `[(0.0, 14.0)]`. This is a deliberate modeling decision.
+
+**The real decision has two parts:**
+
+1. **Whether to elevate** (binary: yes/no)
+2. **If yes, how high** (continuous: 1-14 ft)
+
+Metaheuristics.jl optimizes continuous parameters, so we optimize over "if you elevate, how high?"
+and evaluate "don't elevate" separately as a baseline.
+
+**Alternative approaches for mixed discrete/continuous problems:**
+
+- Use penalty functions to discourage near-zero elevations
+- Round to discrete levels and optimize over integers
+- Use a hierarchical policy with separate binary and continuous parameters
+- Use optimization backends that support mixed-integer problems
+
+For this pedagogical example, explicitly separating the choices is clearest.
+:::
+
+```{julia}
+#| output: false
 # Define the action: for a static policy, x_t = X^π(S_t) is just the policy's elevation
-# This is a Policy Function Approximation (PFA) - a direct mapping from state to action
 function SimOptDecisions.get_action(
     policy::ElevationPolicy,
     state,  # unused for static policy
@@ -150,9 +186,6 @@ function SimOptDecisions.get_action(
     return ElevationAction(policy.elevation_ft)
 end
 ```
-
-The optimizer will search over continuous elevation values in [0, 14].
-We'll also evaluate integer heights 0:14 for comparison.
 
 ## The Model
 
@@ -756,13 +789,32 @@ This toy problem illustrates several key concepts:
 
 4. **Multi-objective optimization** helps explore these trade-offs systematically, revealing the Pareto frontier of non-dominated solutions.
 
-## Next Steps
+## Summary: Adapting This Example
 
-This example demonstrated:
+This example showed a more complex application of the framework. Here's what you'd change for your own problem:
 
-- Defining the core types: Config, SOW, Action, Policy
-- Using the `TimeStepping` interface with five callbacks: `initialize`, `get_action`, `run_timestep`, `time_axis`, and `finalize`
-- Running Monte Carlo analysis across SOWs
-- Setting up multi-objective optimization with custom metrics
+### Key Components to Customize
+
+| Component | This Example | Your Model |
+|-----------|--------------|------------|
+| **SOW** | Storm surge (GEV), damage curve, discount rate | Your uncertain parameters |
+| **Config** | House size, value, planning horizon | Your fixed model constants |
+| **Action** | Elevation height | Your decision variables |
+| **Policy** | Static elevation choice | Your decision rule |
+| **run_timestep** | Sample surge, compute damage | Your transition dynamics |
+| **finalize** | NPV calculation | Your outcome aggregation |
+| **calculate_metrics** | Expected damage, construction cost | Your optimization objectives |
+
+### Lessons for Your Application
+
+1. **Structure your uncertainty**: Put all uncertain quantities in the SOW. Sample many SOWs to test robustness.
+
+2. **Separate physics from decisions**: The depth-damage curve and elevation cost functions are domain knowledge—keep them separate from the framework machinery.
+
+3. **Handle discrete choices explicitly**: When you have mixed continuous/discrete decisions, consider whether to optimize them jointly or separately.
+
+4. **Use multi-objective optimization** when trade-offs matter. The Pareto front shows you what's achievable—choosing a point on it is a separate (human) decision.
+
+5. **Validate with grid search first**: Before running optimization, explore the space manually (like we did with 0-14 ft elevations). This catches bugs and builds intuition.
 
 For more advanced usage, see the [package documentation](https://github.com/dossgollin-lab/SimOptDecisions.jl).
