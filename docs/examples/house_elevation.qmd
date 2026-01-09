@@ -106,6 +106,19 @@ end
 
 For this example, we consider a **static policy**: choose an elevation height once, at the beginning, and live with that decision for the entire planning horizon.
 
+### Action
+
+The action represents the decision variable—how much to elevate:
+
+```{julia}
+#| output: false
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T  # feet above current ground level (0-14)
+end
+```
+
+### Policy
+
 ```{julia}
 #| output: false
 struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
@@ -125,7 +138,7 @@ function SimOptDecisions.get_action(
     sow::HouseElevationSOW,
     t::TimeStep,
 )
-    return (elevation_ft=policy.elevation_ft,)
+    return ElevationAction(policy.elevation_ft)
 end
 ```
 
@@ -142,7 +155,7 @@ We use values from [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/20
 
 ```{julia}
 #| output: false
-Base.@kwdef struct HouseElevationParams{T<:AbstractFloat} <: AbstractConfig
+Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
     horizon::Int = 70                  # planning horizon (years)
     gauge_to_house::T = 5.0            # surge level at which water reaches house floor (ft)
     house_area_ft2::T = 1500.0         # floor area in square feet
@@ -270,36 +283,35 @@ end
 ## Implementing the Simulation
 
 Now we implement the simulation using the `TimeStepping` interface.
-This provides a structured way to define time-stepped simulations with four callbacks:
+This provides a structured way to define time-stepped simulations with five callbacks:
 
 1. `initialize` - Create initial state (this model is stateless, so returns `nothing`)
-2. `run_timestep` - Execute one year: sample surge, compute damage
-3. `time_axis` - Define the time points (years 1 to horizon)
-4. `finalize` - Aggregate annual damages into NPV
+2. `get_action` - Map policy + state to action (already defined above)
+3. `run_timestep` - Execute one year: sample surge, compute damage
+4. `time_axis` - Define the time points (years 1 to horizon)
+5. `finalize` - Aggregate annual damages into NPV
 
 ```{julia}
 #| output: false
 # Initialize: this model has no state between years
 function SimOptDecisions.TimeStepping.initialize(
-    ::HouseElevationParams, ::HouseElevationSOW, ::AbstractRNG
+    ::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG
 )
     return nothing
 end
 
 # Run one timestep: sample surge, compute damage
+# The framework calls get_action before this, so we receive the action directly
 function SimOptDecisions.TimeStepping.run_timestep(
     state::Nothing,
-    params::HouseElevationParams,
+    action::ElevationAction,
     sow::HouseElevationSOW,
-    policy::ElevationPolicy,
+    config::HouseElevationConfig,
     t::TimeStep,
     rng::AbstractRNG,
 )
-    # Get the action (elevation) from the policy
-    action = get_action(policy, state, sow, t)
-
     # Construction cost is incurred at t=1 only
-    construction_cost = t.t == 1 ? elevation_cost(action.elevation_ft, params.house_area_ft2, params.house_value) : 0.0
+    construction_cost = t.t == 1 ? elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
 
     # Sample annual maximum surge at the gauge (exogenous information)
     surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
@@ -308,7 +320,7 @@ function SimOptDecisions.TimeStepping.run_timestep(
     # Compute flood depth given action and exogenous info
     # gauge_to_house is the surge level at which water reaches the (unelevated) house floor
     # With elevation, we need (gauge_to_house + elevation) surge to start flooding
-    flood_depth_at_house = surge_at_gauge - (params.gauge_to_house + action.elevation_ft)
+    flood_depth_at_house = surge_at_gauge - (config.gauge_to_house + action.elevation_ft)
 
     # Compute fractional damage this year
     damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
@@ -319,15 +331,15 @@ function SimOptDecisions.TimeStepping.run_timestep(
 end
 
 # Time axis: years 1 to horizon
-function SimOptDecisions.TimeStepping.time_axis(params::HouseElevationParams, ::HouseElevationSOW)
-    return 1:(params.horizon)
+function SimOptDecisions.TimeStepping.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
+    return 1:(config.horizon)
 end
 
 # Finalize: aggregate construction cost and discount annual damages to NPV
 function SimOptDecisions.TimeStepping.finalize(
     ::Nothing,
     step_records::Vector,
-    params::HouseElevationParams,
+    config::HouseElevationConfig,
     sow::HouseElevationSOW,
 )
     # Extract construction cost (only non-zero at t=1)
@@ -345,20 +357,9 @@ function SimOptDecisions.TimeStepping.finalize(
         annual_damages=[o.damage_fraction for o in step_records],
     )
 end
-
-# Connect to the main simulate interface
-function SimOptDecisions.simulate(
-    params::HouseElevationParams,
-    sow::HouseElevationSOW,
-    policy::ElevationPolicy,
-    rng::AbstractRNG,
-)
-    SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
-end
 ```
 
-The `TimeStepping.run_simulation` function handles the time loop with preallocation---no `push!` needed.
-Each callback has a clear responsibility, making the code easier to understand and maintain.
+Note: No need to override `simulate()` - the framework automatically calls the TimeStepping callbacks.
 The `Utils.discount_factor` helper handles the discounting calculation in `finalize`.
 
 ## Running the Analysis
@@ -380,7 +381,7 @@ For each possible elevation (0-14 ft), we simulate across all SOWs and collect t
 
 ```{julia}
 #| output: false
-params = HouseElevationParams()
+config = HouseElevationConfig()
 elevations = 0:14
 
 # Store results: for each elevation, vector of NPV damages across SOWs
@@ -388,7 +389,7 @@ results = Dict{Int,Vector{Float64}}()
 
 for elev in elevations
     policy = ElevationPolicy(Float64(elev))
-    outcomes = [simulate(params, sow, policy).npv_damages for sow in sows]
+    outcomes = [simulate(config, sow, policy).npv_damages for sow in sows]
     results[elev] = outcomes
 end
 ```
@@ -543,7 +544,7 @@ let
         best_cost = Inf
         for elev in elevations
             policy = ElevationPolicy(Float64(elev))
-            outcomes = [simulate(params, sow, policy).npv_damages for sow in filtered_sows]
+            outcomes = [simulate(config, sow, policy).npv_damages for sow in filtered_sows]
             total = elevation_cost(elev) + mean(outcomes)
             if total < best_cost
                 best_cost = total
@@ -617,7 +618,7 @@ using Metaheuristics: Metaheuristics  # avoid name collision with SimOptDecision
 
 # Create the optimization problem
 prob = OptimizationProblem(
-    params,
+    config,
     sows,
     ElevationPolicy,
     calculate_metrics,
@@ -713,9 +714,8 @@ This toy problem illustrates several key concepts:
 
 This example demonstrated:
 
-- Defining the three core types (SOW, Policy, Params)
-- Using the `TimeStepping` interface with `initialize`, `run_timestep`, `time_axis`, and `finalize` callbacks
-- Connecting TimeStepping to the main `simulate` interface
+- Defining the core types: Config, SOW, Action, Policy
+- Using the `TimeStepping` interface with five callbacks: `initialize`, `get_action`, `run_timestep`, `time_axis`, and `finalize`
 - Running Monte Carlo analysis across SOWs
 - Setting up multi-objective optimization with custom metrics
 

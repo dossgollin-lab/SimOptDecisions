@@ -33,14 +33,14 @@ using Statistics: mean
 
 ## Defining the Problem
 
-### Fixed Parameters
+### Fixed Parameters (Config)
 
 Parameters shared across all scenarios:
 
 ```{julia}
 #| output: false
-struct InvestmentParams <: AbstractConfig
-    horizon::Int          # years to simulate
+struct InvestmentConfig <: AbstractConfig
+    horizon::Int            # years to simulate
     initial_value::Float64  # starting portfolio value
 end
 ```
@@ -54,6 +54,17 @@ We use parametric types for type stability:
 #| output: false
 struct InvestmentSOW{T<:AbstractFloat} <: AbstractSOW
     growth_rate::T  # annual growth rate (e.g., 0.05 = 5%)
+end
+```
+
+### Action
+
+The action represents the decision at each timestep - what fraction to invest:
+
+```{julia}
+#| output: false
+struct InvestmentAction{T<:AbstractFloat} <: AbstractAction
+    invest_fraction::T  # fraction to invest (0 to 1)
 end
 ```
 
@@ -71,18 +82,11 @@ end
 InvestmentPolicy(params::AbstractVector) = InvestmentPolicy(params[1])
 SimOptDecisions.params(p::InvestmentPolicy) = [p.invest_fraction]
 SimOptDecisions.param_bounds(::Type{<:InvestmentPolicy}) = [(0.0, 1.0)]
-
-# Action: return the investment fraction
-function SimOptDecisions.get_action(
-    policy::InvestmentPolicy, state, sow::InvestmentSOW, t::TimeStep
-)
-    return (invest_fraction=policy.invest_fraction,)
-end
 ```
 
 ## Implementing the Simulation
 
-We use the `TimeStepping` interface with four callbacks:
+We use the `TimeStepping` interface with five required callbacks:
 
 ```{julia}
 #| output: false
@@ -91,29 +95,34 @@ struct PortfolioState{T<:AbstractFloat} <: AbstractState
     value::T
 end
 
-# Initialize: start with initial portfolio value
+# 1. Initialize: start with initial portfolio value
 function SimOptDecisions.TimeStepping.initialize(
-    params::InvestmentParams, ::InvestmentSOW, ::AbstractRNG
+    config::InvestmentConfig, ::InvestmentSOW, ::AbstractRNG
 )
-    return PortfolioState(params.initial_value)
+    return PortfolioState(config.initial_value)
 end
 
-# Time axis: years 1 to horizon
-function SimOptDecisions.TimeStepping.time_axis(params::InvestmentParams, ::InvestmentSOW)
-    return 1:params.horizon
+# 2. Get action: policy determines investment fraction
+function SimOptDecisions.get_action(
+    policy::InvestmentPolicy, state::PortfolioState, sow::InvestmentSOW, t::TimeStep
+)
+    return InvestmentAction(policy.invest_fraction)
 end
 
-# Run one timestep: compute growth based on rate and investment fraction
+# 3. Time axis: years 1 to horizon
+function SimOptDecisions.TimeStepping.time_axis(config::InvestmentConfig, ::InvestmentSOW)
+    return 1:config.horizon
+end
+
+# 4. Run one timestep: compute growth based on action
 function SimOptDecisions.TimeStepping.run_timestep(
     state::PortfolioState,
-    params::InvestmentParams,
+    action::InvestmentAction,
     sow::InvestmentSOW,
-    policy::InvestmentPolicy,
+    config::InvestmentConfig,
     t::TimeStep,
     rng::AbstractRNG,
 )
-    action = get_action(policy, state, sow, t)
-
     # Portfolio growth: only invested fraction earns the growth rate
     invested = state.value * action.invest_fraction
     cash = state.value * (1 - action.invest_fraction)
@@ -122,15 +131,15 @@ function SimOptDecisions.TimeStepping.run_timestep(
     new_value = invested + growth + cash
     new_state = PortfolioState(new_value)
 
-    # Step output: record the growth this year
+    # Step record: track the value and growth this year
     return (new_state, (value=new_value, growth=growth))
 end
 
-# Finalize: return final value and total growth
+# 5. Finalize: return final value and total growth
 function SimOptDecisions.TimeStepping.finalize(
     final_state::PortfolioState,
     step_records::Vector,
-    params::InvestmentParams,
+    config::InvestmentConfig,
     sow::InvestmentSOW,
 )
     total_growth = sum(o.growth for o in step_records)
@@ -140,29 +149,21 @@ function SimOptDecisions.TimeStepping.finalize(
         annual_values=[o.value for o in step_records],
     )
 end
-
-# Connect to main simulate interface
-function SimOptDecisions.simulate(
-    params::InvestmentParams,
-    sow::InvestmentSOW,
-    policy::InvestmentPolicy,
-    rng::AbstractRNG,
-)
-    SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
-end
 ```
+
+Note: No need to override `simulate()` - the framework automatically calls the TimeStepping callbacks.
 
 ## Running Simulations
 
 ### Single Simulation
 
 ```{julia}
-params = InvestmentParams(10, 100.0)  # 10 years, $100 initial
+config = InvestmentConfig(10, 100.0)  # 10 years, $100 initial
 sow = InvestmentSOW(0.05)              # 5% growth rate
 policy = InvestmentPolicy(0.8)         # invest 80%
 rng = Random.Xoshiro(42)
 
-result = simulate(params, sow, policy, rng)
+result = simulate(config, sow, policy, rng)
 println("Final value: \$$(round(result.final_value, digits=2))")
 println("Total growth: \$$(round(result.total_growth, digits=2))")
 ```
@@ -180,7 +181,7 @@ sows = [InvestmentSOW(0.03 + 0.04 * rand(rng)) for _ in 1:500]  # rates from 3% 
 
 ```{julia}
 # Run simulations across all SOWs
-outcomes = [simulate(params, sow, policy, rng) for sow in sows]
+outcomes = [simulate(config, sow, policy, rng) for sow in sows]
 final_values = [o.final_value for o in outcomes]
 
 println("Expected final value: \$$(round(mean(final_values), digits=2))")
@@ -210,7 +211,7 @@ Set up and run optimization:
 using Metaheuristics: Metaheuristics
 
 prob = OptimizationProblem(
-    params,
+    config,
     sows,
     InvestmentPolicy,
     calculate_metrics,
