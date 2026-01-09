@@ -15,11 +15,12 @@
 
         struct OptEmptySOW <: AbstractSOW end
 
-        # Simple for-loop implementation
+        # Simple for-loop implementation (override full 5-arg simulate signature)
         function SimOptDecisions.simulate(
             params::OptCounterParams,
             sow::OptEmptySOW,
             policy::OptCounterPolicy,
+            recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
             value = 0.0
@@ -82,11 +83,12 @@
 
         struct EvalEmptySOW <: AbstractSOW end
 
-        # Simple for-loop implementation
+        # Simple for-loop implementation (override full 5-arg simulate signature)
         function SimOptDecisions.simulate(
             params::EvalCounterParams,
             sow::EvalEmptySOW,
             policy::EvalCounterPolicy,
+            recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
             value = 0.0
@@ -130,11 +132,12 @@
         struct ExtTestParams <: AbstractConfig end
         struct ExtTestSOW <: AbstractSOW end
 
-        # Simple for-loop implementation
+        # Simple for-loop implementation (override full 5-arg simulate signature)
         function SimOptDecisions.simulate(
             params::ExtTestParams,
             sow::ExtTestSOW,
             policy::ExtTestPolicy,
+            recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
             value = 0.0
@@ -162,7 +165,7 @@
         # Extension is loaded (Metaheuristics in test extras), should work
         backend = MetaheuristicsBackend(; algorithm=:ECA, max_iterations=5, population_size=5)
         result = SimOptDecisions.optimize(prob, backend)
-        @test result isa OptimizationResult{ExtTestPolicy}
+        @test result isa OptimizationResult{ExtTestPolicy,Float64}
     end
 
     @testset "Objective extraction" begin
@@ -220,7 +223,7 @@
             x::Float64
         end
 
-        result = OptimizationResult{ResultPolicy}(
+        result = OptimizationResult{ResultPolicy,Float64}(
             [0.5],
             [10.0],
             ResultPolicy(0.5),

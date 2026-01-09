@@ -32,20 +32,20 @@ param_bounds(::Type{T}) where {T<:AbstractPolicy} =
 Result of an optimization run.
 
 # Fields
-- `best_params::Vector{Float64}`: Best parameter vector found
-- `best_objectives::Vector{Float64}`: Objective values at best solution
+- `best_params::Vector{T}`: Best parameter vector found
+- `best_objectives::Vector{T}`: Objective values at best solution
 - `best_policy::P`: The best policy constructed from best_params
 - `convergence_info::Dict{Symbol,Any}`: Backend-specific convergence information
-- `pareto_params::Vector{Vector{Float64}}`: Pareto front parameter vectors (multi-objective)
-- `pareto_objectives::Vector{Vector{Float64}}`: Pareto front objective values (multi-objective)
+- `pareto_params::Vector{Vector{T}}`: Pareto front parameter vectors (multi-objective)
+- `pareto_objectives::Vector{Vector{T}}`: Pareto front objective values (multi-objective)
 """
-struct OptimizationResult{P<:AbstractPolicy}
-    best_params::Vector{Float64}
-    best_objectives::Vector{Float64}
+struct OptimizationResult{P<:AbstractPolicy,T<:AbstractFloat}
+    best_params::Vector{T}
+    best_objectives::Vector{T}
     best_policy::P
     convergence_info::Dict{Symbol,Any}
-    pareto_params::Vector{Vector{Float64}}
-    pareto_objectives::Vector{Vector{Float64}}
+    pareto_params::Vector{Vector{T}}
+    pareto_objectives::Vector{Vector{T}}
 end
 
 """
@@ -158,8 +158,7 @@ end
 Extract objective values from metrics, applying direction (negate for maximize).
 """
 function _extract_objectives(metrics::NamedTuple, objectives::Vector{Objective})
-    values = Float64[]
-    for obj in objectives
+    return map(objectives) do obj
         if !haskey(metrics, obj.name)
             throw(
                 ArgumentError(
@@ -168,11 +167,10 @@ function _extract_objectives(metrics::NamedTuple, objectives::Vector{Objective})
                 ),
             )
         end
-        val = metrics[obj.name]
+        val = Float64(metrics[obj.name])
         # Metaheuristics minimizes, so negate for maximize
-        push!(values, obj.direction == Maximize ? -val : val)
+        obj.direction == Maximize ? -val : val
     end
-    return values
 end
 
 # ============================================================================

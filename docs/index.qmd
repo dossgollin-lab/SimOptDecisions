@@ -15,14 +15,15 @@ This package is under active development and the API may change.
 SimOptDecisions.jl is a **framework** for building simulation-optimization models in Julia.
 It is **not** a turnkey solution—you write Julia code for your model. The framework provides:
 
-1. **Structured vocabulary** — Clear concepts: Config, SOW, Policy, State, StepRecord, Outcome, Metric
+1. **Structured vocabulary** — Clear concepts: Config, SOW, Policy, Action, State, StepRecord, Outcome, Metric
 2. **Pluggable components** — Swap optimization backends, recording strategies
 3. **Boilerplate handled** — Batching, parallel evaluation, checkpointing, type stability
 
 **You still need to:**
 
-- Define your system dynamics (the `run_timestep` function)
-- Specify your policy structure and action space
+- Define your actions by subtyping `AbstractAction`
+- Define your policy logic (`get_action` function)
+- Define your transition dynamics (`run_timestep` function)
 - Implement your metric aggregation logic
 
 ::: {.callout-tip}
@@ -41,7 +42,10 @@ The best way to learn SimOptDecisions.jl is through the examples:
 At the heart of SimOptDecisions.jl is the `simulate` function:
 
 ```julia
-outcome = simulate(config, sow, policy, rng)
+outcome = simulate(config, sow, policy)           # uses default RNG
+outcome = simulate(config, sow, policy, rng)      # explicit RNG
+outcome = simulate(config, sow, policy, recorder) # with recording
+outcome = simulate(config, sow, policy, recorder, rng)  # full signature
 ```
 
 This runs one simulation given:
@@ -49,11 +53,12 @@ This runs one simulation given:
 - **config**: Fixed parameters that define your model (things that don't change across scenarios)
 - **sow**: A State of the World representing one uncertain scenario
 - **policy**: A decision rule that determines actions
-- **rng**: Random number generator for reproducibility
+- **recorder**: Optional, defaults to `NoRecorder()`. Use `TraceRecorderBuilder()` to capture simulation history
+- **rng**: Optional, defaults to `Random.default_rng()`. Explicit RNG for reproducibility
 
-By default, `simulate` automatically calls `TimeStepping.run_simulation`, which executes the four callbacks you implement. No boilerplate needed—just implement the callbacks and call `simulate()`.
+By default, `simulate` calls `TimeStepping.run_simulation`, which executes the five callbacks you implement.
 
-### Fixed Parameters
+### Fixed Parameters (Config)
 
 Fixed parameters are shared across all scenarios—things that don't change with uncertainty.
 Subtype `AbstractConfig`:
@@ -83,7 +88,21 @@ You typically sample many SOWs to evaluate policy robustness.
 For time-varying uncertainties, use `TimeSeriesParameter{T}` instead of `Vector{T}`.
 This wrapper provides safe indexing via `TimeStep`.
 
-### Policies and Actions
+### Actions
+
+An **Action** represents a decision at a specific timestep. Define actions by subtyping `AbstractAction`:
+
+```julia
+struct InventoryAction{T<:AbstractFloat} <: AbstractAction
+    order_quantity::T
+end
+
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T
+end
+```
+
+### Policies
 
 A **Policy** is a parameterized decision rule—it specifies *how* to make decisions, not the decisions themselves.
 Define policies by subtyping `AbstractPolicy` and implementing `get_action`:
@@ -98,9 +117,9 @@ function SimOptDecisions.get_action(
     policy::InventoryPolicy, state, sow, t::TimeStep
 )
     if state.level < policy.reorder_point
-        return (order=policy.order_quantity,)
+        return InventoryAction(policy.order_quantity)
     else
-        return (order=0.0,)
+        return InventoryAction(zero(policy.order_quantity))
     end
 end
 ```
@@ -108,7 +127,7 @@ end
 For **static policies** where parameters directly define the action:
 
 ```julia
-SimOptDecisions.get_action(p::ElevationPolicy, state, sow, t) = (elevation=p.elevation_ft,)
+SimOptDecisions.get_action(p::ElevationPolicy, state, sow, t) = ElevationAction(p.elevation_ft)
 ```
 
 ### Outcomes vs Metrics
@@ -132,18 +151,24 @@ end
 ## TimeStepping Interface
 
 Most simulations iterate through discrete time steps.
-Implement these four callbacks and `simulate()` will automatically use them:
+Implement these five callbacks and `simulate()` will automatically use them:
 
-| Function | Purpose | Returns |
-|----------|---------|---------|
-| `initialize(config, sow, rng)` | Create initial state | `state` |
-| `run_timestep(state, config, sow, policy, t, rng)` | Execute one step | `(new_state, step_record)` |
-| `time_axis(config, sow)` | Define time points | Iterable |
-| `finalize(final_state, step_records, config, sow)` | Aggregate results | `Outcome` |
+| Function | Purpose | Returns | Required? |
+|----------|---------|---------|-----------|
+| `initialize(config, sow, rng)` | Create initial state | `state` | **Yes** |
+| `get_action(policy, state, sow, t)` | Map state to action | `<:AbstractAction` | **Yes** |
+| `run_timestep(state, action, sow, config, t, rng)` | Execute one step | `(new_state, step_record)` | **Yes** |
+| `time_axis(config, sow)` | Define time points | Iterable | **Yes** |
+| `finalize(final_state, step_records, config, sow)` | Aggregate results | `Outcome` | **Yes** |
 
 **StepRecord**: Data tracked at each timestep, returned as the second element from `run_timestep`. All step records are collected and passed to `finalize`.
 
-No boilerplate needed—just implement the callbacks and call `simulate()`:
+The framework calls these in order:
+1. `initialize` creates the initial state
+2. For each timestep:
+   - `get_action` computes the action from the policy and current state
+   - `run_timestep` applies the action and returns the new state
+3. `finalize` aggregates all step records into the final outcome
 
 ```julia
 result = simulate(config, sow, policy, Random.Xoshiro(42))
@@ -210,13 +235,13 @@ end
 This framework implements a sequential decision problem formulation with five elements:
 
 1. **State variables $S_t$** — all information needed to model the system from time $t$ onward
-2. **Decision variables $x_t$** — determined by a policy $X^\pi(S_t)$
+2. **Decision variables $x_t$** — determined by a policy $X^\pi(S_t)$, returned as `AbstractAction`
 3. **Exogenous information $W_{t+1}$** — information arriving after making decision $x_t$ (from SOW)
 4. **Transition function** — how $S_t$ evolves to $S_{t+1}$ given $x_t$ and $W_{t+1}$
 5. **Objective** — used to evaluate the policy over time
 
-The `get_action` function implements the policy mapping.
-The `run_timestep` function implements the transition function.
+The `get_action` function implements the policy mapping $X^\pi(S_t) \to x_t$.
+The `run_timestep` function implements the transition function $S_{t+1} = f(S_t, x_t, W_{t+1})$.
 The SOW provides exogenous information for the entire simulation trajectory.
 
 ## Installation
@@ -232,7 +257,7 @@ Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
 |---------|-------------|
 | Type-stable simulation | Zero-allocation hot loops with `NoRecorder` |
 | Flexible time axes | Works with integers, floats, or `Date` ranges |
-| Structured TimeStepping | Clean interface with `initialize`, `run_timestep`, `finalize` |
-| Optional recording | Trace simulation history for debugging |
+| Structured TimeStepping | Clean interface with five callbacks |
+| Action recording | Trace simulation history including actions taken |
 | Extensible optimization | Plug in Metaheuristics.jl or custom backends |
 | Multi-objective support | Pareto frontier extraction |

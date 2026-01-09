@@ -9,7 +9,7 @@ using Metaheuristics
 using CairoMakie
 
 # Import specific functions to avoid conflicts with Base
-import SimOptDecisions: finalize, step
+import SimOptDecisions.TimeStepping: finalize
 
 @testset "SimOptDecisions.jl" begin
     include("test_types.jl")

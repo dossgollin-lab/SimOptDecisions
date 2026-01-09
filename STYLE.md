@@ -128,19 +128,32 @@ execute:
 SimOptDecisions.jl/
 ├── src/
 │   ├── SimOptDecisions.jl    # Main module, exports
-│   ├── types.jl              # Abstract types, TimeStep, Objective
-│   ├── simulation.jl         # simulate, initialize, step, time_axis
+│   ├── types.jl              # Abstract types, TimeStep, Objective, AbstractAction
+│   ├── simulation.jl         # simulate() entry point
+│   ├── timestepping.jl       # TimeStepping submodule, callbacks
 │   ├── recorders.jl          # NoRecorder, SimulationTrace, Tables.jl
 │   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
 │   ├── validation.jl         # _validate_* functions, constraints
-│   └── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
+│   ├── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
+│   ├── utils.jl              # Utils submodule (discount_factor, timeindex)
+│   └── plotting.jl           # Plotting interface declarations
 ├── ext/
 │   ├── SimOptMetaheuristicsExt.jl
 │   └── SimOptMakieExt.jl
 ├── test/
 │   ├── runtests.jl
-│   └── ext/                  # Extension tests (optional)
+│   ├── test_types.jl
+│   ├── test_simulation.jl
+│   ├── test_timestepping.jl
+│   ├── test_recorders.jl
+│   ├── test_validation.jl
+│   ├── test_optimization.jl
+│   ├── test_persistence.jl
+│   ├── test_aqua.jl
+│   └── ext/                  # Extension tests
 ├── docs/                     # Quarto documentation
 ├── Project.toml
+├── STYLE.md
+├── CLAUDE.md
 └── README.md
 ```

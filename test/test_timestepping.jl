@@ -1,48 +1,45 @@
 @testset "TimeStepping" begin
     @testset "Interface function errors" begin
         # Minimal types for testing error messages
-        struct TSTestParams <: AbstractConfig end
+        struct TSTestConfig <: AbstractConfig end
         struct TSTestSOW <: AbstractSOW end
         struct TSTestPolicy <: AbstractPolicy end
+        struct TSTestAction <: AbstractAction end
 
-        params = TSTestParams()
+        config = TSTestConfig()
         sow = TSTestSOW()
         policy = TSTestPolicy()
         rng = Random.Xoshiro(42)
         ts = TimeStep(1, 1, false)
+        action = TSTestAction()
 
         # run_timestep should throw MethodError if not implemented
         @test_throws MethodError SimOptDecisions.TimeStepping.run_timestep(
-            nothing, params, sow, policy, ts, rng
+            nothing, action, sow, config, ts, rng
         )
 
         # time_axis should throw MethodError if not implemented
-        @test_throws MethodError SimOptDecisions.TimeStepping.time_axis(params, sow)
-    end
+        @test_throws MethodError SimOptDecisions.TimeStepping.time_axis(config, sow)
 
-    @testset "Default implementations" begin
-        struct DefaultTSParams <: AbstractConfig end
-        struct DefaultTSSOW <: AbstractSOW end
+        # initialize should throw ArgumentError if not implemented
+        @test_throws ArgumentError SimOptDecisions.TimeStepping.initialize(config, sow, rng)
 
-        params = DefaultTSParams()
-        sow = DefaultTSSOW()
-        rng = Random.Xoshiro(42)
-
-        # initialize defaults to nothing (stateless models)
-        @test SimOptDecisions.TimeStepping.initialize(params, sow, rng) === nothing
-
-        # finalize defaults to returning final_state
-        @test SimOptDecisions.TimeStepping.finalize(:final_state, [1, 2, 3], params, sow) === :final_state
-        @test SimOptDecisions.TimeStepping.finalize(42.0, Float64[], params, sow) === 42.0
+        # finalize should throw ArgumentError if not implemented
+        @test_throws ArgumentError SimOptDecisions.TimeStepping.finalize(nothing, [], config, sow)
     end
 
     @testset "Stateful counter model" begin
         # A simple counter that increments each step
+
+        struct TSCounterAction <: AbstractAction
+            increment::Int
+        end
+
         struct TSCounterState <: AbstractState
             value::Int
         end
 
-        struct TSCounterParams <: AbstractConfig
+        struct TSCounterConfig <: AbstractConfig
             n_steps::Int
         end
 
@@ -52,35 +49,41 @@
             increment::Int
         end
 
-        # Implement TimeStepping callbacks
-        function SimOptDecisions.TimeStepping.initialize(::TSCounterParams, ::TSCounterSOW, ::AbstractRNG)
+        # Implement all required callbacks
+        function SimOptDecisions.TimeStepping.initialize(::TSCounterConfig, ::TSCounterSOW, ::AbstractRNG)
             return TSCounterState(0)
         end
 
-        function SimOptDecisions.TimeStepping.run_timestep(
-            state::TSCounterState, params::TSCounterParams, sow::TSCounterSOW,
-            policy::TSIncrementPolicy, t::TimeStep, ::AbstractRNG
+        function SimOptDecisions.get_action(
+            policy::TSIncrementPolicy, state::TSCounterState, sow::TSCounterSOW, t::TimeStep
         )
-            new_state = TSCounterState(state.value + policy.increment)
-            return (new_state, policy.increment)  # output is the increment
+            return TSCounterAction(policy.increment)
         end
 
-        function SimOptDecisions.TimeStepping.time_axis(params::TSCounterParams, ::TSCounterSOW)
-            return 1:params.n_steps
+        function SimOptDecisions.TimeStepping.run_timestep(
+            state::TSCounterState, action::TSCounterAction, sow::TSCounterSOW,
+            config::TSCounterConfig, t::TimeStep, ::AbstractRNG
+        )
+            new_state = TSCounterState(state.value + action.increment)
+            return (new_state, action.increment)  # step_record is the increment
+        end
+
+        function SimOptDecisions.TimeStepping.time_axis(config::TSCounterConfig, ::TSCounterSOW)
+            return 1:config.n_steps
         end
 
         function SimOptDecisions.TimeStepping.finalize(
-            final_state::TSCounterState, outputs::Vector, params::TSCounterParams, sow::TSCounterSOW
+            final_state::TSCounterState, step_records::Vector, config::TSCounterConfig, sow::TSCounterSOW
         )
-            return (final_value=final_state.value, total_increments=sum(outputs))
+            return (final_value=final_state.value, total_increments=sum(step_records))
         end
 
-        params = TSCounterParams(10)
+        config = TSCounterConfig(10)
         sow = TSCounterSOW()
         policy = TSIncrementPolicy(5)
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
+        result = SimOptDecisions.TimeStepping.run_simulation(config, sow, policy, rng)
 
         @test result.final_value == 50  # 10 steps * 5 increment
         @test result.total_increments == 50
@@ -88,7 +91,12 @@
 
     @testset "Stateless model (nothing state)" begin
         # Model that computes something each step, no state tracking
-        struct TSStatelessParams <: AbstractConfig
+
+        struct TSStatelessAction <: AbstractAction
+            multiplied_value::Float64
+        end
+
+        struct TSStatelessConfig <: AbstractConfig
             horizon::Int
         end
 
@@ -100,40 +108,50 @@
             base::Float64
         end
 
-        # initialize returns nothing by default, no need to implement
-
-        function SimOptDecisions.TimeStepping.run_timestep(
-            state::Nothing, params::TSStatelessParams, sow::TSStatelessSOW,
-            policy::TSStatelessPolicy, t::TimeStep, ::AbstractRNG
-        )
-            output = policy.base * sow.multiplier * t.t
-            return (nothing, output)
+        function SimOptDecisions.TimeStepping.initialize(::TSStatelessConfig, ::TSStatelessSOW, ::AbstractRNG)
+            return nothing
         end
 
-        function SimOptDecisions.TimeStepping.time_axis(params::TSStatelessParams, ::TSStatelessSOW)
-            return 1:params.horizon
+        function SimOptDecisions.get_action(
+            policy::TSStatelessPolicy, state::Nothing, sow::TSStatelessSOW, t::TimeStep
+        )
+            return TSStatelessAction(policy.base * sow.multiplier * t.t)
+        end
+
+        function SimOptDecisions.TimeStepping.run_timestep(
+            state::Nothing, action::TSStatelessAction, sow::TSStatelessSOW,
+            config::TSStatelessConfig, t::TimeStep, ::AbstractRNG
+        )
+            return (nothing, action.multiplied_value)
+        end
+
+        function SimOptDecisions.TimeStepping.time_axis(config::TSStatelessConfig, ::TSStatelessSOW)
+            return 1:config.horizon
         end
 
         function SimOptDecisions.TimeStepping.finalize(
-            ::Nothing, outputs::Vector, params::TSStatelessParams, sow::TSStatelessSOW
+            ::Nothing, step_records::Vector, config::TSStatelessConfig, sow::TSStatelessSOW
         )
-            return (total=sum(outputs),)
+            return (total=sum(step_records),)
         end
 
-        params = TSStatelessParams(5)
+        config = TSStatelessConfig(5)
         sow = TSStatelessSOW(2.0)
         policy = TSStatelessPolicy(10.0)
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
+        result = SimOptDecisions.TimeStepping.run_simulation(config, sow, policy, rng)
 
         # 10 * 2 * (1+2+3+4+5) = 20 * 15 = 300
         @test result.total == 300.0
     end
 
-    @testset "NamedTuple step output" begin
-        # Test collecting NamedTuple outputs per step
-        struct TSNTParams <: AbstractConfig
+    @testset "NamedTuple step record" begin
+        # Test collecting NamedTuple step records
+
+        struct TSNTAction <: AbstractAction end
+
+        struct TSNTConfig <: AbstractConfig
             horizon::Int
         end
 
@@ -144,46 +162,59 @@
 
         struct TSNTPolicy <: AbstractPolicy end
 
+        function SimOptDecisions.TimeStepping.initialize(::TSNTConfig, ::TSNTsow, ::AbstractRNG)
+            return nothing
+        end
+
+        function SimOptDecisions.get_action(::TSNTPolicy, ::Nothing, ::TSNTsow, ::TimeStep)
+            return TSNTAction()
+        end
+
         function SimOptDecisions.TimeStepping.run_timestep(
-            state::Nothing, params::TSNTParams, sow::TSNTsow,
-            policy::TSNTPolicy, t::TimeStep, ::AbstractRNG
+            state::Nothing, action::TSNTAction, sow::TSNTsow,
+            config::TSNTConfig, t::TimeStep, ::AbstractRNG
         )
             damage = sow.damage_rate * t.t
             cost = sow.cost_rate * t.t
             return (nothing, (damage=damage, cost=cost))
         end
 
-        function SimOptDecisions.TimeStepping.time_axis(params::TSNTParams, ::TSNTsow)
-            return 1:params.horizon
+        function SimOptDecisions.TimeStepping.time_axis(config::TSNTConfig, ::TSNTsow)
+            return 1:config.horizon
         end
 
         function SimOptDecisions.TimeStepping.finalize(
-            ::Nothing, outputs::Vector, params::TSNTParams, sow::TSNTsow
+            ::Nothing, step_records::Vector, config::TSNTConfig, sow::TSNTsow
         )
-            total_damage = sum(o.damage for o in outputs)
-            total_cost = sum(o.cost for o in outputs)
+            total_damage = sum(o.damage for o in step_records)
+            total_cost = sum(o.cost for o in step_records)
             return (total_damage=total_damage, total_cost=total_cost)
         end
 
-        params = TSNTParams(4)
+        config = TSNTConfig(4)
         sow = TSNTsow(10.0, 2.0)
         policy = TSNTPolicy()
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
+        result = SimOptDecisions.TimeStepping.run_simulation(config, sow, policy, rng)
 
         # damage: 10*(1+2+3+4) = 100, cost: 2*(1+2+3+4) = 20
         @test result.total_damage == 100.0
         @test result.total_cost == 20.0
     end
 
-    @testset "Integration with get_action" begin
-        # Test that users can call get_action inside run_timestep
+    @testset "Framework calls get_action" begin
+        # Test that framework calls get_action and passes action to run_timestep
+
+        struct TSActionAction <: AbstractAction
+            invest::Float64
+        end
+
         struct TSActionState <: AbstractState
             level::Float64
         end
 
-        struct TSActionParams <: AbstractConfig
+        struct TSActionConfig <: AbstractConfig
             horizon::Int
         end
 
@@ -195,52 +226,50 @@
             invest_fraction::Float64
         end
 
-        # Implement get_action
+        # Implement get_action - framework calls this
         function SimOptDecisions.get_action(
             policy::TSActionPolicy,
             state::TSActionState,
             sow::TSActionSOW,
             t::TimeStep,
         )
-            return (invest=state.level * policy.invest_fraction,)
+            return TSActionAction(state.level * policy.invest_fraction)
         end
 
         # Implement TimeStepping callbacks
-        function SimOptDecisions.TimeStepping.initialize(::TSActionParams, ::TSActionSOW, ::AbstractRNG)
+        function SimOptDecisions.TimeStepping.initialize(::TSActionConfig, ::TSActionSOW, ::AbstractRNG)
             return TSActionState(100.0)  # Start with 100
         end
 
         function SimOptDecisions.TimeStepping.run_timestep(
-            state::TSActionState, params::TSActionParams, sow::TSActionSOW,
-            policy::TSActionPolicy, t::TimeStep, ::AbstractRNG
+            state::TSActionState, action::TSActionAction, sow::TSActionSOW,
+            config::TSActionConfig, t::TimeStep, ::AbstractRNG
         )
-            # Call get_action to get the investment decision
-            action = get_action(policy, state, sow, t)
-
+            # Action is passed by framework, not computed here
             # Transition: growth from rate + investment
             growth = state.level * sow.growth_rate + action.invest
             new_level = state.level + growth
             new_state = TSActionState(new_level)
 
-            return (new_state, growth)  # output is growth this step
+            return (new_state, growth)  # step_record is growth this step
         end
 
-        function SimOptDecisions.TimeStepping.time_axis(params::TSActionParams, ::TSActionSOW)
-            return 1:params.horizon
+        function SimOptDecisions.TimeStepping.time_axis(config::TSActionConfig, ::TSActionSOW)
+            return 1:config.horizon
         end
 
         function SimOptDecisions.TimeStepping.finalize(
-            final_state::TSActionState, outputs::Vector, params::TSActionParams, sow::TSActionSOW
+            final_state::TSActionState, step_records::Vector, config::TSActionConfig, sow::TSActionSOW
         )
-            return (final_level=final_state.level, total_growth=sum(outputs))
+            return (final_level=final_state.level, total_growth=sum(step_records))
         end
 
-        params = TSActionParams(3)
+        config = TSActionConfig(3)
         sow = TSActionSOW(0.05)  # 5% growth rate
         policy = TSActionPolicy(0.10)  # 10% investment
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
+        result = SimOptDecisions.TimeStepping.run_simulation(config, sow, policy, rng)
 
         # Starting at 100, each step: growth = level * 0.05 + level * 0.10 = level * 0.15
         # Step 1: level=100, growth=15, new_level=115
@@ -251,89 +280,108 @@
     end
 
     @testset "Recording support" begin
+        struct TSRecordAction <: AbstractAction end
+
         struct TSRecordState <: AbstractState
             value::Float64
         end
 
-        struct TSRecordParams <: AbstractConfig
+        struct TSRecordConfig <: AbstractConfig
             horizon::Int
         end
 
         struct TSRecordSOW <: AbstractSOW end
         struct TSRecordPolicy <: AbstractPolicy end
 
-        function SimOptDecisions.TimeStepping.initialize(::TSRecordParams, ::TSRecordSOW, ::AbstractRNG)
+        function SimOptDecisions.TimeStepping.initialize(::TSRecordConfig, ::TSRecordSOW, ::AbstractRNG)
             return TSRecordState(0.0)
         end
 
+        function SimOptDecisions.get_action(::TSRecordPolicy, ::TSRecordState, ::TSRecordSOW, ::TimeStep)
+            return TSRecordAction()
+        end
+
         function SimOptDecisions.TimeStepping.run_timestep(
-            state::TSRecordState, params::TSRecordParams, sow::TSRecordSOW,
-            policy::TSRecordPolicy, t::TimeStep, ::AbstractRNG
+            state::TSRecordState, action::TSRecordAction, sow::TSRecordSOW,
+            config::TSRecordConfig, t::TimeStep, ::AbstractRNG
         )
             new_state = TSRecordState(state.value + 1.0)
             return (new_state, state.value)
         end
 
-        function SimOptDecisions.TimeStepping.time_axis(params::TSRecordParams, ::TSRecordSOW)
-            return 1:params.horizon
+        function SimOptDecisions.TimeStepping.time_axis(config::TSRecordConfig, ::TSRecordSOW)
+            return 1:config.horizon
         end
 
-        params = TSRecordParams(5)
+        function SimOptDecisions.TimeStepping.finalize(
+            final_state::TSRecordState, step_records::Vector, config::TSRecordConfig, sow::TSRecordSOW
+        )
+            return (final_value=final_state.value,)
+        end
+
+        config = TSRecordConfig(5)
         sow = TSRecordSOW()
         policy = TSRecordPolicy()
         rng = Random.Xoshiro(42)
 
-        # Test with TraceRecorderBuilder
+        # Test with TraceRecorderBuilder (using method overload, not kwargs)
         builder = TraceRecorderBuilder()
         result = SimOptDecisions.TimeStepping.run_simulation(
-            params, sow, policy, rng; recorder=builder
+            config, sow, policy, builder, rng
         )
 
-        # Should have recorded initial state + 5 timesteps = 6 entries (but finalize skips first)
-        recorder = finalize(builder)
-        @test length(recorder.states) == 5  # Excluding initial state (time=nothing)
-        @test recorder.times == [1, 2, 3, 4, 5]
-        @test recorder.states[end].value == 5.0
+        # Should have recorded 5 timesteps (excluding initial state)
+        trace = build_trace(builder)
+        @test length(trace.states) == 5
+        @test trace.times == [1, 2, 3, 4, 5]
+        @test trace.states[end].value == 5.0
+        @test all(a -> a isa TSRecordAction, trace.actions)
 
         # Test with NoRecorder (should work without error)
-        result2 = SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
+        result2 = SimOptDecisions.TimeStepping.run_simulation(config, sow, policy, rng)
         @test result2 == result  # Same result with or without recorder
     end
 
     @testset "Type stability" begin
-        struct TSTypeParams <: AbstractConfig end
+        struct TSTypeAction <: AbstractAction end
+
+        struct TSTypeConfig <: AbstractConfig end
         struct TSTypeSOW <: AbstractSOW end
         struct TSTypePolicy <: AbstractPolicy end
 
+        function SimOptDecisions.TimeStepping.initialize(::TSTypeConfig, ::TSTypeSOW, ::AbstractRNG)
+            return 0.0
+        end
+
+        function SimOptDecisions.get_action(::TSTypePolicy, ::Float64, ::TSTypeSOW, ::TimeStep)
+            return TSTypeAction()
+        end
+
         function SimOptDecisions.TimeStepping.run_timestep(
-            state::Float64, params::TSTypeParams, sow::TSTypeSOW,
-            policy::TSTypePolicy, t::TimeStep, ::AbstractRNG
+            state::Float64, action::TSTypeAction, sow::TSTypeSOW,
+            config::TSTypeConfig, t::TimeStep, ::AbstractRNG
         )
             return (state + 1.0, state)
         end
 
-        function SimOptDecisions.TimeStepping.time_axis(::TSTypeParams, ::TSTypeSOW)
+        function SimOptDecisions.TimeStepping.time_axis(::TSTypeConfig, ::TSTypeSOW)
             return 1:5
         end
 
-        function SimOptDecisions.TimeStepping.initialize(::TSTypeParams, ::TSTypeSOW, ::AbstractRNG)
-            return 0.0
-        end
-
         function SimOptDecisions.TimeStepping.finalize(
-            final_state::Float64, outputs::Vector{Float64}, ::TSTypeParams, ::TSTypeSOW
+            final_state::Float64, step_records::Vector{Float64}, ::TSTypeConfig, ::TSTypeSOW
         )
-            return (final=final_state, sum=sum(outputs))
+            return (final=final_state, sum=sum(step_records))
         end
 
-        params = TSTypeParams()
+        config = TSTypeConfig()
         sow = TSTypeSOW()
         policy = TSTypePolicy()
         rng = Random.Xoshiro(42)
 
         # Test type inference
         result = @inferred SimOptDecisions.TimeStepping.run_simulation(
-            params, sow, policy, rng
+            config, sow, policy, rng
         )
         @test result.final == 5.0
         @test result.sum == 10.0  # 0+1+2+3+4
@@ -341,7 +389,10 @@
 
     @testset "SOW-dependent finalize (discounting)" begin
         # Test that finalize can use SOW parameters (like discount_rate)
-        struct TSDiscountParams <: AbstractConfig
+
+        struct TSDiscountAction <: AbstractAction end
+
+        struct TSDiscountConfig <: AbstractConfig
             horizon::Int
         end
 
@@ -351,20 +402,28 @@
 
         struct TSDiscountPolicy <: AbstractPolicy end
 
+        function SimOptDecisions.TimeStepping.initialize(::TSDiscountConfig, ::TSDiscountSOW, ::AbstractRNG)
+            return nothing
+        end
+
+        function SimOptDecisions.get_action(::TSDiscountPolicy, ::Nothing, ::TSDiscountSOW, ::TimeStep)
+            return TSDiscountAction()
+        end
+
         function SimOptDecisions.TimeStepping.run_timestep(
-            state::Nothing, params::TSDiscountParams, sow::TSDiscountSOW,
-            policy::TSDiscountPolicy, t::TimeStep, ::AbstractRNG
+            state::Nothing, action::TSDiscountAction, sow::TSDiscountSOW,
+            config::TSDiscountConfig, t::TimeStep, ::AbstractRNG
         )
             damage = 100.0  # Constant damage each year
             return (nothing, damage)
         end
 
-        function SimOptDecisions.TimeStepping.time_axis(params::TSDiscountParams, ::TSDiscountSOW)
-            return 1:params.horizon
+        function SimOptDecisions.TimeStepping.time_axis(config::TSDiscountConfig, ::TSDiscountSOW)
+            return 1:config.horizon
         end
 
         function SimOptDecisions.TimeStepping.finalize(
-            ::Nothing, damages::Vector, params::TSDiscountParams, sow::TSDiscountSOW
+            ::Nothing, damages::Vector, config::TSDiscountConfig, sow::TSDiscountSOW
         )
             # Discount using SOW's discount rate
             npv = sum(
@@ -374,12 +433,12 @@
             return (npv_damages=npv, annual_damages=damages)
         end
 
-        params = TSDiscountParams(3)
+        config = TSDiscountConfig(3)
         sow = TSDiscountSOW(0.10)  # 10% discount rate
         policy = TSDiscountPolicy()
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.TimeStepping.run_simulation(params, sow, policy, rng)
+        result = SimOptDecisions.TimeStepping.run_simulation(config, sow, policy, rng)
 
         # NPV = 100/1.10 + 100/1.10^2 + 100/1.10^3
         expected_npv = 100/1.10 + 100/1.10^2 + 100/1.10^3
@@ -390,6 +449,9 @@
     @testset "Auto-connection to simulate" begin
         # Test that simulate() automatically calls TimeStepping.run_simulation
         # (no boilerplate needed - just implement the callbacks)
+
+        struct TSConnectAction <: AbstractAction end
+
         struct TSConnectState <: AbstractState
             count::Int
         end
@@ -405,9 +467,13 @@
             return TSConnectState(0)
         end
 
+        function SimOptDecisions.get_action(::TSConnectPolicy, ::TSConnectState, ::TSConnectSOW, ::TimeStep)
+            return TSConnectAction()
+        end
+
         function SimOptDecisions.TimeStepping.run_timestep(
-            state::TSConnectState, config::TSConnectConfig, sow::TSConnectSOW,
-            policy::TSConnectPolicy, t::TimeStep, ::AbstractRNG
+            state::TSConnectState, action::TSConnectAction, sow::TSConnectSOW,
+            config::TSConnectConfig, t::TimeStep, ::AbstractRNG
         )
             return (TSConnectState(state.count + 1), state.count)
         end
@@ -417,7 +483,7 @@
         end
 
         function SimOptDecisions.TimeStepping.finalize(
-            final_state::TSConnectState, outputs::Vector, config::TSConnectConfig, sow::TSConnectSOW
+            final_state::TSConnectState, step_records::Vector, config::TSConnectConfig, sow::TSConnectSOW
         )
             return (final_count=final_state.count,)
         end

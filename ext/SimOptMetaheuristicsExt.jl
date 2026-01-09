@@ -124,7 +124,7 @@ function _wrap_result(
         # Un-negate maximized objectives
         best_f = _unnegate_objectives(best_f_raw, prob.objectives)
 
-        return OptimizationResult{P}(
+        return OptimizationResult{P,Float64}(
             best_x,
             best_f,
             P(best_x),
@@ -154,7 +154,7 @@ function _wrap_result(
         best_x = isempty(pareto_params) ? zeros(length(param_bounds(P))) : pareto_params[1]
         best_f = isempty(pareto_objectives) ? zeros(n_objectives) : pareto_objectives[1]
 
-        return OptimizationResult{P}(
+        return OptimizationResult{P,Float64}(
             best_x,
             best_f,
             P(best_x),

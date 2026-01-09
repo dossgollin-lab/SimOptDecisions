@@ -12,7 +12,7 @@ function _validate_policy_interface(::Type{P}) where {P<:AbstractPolicy}
     bounds = try
         param_bounds(P)
     catch e
-        if e isa ErrorException && contains(string(e), "Implement")
+        if e isa ArgumentError && contains(e.msg, "not implemented")
             throw(
                 ArgumentError(
                     "Policy type $P must implement `param_bounds(::Type{$P})` " *
@@ -145,24 +145,24 @@ function _validate_objectives(objectives)
 end
 
 # ============================================================================
-# Params Validation Hooks
+# Config Validation Hooks
 # ============================================================================
 
 """
-    validate(params::AbstractConfig) -> Bool
+    validate(config::AbstractConfig) -> Bool
 
-Override this to add domain-specific validation for your params.
+Override this to add domain-specific validation for your config.
 Default returns true (valid).
 """
-validate(params::AbstractConfig) = true
+validate(config::AbstractConfig) = true
 
 """
-    validate(policy::AbstractPolicy, params::AbstractConfig) -> Bool
+    validate(policy::AbstractPolicy, config::AbstractConfig) -> Bool
 
-Override this to add domain-specific validation for policy/params compatibility.
+Override this to add domain-specific validation for policy/config compatibility.
 Default returns true (valid).
 """
-validate(policy::AbstractPolicy, params::AbstractConfig) = true
+validate(policy::AbstractPolicy, config::AbstractConfig) = true
 
 # ============================================================================
 # Constraint Types
