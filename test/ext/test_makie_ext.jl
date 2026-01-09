@@ -40,8 +40,9 @@ using CairoMakie
             (position=2.5, velocity=0.0),
         ]
         times = [1, 2, 3, 4]
+        actions = [nothing, nothing, nothing, nothing]  # Placeholder actions
 
-        trace = SimulationTrace(states, step_records, times)
+        trace = SimulationTrace(states, step_records, times, actions)
 
         # Test plotting
         fig, axes = plot_trace(trace)
@@ -55,8 +56,9 @@ using CairoMakie
         states = [Float64(i) for i in 1:5]
         step_records = [(value=Float64(i),) for i in 1:5]
         times = collect(1:5)
+        actions = [nothing for _ in 1:5]
 
-        trace = SimulationTrace(states, step_records, times)
+        trace = SimulationTrace(states, step_records, times, actions)
 
         # Test with custom kwargs
         fig, axes = plot_trace(
@@ -69,7 +71,7 @@ using CairoMakie
 
     @testset "plot_trace empty error" begin
         # Create empty trace and test that plot_trace throws an error
-        trace = SimulationTrace(Float64[], NamedTuple[], Int[])
+        trace = SimulationTrace(Float64[], NamedTuple[], Int[], Nothing[])
         @test_throws ErrorException plot_trace(trace)
     end
 
@@ -83,7 +85,7 @@ using CairoMakie
         pareto_params = [[0.1], [0.3], [0.5], [0.7], [0.9]]
         pareto_objectives = [[1.0, 9.0], [2.0, 7.0], [4.0, 4.0], [7.0, 2.0], [9.0, 1.0]]
 
-        result = OptimizationResult{ParetoTestPolicy}(
+        result = OptimizationResult{ParetoTestPolicy,Float64}(
             [0.5],
             [4.0, 4.0],
             ParetoTestPolicy(0.5),
@@ -106,7 +108,7 @@ using CairoMakie
         pareto_params = [[0.2], [0.5], [0.8]]
         pareto_objectives = [[1.0, 5.0], [2.5, 2.5], [5.0, 1.0]]
 
-        result = OptimizationResult{NamedParetoPolicy}(
+        result = OptimizationResult{NamedParetoPolicy,Float64}(
             [0.5],
             [2.5, 2.5],
             NamedParetoPolicy(0.5),
@@ -133,7 +135,7 @@ using CairoMakie
         pareto_params = [[0.3], [0.6]]
         pareto_objectives = [[1.0, 3.0], [3.0, 1.0]]
 
-        result = OptimizationResult{NoHighlightPolicy}(
+        result = OptimizationResult{NoHighlightPolicy,Float64}(
             [0.3],
             [1.0, 3.0],
             NoHighlightPolicy(0.3),
@@ -153,7 +155,7 @@ using CairoMakie
             x::Float64
         end
 
-        result = OptimizationResult{EmptyParetoPolicy}(
+        result = OptimizationResult{EmptyParetoPolicy,Float64}(
             [0.5],
             [1.0],
             EmptyParetoPolicy(0.5),
@@ -174,7 +176,7 @@ using CairoMakie
         pareto_params = [[0.5]]
         pareto_objectives = [[1.0]]  # Only 1 objective
 
-        result = OptimizationResult{SingleObjPolicy}(
+        result = OptimizationResult{SingleObjPolicy,Float64}(
             [0.5],
             [1.0],
             SingleObjPolicy(0.5),

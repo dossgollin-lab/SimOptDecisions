@@ -99,7 +99,7 @@ _checkpoint_metric_calc(outcomes) = (mean=sum(o.final for o in outcomes) / lengt
             x::Float64
         end
 
-        result = OptimizationResult{ExpResultPolicy}(
+        result = OptimizationResult{ExpResultPolicy,Float64}(
             [0.7],
             [5.0],
             ExpResultPolicy(0.7),
