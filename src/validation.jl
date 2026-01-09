@@ -183,14 +183,14 @@ end
 A constraint that adds a penalty to the objective(s) when violated.
 The function should return 0.0 for no violation, positive for violation.
 """
-struct PenaltyConstraint <: AbstractConstraint
+struct PenaltyConstraint{T<:AbstractFloat} <: AbstractConstraint
     name::Symbol
     func::Function  # policy -> Float64 (0.0 = no violation)
-    weight::Float64
+    weight::T
 
-    function PenaltyConstraint(name::Symbol, func::Function, weight::Float64)
+    function PenaltyConstraint(name::Symbol, func::Function, weight::T) where {T<:AbstractFloat}
         weight >= 0 || throw(ArgumentError("Penalty weight must be non-negative"))
-        new(name, func, weight)
+        new{T}(name, func, weight)
     end
 end
 
