@@ -47,7 +47,10 @@ struct TimeSeriesParameterBoundsError <: Exception
 end
 
 function Base.showerror(io::IO, e::TimeSeriesParameterBoundsError)
-    print(io, "TimeSeriesParameterBoundsError: index $(e.index) exceeds data length $(e.length). ")
+    print(
+        io,
+        "TimeSeriesParameterBoundsError: index $(e.index) exceeds data length $(e.length). ",
+    )
     print(io, "Extend your time series data or shorten the simulation horizon.")
 end
 
@@ -65,7 +68,8 @@ TimeSeriesParameter(data) = TimeSeriesParameter(collect(Float64, data))
 Base.getindex(ts::TimeSeriesParameter, t::TimeStep) = ts[t.t]
 
 function Base.getindex(ts::TimeSeriesParameter{T}, i::Integer) where {T}
-    (i < 1 || i > length(ts.data)) && throw(TimeSeriesParameterBoundsError(i, length(ts.data)))
+    (i < 1 || i > length(ts.data)) &&
+        throw(TimeSeriesParameterBoundsError(i, length(ts.data)))
     ts.data[i]
 end
 
@@ -85,8 +89,11 @@ Return `nothing` for stateless models, or `<:AbstractState` for stateful models.
 """
 function initialize end
 
-initialize(config::AbstractConfig, ::AbstractSOW, ::AbstractRNG) =
-    interface_not_implemented(:initialize, typeof(config), "sow::AbstractSOW, rng::AbstractRNG")
+function initialize(config::AbstractConfig, ::AbstractSOW, ::AbstractRNG)
+    interface_not_implemented(
+        :initialize, typeof(config), "sow::AbstractSOW, rng::AbstractRNG"
+    )
+end
 
 """
     run_timestep(state, action::AbstractAction, sow::AbstractSOW, config::AbstractConfig, t::TimeStep, rng::AbstractRNG) -> (new_state, step_record)
@@ -112,8 +119,11 @@ Aggregate step records into final outcome. Must be implemented.
 """
 function finalize end
 
-finalize(final_state, step_records::Vector, config::AbstractConfig, ::AbstractSOW) =
-    interface_not_implemented(:finalize, typeof(config), "final_state, step_records::Vector, sow::AbstractSOW")
+function finalize(final_state, step_records::Vector, config::AbstractConfig, ::AbstractSOW)
+    interface_not_implemented(
+        :finalize, typeof(config), "final_state, step_records::Vector, sow::AbstractSOW"
+    )
+end
 
 # ============================================================================
 # Framework-Provided Runner
@@ -136,7 +146,7 @@ function run_simulation(
     sow::AbstractSOW,
     policy::AbstractPolicy,
     recorder::AbstractRecorder,
-    rng::AbstractRNG
+    rng::AbstractRNG,
 )
     times = time_axis(config, sow)
     _validate_time_axis(times)
@@ -170,10 +180,7 @@ end
 
 # Without recorder (rng only)
 function run_simulation(
-    config::AbstractConfig,
-    sow::AbstractSOW,
-    policy::AbstractPolicy,
-    rng::AbstractRNG
+    config::AbstractConfig, sow::AbstractSOW, policy::AbstractPolicy, rng::AbstractRNG
 )
     return run_simulation(config, sow, policy, NoRecorder(), rng)
 end
@@ -183,17 +190,13 @@ function run_simulation(
     config::AbstractConfig,
     sow::AbstractSOW,
     policy::AbstractPolicy,
-    recorder::AbstractRecorder
+    recorder::AbstractRecorder,
 )
     return run_simulation(config, sow, policy, recorder, default_rng())
 end
 
 # Minimal (no recorder, no rng)
-function run_simulation(
-    config::AbstractConfig,
-    sow::AbstractSOW,
-    policy::AbstractPolicy
-)
+function run_simulation(config::AbstractConfig, sow::AbstractSOW, policy::AbstractPolicy)
     return run_simulation(config, sow, policy, NoRecorder(), default_rng())
 end
 

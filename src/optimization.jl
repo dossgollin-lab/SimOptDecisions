@@ -21,8 +21,9 @@ Override for your policy type.
 """
 function param_bounds end
 
-param_bounds(::Type{T}) where {T<:AbstractPolicy} =
+function param_bounds(::Type{T}) where {T<:AbstractPolicy}
     interface_not_implemented(:param_bounds, T, "::Type")
+end
 
 # ============================================================================
 # Optimization Result

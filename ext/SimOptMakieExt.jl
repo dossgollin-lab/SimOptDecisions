@@ -163,7 +163,10 @@ function SimOptDecisions.plot_parallel(
     maxs = [maximum(d[j] for d in all_data) for j in 1:n_axes]
 
     function normalize(data)
-        return [(maxs[j] == mins[j] ? 0.5 : (data[j] - mins[j]) / (maxs[j] - mins[j])) for j in 1:n_axes]
+        return [
+            (maxs[j] == mins[j] ? 0.5 : (data[j] - mins[j]) / (maxs[j] - mins[j])) for
+            j in 1:n_axes
+        ]
     end
 
     fig = Figure(; figure_kwargs...)

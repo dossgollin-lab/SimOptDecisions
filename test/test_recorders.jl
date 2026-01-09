@@ -47,11 +47,13 @@
         @test Tables.getcolumn(trace, :state) == [1.0, 2.0, 3.0]
         @test Tables.getcolumn(trace, :step_record) == [(v=10,), (v=20,), (v=30,)]
         @test Tables.getcolumn(trace, :time) == [100, 200, 300]
-        @test Tables.getcolumn(trace, :action) == [TableTestAction(1), TableTestAction(2), TableTestAction(3)]
+        @test Tables.getcolumn(trace, :action) ==
+            [TableTestAction(1), TableTestAction(2), TableTestAction(3)]
         @test Tables.getcolumn(trace, 1) == [1.0, 2.0, 3.0]
         @test Tables.getcolumn(trace, 2) == [(v=10,), (v=20,), (v=30,)]
         @test Tables.getcolumn(trace, 3) == [100, 200, 300]
-        @test Tables.getcolumn(trace, 4) == [TableTestAction(1), TableTestAction(2), TableTestAction(3)]
+        @test Tables.getcolumn(trace, 4) ==
+            [TableTestAction(1), TableTestAction(2), TableTestAction(3)]
 
         # Invalid column access
         @test_throws ArgumentError Tables.getcolumn(trace, :invalid)
