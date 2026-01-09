@@ -693,8 +693,10 @@ prob = OptimizationProblem(
 
 ```{julia}
 # Run multi-objective optimization using NSGA-II
-# The backend stores algorithm parameters; options is for advanced algorithm-specific settings
-backend = MetaheuristicsBackend(; algorithm=:NSGA2, max_iterations=100, population_size=30)
+# parallel=true enables parallel fitness evaluation across threads
+backend = MetaheuristicsBackend(;
+    algorithm=:NSGA2, max_iterations=100, population_size=30, parallel=true
+)
 ```
 
 ```{julia}
