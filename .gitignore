@@ -1,5 +1,6 @@
 *.pdf
 .claude/
+Manifest.toml
 
 # Quarto output
 docs/_site/
