@@ -52,6 +52,8 @@ jobs:
 
       - name: Render Quarto site
         run: quarto render docs
+        env:
+          QUARTO_JULIA: julia
 
       - name: Upload artifact
         if: github.ref == 'refs/heads/main'
