@@ -208,58 +208,48 @@ function SimOptDecisions.optimize_backend(
         bounds[2, i] = b[2]  # upper bound
     end
 
-    # Core fitness evaluation for a single solution
-    function _evaluate_single(x::AbstractVector{T}) where {T<:AbstractFloat}
-        # Create policy from parameters
+    # Evaluate a single solution vector and return objectives
+    function _evaluate_one(x)
         policy = P(x)
-
-        # Use deterministic RNG based on parameter hash for reproducibility
         rng = Random.Xoshiro(hash(x))
-
-        # Evaluate policy across SOWs
         metrics = evaluate_policy(prob, policy, rng)
-
-        # Extract objectives (negates maximization objectives)
         objectives = _extract_objectives(metrics, prob.objectives)
-
-        # Apply constraints
-        objectives = _apply_constraints(objectives, policy, prob.constraints)
-
-        return objectives
+        return _apply_constraints(objectives, policy, prob.constraints)
     end
 
-    # Single solution fitness (used when parallel_evaluation=false)
-    function fitness(x::AbstractVector{T}) where {T<:AbstractFloat}
-        objectives = _evaluate_single(x)
-        if n_objectives == 1
-            return objectives[1]
-        else
-            return (objectives, Float64[], Float64[])
-        end
-    end
-
-    # Batch fitness for parallel evaluation (Matrix input: each row is a solution)
-    function fitness(X::AbstractMatrix{T}) where {T<:AbstractFloat}
-        n_solutions = size(X, 1)
-
-        if n_objectives == 1
-            # Single objective: return vector of fitness values
-            results = Vector{Float64}(undef, n_solutions)
-            Threads.@threads for i in 1:n_solutions
-                objectives = _evaluate_single(view(X, i, :))
-                results[i] = objectives[1]
+    # Fitness function that handles both single (Vector) and batch (Matrix) evaluation
+    # When parallel_evaluation=true, Metaheuristics passes a Matrix where each row is a solution
+    # When parallel_evaluation=false, it passes a Vector
+    function fitness(X)
+        if X isa AbstractVector
+            # Single solution evaluation
+            objectives = _evaluate_one(X)
+            if n_objectives == 1
+                return objectives[1]
+            else
+                return (objectives, Float64[], Float64[])
             end
-            return results
         else
-            # Multi-objective: return (F, G, H) where F is n_solutions × n_objectives
-            F = Matrix{Float64}(undef, n_solutions, n_objectives)
-            Threads.@threads for i in 1:n_solutions
-                objectives = _evaluate_single(view(X, i, :))
-                F[i, :] = objectives
+            # Batch evaluation: X is N × D matrix, each row is a solution
+            n_solutions = size(X, 1)
+
+            if n_objectives == 1
+                # Single objective: return vector of fitness values
+                fx = zeros(n_solutions)
+                Threads.@threads for i in 1:n_solutions
+                    fx[i] = _evaluate_one(view(X, i, :))[1]
+                end
+                return fx
+            else
+                # Multi-objective: return (F, G, H)
+                fx = zeros(n_solutions, n_objectives)
+                gx = zeros(n_solutions, 0)
+                hx = zeros(n_solutions, 0)
+                Threads.@threads for i in 1:n_solutions
+                    fx[i, :] = _evaluate_one(view(X, i, :))
+                end
+                return (fx, gx, hx)
             end
-            G = zeros(n_solutions, 0)  # No inequality constraints
-            H = zeros(n_solutions, 0)  # No equality constraints
-            return (F, G, H)
         end
     end
 
