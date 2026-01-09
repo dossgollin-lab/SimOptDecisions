@@ -4,7 +4,7 @@ subtitle: "A toy problem for decision-making under uncertainty"
 author: "Doss-Gollin Lab @ Rice CEVE"
 engine: julia
 execute:
-  project: ..
+  exeflags: ["--project=.."]
 ---
 
 ## The Problem
@@ -39,9 +39,10 @@ If you haven't read the Investment example, start there first.
 
 ```{julia}
 #| output: false
-# Activate the docs environment
+# Dev SimOptDecisions (not registered) and instantiate deps
 using Pkg: Pkg
-Pkg.activate(dirname(dirname(@__FILE__)))
+Pkg.develop(path=joinpath(@__DIR__, "..", ".."))
+Pkg.instantiate()
 ```
 
 ```{julia}

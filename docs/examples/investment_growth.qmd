@@ -4,7 +4,7 @@ subtitle: "A minimal working example"
 author: "Doss-Gollin Lab @ Rice CEVE"
 engine: julia
 execute:
-  project: ..
+  exeflags: ["--project=.."]
 ---
 
 ## Overview
@@ -30,8 +30,10 @@ This example walks through each step so you can adapt it to your own problem.
 
 ```{julia}
 #| output: false
+# Dev SimOptDecisions (not registered) and instantiate deps
 using Pkg: Pkg
-Pkg.activate(dirname(dirname(@__FILE__)))
+Pkg.develop(path=joinpath(@__DIR__, "..", ".."))
+Pkg.instantiate()
 ```
 
 ```{julia}
