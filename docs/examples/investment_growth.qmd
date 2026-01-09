@@ -2,11 +2,6 @@
 title: "Investment Growth Model"
 subtitle: "A minimal working example"
 author: "Doss-Gollin Lab @ Rice CEVE"
-engine: julia
-execute:
-  exeflags: ["+1.12", "--threads=auto"]
-  freeze: false
-  cache: false
 ---
 
 ## Overview

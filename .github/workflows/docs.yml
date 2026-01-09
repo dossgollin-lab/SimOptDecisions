@@ -40,6 +40,14 @@ jobs:
 
       - uses: quarto-dev/quarto-actions/setup@v2
 
+      - name: Cache Quarto freeze
+        uses: actions/cache@v4
+        with:
+          path: docs/_freeze
+          key: quarto-freeze-${{ hashFiles('docs/**/*.qmd') }}
+          restore-keys: |
+            quarto-freeze-
+
       - name: Render Quarto site
         run: quarto render docs
 

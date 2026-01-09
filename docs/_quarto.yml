@@ -41,7 +41,7 @@ format:
 # Julia engine configuration
 engine: julia
 execute:
-  exeflags: ["+1.12", "--project=@.", "--threads=auto"]
-  freeze: false
-  cache: false
+  exeflags: ["--project=@.", "--threads=auto"]
+  freeze: auto
+  cache: true
 
