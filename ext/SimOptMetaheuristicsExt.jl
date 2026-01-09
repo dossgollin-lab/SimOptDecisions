@@ -84,14 +84,18 @@ end
 """
 Denormalize parameters from [0,1] space to actual bounds.
 """
-function _denormalize(x_normalized::AbstractVector, bounds_vec::Vector{Tuple{Float64,Float64}})
+function _denormalize(
+    x_normalized::AbstractVector, bounds_vec::Vector{Tuple{Float64,Float64}}
+)
     return [lo + x * (hi - lo) for (x, (lo, hi)) in zip(x_normalized, bounds_vec)]
 end
 
 """
 Denormalize a matrix of parameters (each row is a solution).
 """
-function _denormalize(X_normalized::AbstractMatrix, bounds_vec::Vector{Tuple{Float64,Float64}})
+function _denormalize(
+    X_normalized::AbstractMatrix, bounds_vec::Vector{Tuple{Float64,Float64}}
+)
     X_denorm = similar(X_normalized)
     for j in eachindex(bounds_vec)
         lo, hi = bounds_vec[j]

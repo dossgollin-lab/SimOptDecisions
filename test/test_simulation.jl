@@ -41,10 +41,7 @@
 
             # Custom action computation
             function SimOptDecisions.get_action(
-                policy::InventoryPolicy,
-                state::InventoryState,
-                sow::DemandSOW,
-                t::TimeStep,
+                policy::InventoryPolicy, state::InventoryState, sow::DemandSOW, t::TimeStep
             )
                 if state.level < policy.reorder_point
                     return InventoryAction(policy.order_size)
@@ -83,10 +80,7 @@
             end
 
             function SimOptDecisions.get_action(
-                policy::StatelessPolicy,
-                state::Nothing,
-                sow::InfoSOW,
-                t::TimeStep,
+                policy::StatelessPolicy, state::Nothing, sow::InfoSOW, t::TimeStep
             )
                 return StatelessAction(sow.base_value * policy.multiplier * t.t)
             end
@@ -151,7 +145,7 @@
             recorder::AbstractRecorder,
             rng::AbstractRNG,
         )
-            return (result=config.multiplier * sow.value * policy.factor,)
+            return (result=(config.multiplier * sow.value * policy.factor),)
         end
 
         config = AnalyticalConfig(2.0)
@@ -353,5 +347,4 @@ end
         @test length(times3) == 1
         @test times3[1] == TimeStep(1, 1, true)
     end
-
 end

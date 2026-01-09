@@ -24,10 +24,7 @@ using Metaheuristics
 
     # Simple for-loop implementation
     function SimOptDecisions.simulate(
-        params::MHCounterParams,
-        sow::MHEmptySOW,
-        policy::MHCounterPolicy,
-        rng::AbstractRNG,
+        params::MHCounterParams, sow::MHEmptySOW, policy::MHCounterPolicy, rng::AbstractRNG
     )
         value = 0.0
         for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)

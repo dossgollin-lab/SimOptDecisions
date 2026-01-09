@@ -1,6 +1,8 @@
 # Module-level metric calculator to avoid JLD2 serialization warnings
 # (functions defined inside @testset are closures that JLD2 can't serialize properly)
-_checkpoint_metric_calc(outcomes) = (mean=sum(o.final for o in outcomes) / length(outcomes),)
+function _checkpoint_metric_calc(outcomes)
+    (mean=sum(o.final for o in outcomes) / length(outcomes),)
+end
 
 @testset "Persistence" begin
     @testset "SharedParameters" begin

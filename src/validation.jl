@@ -46,14 +46,14 @@ function _validate_policy_interface(::Type{P}) where {P<:AbstractPolicy}
         if !isa(b, Tuple) || length(b) != 2
             throw(
                 ArgumentError(
-                    "param_bounds(::Type{$P})[$i] must be a 2-tuple (lower, upper), got $b",
+                    "param_bounds(::Type{$P})[$i] must be a 2-tuple (lower, upper), got $b"
                 ),
             )
         end
         if b[1] > b[2]
             throw(
                 ArgumentError(
-                    "param_bounds(::Type{$P})[$i] has lower > upper: $(b[1]) > $(b[2])",
+                    "param_bounds(::Type{$P})[$i] has lower > upper: $(b[1]) > $(b[2])"
                 ),
             )
         end
@@ -74,7 +74,9 @@ function _validate_policy_interface(::Type{P}) where {P<:AbstractPolicy}
     end
 
     if !(test_policy isa AbstractPolicy)
-        throw(ArgumentError("$P(x) must return an AbstractPolicy, got $(typeof(test_policy))"))
+        throw(
+            ArgumentError("$P(x) must return an AbstractPolicy, got $(typeof(test_policy))")
+        )
     end
 
     return nothing
@@ -188,7 +190,9 @@ struct PenaltyConstraint{T<:AbstractFloat} <: AbstractConstraint
     func::Function  # policy -> Float64 (0.0 = no violation)
     weight::T
 
-    function PenaltyConstraint(name::Symbol, func::Function, weight::T) where {T<:AbstractFloat}
+    function PenaltyConstraint(
+        name::Symbol, func::Function, weight::T
+    ) where {T<:AbstractFloat}
         weight >= 0 || throw(ArgumentError("Penalty weight must be non-negative"))
         new{T}(name, func, weight)
     end
@@ -217,9 +221,7 @@ function _validate_problem(prob)
     n_sows = length(prob.sows)
     batch = prob.batch_size
     if batch isa FixedBatch && batch.n > n_sows
-        throw(
-            ArgumentError("FixedBatch size $(batch.n) exceeds number of SOWs ($n_sows)"),
-        )
+        throw(ArgumentError("FixedBatch size $(batch.n) exceeds number of SOWs ($n_sows)"))
     end
 
     return nothing

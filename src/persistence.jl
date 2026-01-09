@@ -91,7 +91,10 @@ end
 Save optimization state for crash recovery or later analysis.
 """
 function save_checkpoint(
-    filename::AbstractString, prob::OptimizationProblem, optimizer_state; metadata::String=""
+    filename::AbstractString,
+    prob::OptimizationProblem,
+    optimizer_state;
+    metadata::String="",
 )
     JLD2.jldsave(
         filename;
@@ -135,7 +138,9 @@ Save complete experiment configuration and results.
 function save_experiment(
     filename::AbstractString, config::ExperimentConfig, result::OptimizationResult
 )
-    JLD2.jldsave(filename; config=config, result=result, timestamp=Dates.now(), version="0.1.0")
+    JLD2.jldsave(
+        filename; config=config, result=result, timestamp=Dates.now(), version="0.1.0"
+    )
     return nothing
 end
 
@@ -146,7 +151,12 @@ Load a saved experiment.
 """
 function load_experiment(filename::AbstractString)
     data = JLD2.jldopen(filename, "r") do file
-        (; config=file["config"], result=file["result"], timestamp=file["timestamp"], version=file["version"])
+        (;
+            config=file["config"],
+            result=file["result"],
+            timestamp=file["timestamp"],
+            version=file["version"],
+        )
     end
     return data
 end
