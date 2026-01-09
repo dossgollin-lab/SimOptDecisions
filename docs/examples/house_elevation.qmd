@@ -148,31 +148,8 @@ end
 # For optimization, we need to define how to convert between policy and parameter vector
 ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
 SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
-SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(1.0, 14.0)]
+SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
 ```
-
-::: {.callout-note}
-## Modeling Choice: Binary vs Continuous Decisions
-
-Note that `param_bounds` is `[(1.0, 14.0)]`, not `[(0.0, 14.0)]`. This is a deliberate modeling decision.
-
-**The real decision has two parts:**
-
-1. **Whether to elevate** (binary: yes/no)
-2. **If yes, how high** (continuous: 1-14 ft)
-
-Metaheuristics.jl optimizes continuous parameters, so we optimize over "if you elevate, how high?"
-and evaluate "don't elevate" separately as a baseline.
-
-**Alternative approaches for mixed discrete/continuous problems:**
-
-- Use penalty functions to discourage near-zero elevations
-- Round to discrete levels and optimize over integers
-- Use a hierarchical policy with separate binary and continuous parameters
-- Use optimization backends that support mixed-integer problems
-
-For this pedagogical example, explicitly separating the choices is clearest.
-:::
 
 ```{julia}
 #| output: false
@@ -703,23 +680,13 @@ backend = MetaheuristicsBackend(;
 opt_result = SimOptDecisions.optimize(prob, backend)
 ```
 
-We should also evaluate the "don't elevate" baseline (0 ft) separately, since that's a distinct decision:
-
-```{julia}
-#| output: false
-# Evaluate no-elevation baseline
-no_elevate_outcomes = [simulate(config, sow, ElevationPolicy(0.0)) for sow in sows]
-no_elevate_metrics = calculate_metrics(no_elevate_outcomes)
-println("No elevation: cost=0.0, expected_damage=$(round(no_elevate_metrics.expected_damage, digits=3))")
-```
-
 ### Visualizing the Pareto Front
 
 The optimization returns a set of Pareto-optimal solutions—policies where you cannot improve one objective without worsening another:
 
 ```{julia}
 #| label: fig-pareto
-#| fig-cap: "Pareto front showing trade-off between construction cost and expected NPV damages. The red diamond shows the no-elevation baseline."
+#| fig-cap: "Pareto front showing trade-off between construction cost and expected NPV damages."
 #| code-fold: true
 let
     fig = Figure(; size=(700, 500))
@@ -730,10 +697,6 @@ let
         title="Pareto Front: Construction Cost vs Expected Damage",
     )
 
-    # Plot the no-elevation baseline
-    scatter!(ax, [0.0], [no_elevate_metrics.expected_damage];
-        markersize=20, color=:red, marker=:diamond, label="No elevation (0 ft)")
-
     # Extract Pareto front from optimization
     pareto_pts = collect(SimOptDecisions.pareto_front(opt_result))
 
@@ -742,7 +705,7 @@ let
         expected = [obj[2] for (_, obj) in pareto_pts]
         elevations = [round(p[1]; digits=1) for (p, _) in pareto_pts]
 
-        scatter!(ax, construction, expected; markersize=12, color=:steelblue, label="Pareto front")
+        scatter!(ax, construction, expected; markersize=12, color=:steelblue)
 
         # Label a subset of points with elevation (avoid clutter)
         labeled = Set{Float64}()
@@ -750,25 +713,21 @@ let
             # Only label if not too close to already-labeled point
             if all(abs(elev - l) > 1.5 for l in labeled)
                 text!(ax, construction[i], expected[i];
-                    text=string(round(Int, elev)), align=(:left, :bottom), offset=(5, 5))
+                    text="$(round(Int, elev)) ft", align=(:left, :bottom), offset=(5, 5))
                 push!(labeled, elev)
             end
         end
     end
 
-    axislegend(ax; position=:rt)
     fig
 end
 ```
 
 ### Interpreting Results
 
-The Pareto front reveals the fundamental trade-off:
-
-- **No elevation (0 ft)** has zero construction cost but the highest expected damages
-- **Lower elevations (1-4 ft)** have moderate construction costs with significant damage reduction
-- **Higher elevations (8+ ft)** provide excellent protection but at substantial upfront cost
-- The "best" choice depends on your **risk tolerance** and **budget constraints**
+The Pareto front shows the trade-off between upfront construction cost and long-term expected damages.
+Points near the origin (low cost, low damage) are infeasible—you can't get protection without paying for it.
+The optimizer finds the efficient frontier: for any given construction budget, these are the elevations that minimize expected damages.
 
 ```{julia}
 # Show the best policy found (by first objective)
@@ -781,15 +740,15 @@ println(
 
 ## Discussion
 
-This toy problem illustrates several key concepts:
+This model makes several simplifying assumptions worth noting:
 
-1. **Decision under uncertainty**: There is no single "correct" elevation. The choice depends on your beliefs about future storms, your risk tolerance, and how you value present vs. future costs.
+1. **Stationary storm climate**: We sample from a fixed GEV distribution each year. In reality, sea level rise and changing storm patterns would shift this distribution over time. The framework supports time-varying SOWs via `TimeSeriesParameter` if you want to model non-stationarity.
 
-2. **Trade-offs are fundamental**: Lower elevation saves money now but increases expected future damages. Higher elevation costs more upfront but provides protection.
+2. **Independent annual damages**: The model assumes flood damage in one year doesn't affect vulnerability in future years. For a more realistic model, you might track cumulative damage or recovery state.
 
-3. **Deep uncertainty matters**: The uncertainty in outcomes (see @fig-uncertainty) can be substantial. Risk-averse decision-makers might prefer elevations that reduce worst-case outcomes, even if expected costs are slightly higher.
+3. **Single decision point**: We choose elevation once at $t=0$. A more complex model could allow staged investments or adaptive policies that respond to observed flooding.
 
-4. **Multi-objective optimization** helps explore these trade-offs systematically, revealing the Pareto frontier of non-dominated solutions.
+4. **Simplified cost model**: The elevation cost function uses USACE estimates but doesn't account for site-specific factors, permitting delays, or temporary relocation costs that vary by household.
 
 ## Summary: Adapting This Example
 
@@ -813,10 +772,8 @@ This example showed a more complex application of the framework. Here's what you
 
 2. **Separate physics from decisions**: The depth-damage curve and elevation cost functions are domain knowledge—keep them separate from the framework machinery.
 
-3. **Handle discrete choices explicitly**: When you have mixed continuous/discrete decisions, consider whether to optimize them jointly or separately.
+3. **Validate with grid search first**: Before running optimization, explore the space manually (like we did with 0-14 ft elevations). This catches bugs and builds intuition.
 
-4. **Use multi-objective optimization** when trade-offs matter. The Pareto front shows you what's achievable—choosing a point on it is a separate (human) decision.
-
-5. **Validate with grid search first**: Before running optimization, explore the space manually (like we did with 0-14 ft elevations). This catches bugs and builds intuition.
+4. **Use multi-objective optimization** when you have competing objectives. The Pareto front shows the efficient frontier—selecting a point is a separate decision.
 
 For more advanced usage, see the [package documentation](https://github.com/dossgollin-lab/SimOptDecisions.jl).
