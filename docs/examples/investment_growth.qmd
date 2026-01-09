@@ -30,14 +30,6 @@ This example walks through each step so you can adapt it to your own problem.
 
 ```{julia}
 #| output: false
-# Dev SimOptDecisions (not registered) and instantiate deps
-using Pkg: Pkg
-Pkg.develop(path=joinpath(@__DIR__, "..", ".."))
-Pkg.instantiate()
-```
-
-```{julia}
-#| output: false
 using Revise
 using SimOptDecisions
 using Random

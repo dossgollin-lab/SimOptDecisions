@@ -39,14 +39,6 @@ If you haven't read the Investment example, start there first.
 
 ```{julia}
 #| output: false
-# Dev SimOptDecisions (not registered) and instantiate deps
-using Pkg: Pkg
-Pkg.develop(path=joinpath(@__DIR__, "..", ".."))
-Pkg.instantiate()
-```
-
-```{julia}
-#| output: false
 using Revise
 using SimOptDecisions
 using Distributions
