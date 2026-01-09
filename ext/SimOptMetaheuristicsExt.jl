@@ -236,10 +236,10 @@ function SimOptDecisions.optimize_backend(
         backend.algorithm, n_objectives, backend.population_size, backend.max_iterations, backend.options
     )
 
-    # Run optimization (with optional parallel evaluation)
-    mh_result = Metaheuristics.optimize(
-        fitness, bounds, algorithm; parallel_evaluation=backend.parallel
-    )
+    # Run optimization
+    # Note: backend.parallel is reserved for future use; Metaheuristics.jl
+    # handles parallelism internally based on Julia's threading configuration
+    mh_result = Metaheuristics.optimize(fitness, bounds, algorithm)
 
     # Wrap result
     return _wrap_result(mh_result, P, prob)
