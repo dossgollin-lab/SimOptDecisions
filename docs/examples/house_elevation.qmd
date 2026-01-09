@@ -698,15 +698,16 @@ The optimization returns a set of Pareto-optimal solutions—policies where you 
 
 ```{julia}
 #| label: fig-pareto
-#| fig-cap: "Pareto front showing trade-off between construction cost and expected NPV damages."
+#| fig-cap: "Pareto front showing trade-off between construction cost and expected NPV damages. Diagonal lines show iso-cost contours (total cost = construction + damages)."
 #| code-fold: true
 let
-    fig = Figure(; size=(700, 500))
+    fig = Figure(; size=(600, 600))
     ax = Axis(
         fig[1, 1];
         xlabel="Construction cost (fraction of house value)",
         ylabel="Expected NPV damages (fraction of house value)",
         title="Pareto Front: Construction Cost vs Expected Damage",
+        aspect=1,
     )
 
     # Extract Pareto front from optimization
@@ -716,6 +717,16 @@ let
         construction = [obj[1] for (_, obj) in pareto_pts]
         expected = [obj[2] for (_, obj) in pareto_pts]
         elevations = [round(p[1]; digits=1) for (p, _) in pareto_pts]
+
+        # Draw iso-cost diagonal lines (x + y = constant)
+        all_costs = construction .+ expected
+        cost_range = range(minimum(all_costs) * 0.8, maximum(all_costs) * 1.1; length=6)
+        for total_cost in cost_range
+            # Line from (0, total_cost) to (total_cost, 0)
+            xs = [0.0, total_cost]
+            ys = [total_cost, 0.0]
+            lines!(ax, xs, ys; color=(:gray, 0.3), linewidth=0.5, linestyle=:dash)
+        end
 
         scatter!(ax, construction, expected; markersize=12, color=:steelblue)
 
