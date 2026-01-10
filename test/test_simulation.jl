@@ -11,7 +11,7 @@
         policy = TestPolicy()
         rng = Random.Xoshiro(42)
 
-        # simulate calls TimeStepping.run_simulation by default,
+        # simulate calls run_simulation by default,
         # which throws MethodError for time_axis (no fallback implementation)
         @test_throws MethodError simulate(config, sow, policy, rng)
 
@@ -124,7 +124,7 @@
 
     @testset "Direct simulate (non-time-stepped)" begin
         # Test analytical/direct computation without time-stepping
-        # Users can override simulate() completely to bypass TimeStepping
+        # Users can override simulate() completely to bypass the callbacks
 
         struct AnalyticalConfig <: AbstractConfig
             multiplier::Float64

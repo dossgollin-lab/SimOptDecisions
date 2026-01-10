@@ -134,6 +134,52 @@ function _apply_constraints(
 end
 
 # ============================================================================
+# Pareto Best Selection
+# ============================================================================
+
+"""
+Select best solution from Pareto front using normalized equal weighting.
+Normalizes each objective to [0,1] range and picks the solution with lowest sum
+(equivalent to picking the point closest to origin in normalized space).
+"""
+function _select_best_pareto(pareto_objectives::Vector{Vector{Float64}})
+    if isempty(pareto_objectives)
+        return 1
+    end
+    if length(pareto_objectives) == 1
+        return 1
+    end
+
+    n_obj = length(pareto_objectives[1])
+    n_sol = length(pareto_objectives)
+
+    # Find min/max for each objective
+    mins = [minimum(pareto_objectives[i][j] for i in 1:n_sol) for j in 1:n_obj]
+    maxs = [maximum(pareto_objectives[i][j] for i in 1:n_sol) for j in 1:n_obj]
+
+    # Compute normalized sum for each solution (lower is better)
+    best_idx = 1
+    best_score = Inf
+    for i in 1:n_sol
+        score = 0.0
+        for j in 1:n_obj
+            range = maxs[j] - mins[j]
+            if range > 0
+                score += (pareto_objectives[i][j] - mins[j]) / range
+            else
+                score += 0.5  # All same value
+            end
+        end
+        if score < best_score
+            best_score = score
+            best_idx = i
+        end
+    end
+
+    return best_idx
+end
+
+# ============================================================================
 # Result Wrapping
 # ============================================================================
 
@@ -186,9 +232,10 @@ function _wrap_result(
             push!(pareto_objectives, _unnegate_objectives(raw_obj, prob.objectives))
         end
 
-        # Select best as first Pareto solution (or could use hypervolume)
-        best_x = isempty(pareto_params) ? zeros(length(bounds_vec)) : pareto_params[1]
-        best_f = isempty(pareto_objectives) ? zeros(n_objectives) : pareto_objectives[1]
+        # Select best using normalized objective weighting (equal importance in [0,1] space)
+        best_idx = _select_best_pareto(pareto_objectives)
+        best_x = isempty(pareto_params) ? zeros(length(bounds_vec)) : pareto_params[best_idx]
+        best_f = isempty(pareto_objectives) ? zeros(n_objectives) : pareto_objectives[best_idx]
 
         return OptimizationResult{P,Float64}(
             best_x,
@@ -237,11 +284,15 @@ function SimOptDecisions.optimize_backend(
     normalized_bounds = zeros(2, n_params)
     normalized_bounds[2, :] .= 1.0  # All upper bounds are 1.0
 
+    # Get seed from backend options, defaulting to 42
+    sim_seed = get(backend.options, :seed, 42)::Int
+
     # Evaluate a single solution vector (in normalized space) and return objectives
+    # Uses fixed seed for consistent policy comparison across optimization
     function _evaluate_one(x_normalized)
         x_real = _denormalize(x_normalized, bounds_vec)
         policy = P(x_real)
-        rng = Random.Xoshiro(hash(x_normalized))
+        rng = Random.Xoshiro(sim_seed)
         metrics = evaluate_policy(prob, policy, rng)
         objectives = _extract_objectives(metrics, prob.objectives)
         return _apply_constraints(objectives, policy, prob.constraints)

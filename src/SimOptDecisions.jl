@@ -31,14 +31,13 @@ export TimeStep
 # Core simulation
 export simulate, get_action
 
+# Callbacks (users implement these)
+export initialize, run_timestep, time_axis, finalize
+
 # Utils helper submodule
 export Utils
 
-# TimeStepping submodule
-export TimeStepping
-
-# TimeSeriesParameter (from TimeStepping module)
-using .TimeStepping: TimeSeriesParameter, TimeSeriesParameterBoundsError
+# TimeSeriesParameter
 export TimeSeriesParameter, TimeSeriesParameterBoundsError
 
 # Recorders and traces

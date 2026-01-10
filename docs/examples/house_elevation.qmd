@@ -301,8 +301,8 @@ end
 
 ## Implementing the Simulation
 
-Now we implement the simulation using the `TimeStepping` interface.
-This provides a structured way to define time-stepped simulations with five callbacks:
+Now we implement the simulation using the five callbacks.
+This provides a structured way to define time-stepped simulations:
 
 1. `initialize` - Create initial state (this model is stateless, so returns `nothing`)
 2. `get_action` - Map policy + state to action (already defined above)
@@ -316,7 +316,7 @@ Since flood damage in one year doesn't affect the house's vulnerability in the n
 
 ```{julia}
 #| output: false
-function SimOptDecisions.TimeStepping.initialize(
+function SimOptDecisions.initialize(
     ::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG
 )
     return nothing
@@ -329,7 +329,7 @@ We simulate year-by-year over the planning horizon:
 
 ```{julia}
 #| output: false
-function SimOptDecisions.TimeStepping.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
+function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
     return 1:(config.horizon)
 end
 ```
@@ -341,7 +341,7 @@ The framework calls `get_action(policy, state, sow, t)` before this function, so
 
 ```{julia}
 #| output: false
-function SimOptDecisions.TimeStepping.run_timestep(
+function SimOptDecisions.run_timestep(
     state::Nothing,
     action::ElevationAction,
     sow::HouseElevationSOW,
@@ -379,7 +379,7 @@ After all timesteps, we aggregate the annual damages into a net present value (N
 
 ```{julia}
 #| output: false
-function SimOptDecisions.TimeStepping.finalize(
+function SimOptDecisions.finalize(
     ::Nothing,
     step_records::Vector,
     config::HouseElevationConfig,
@@ -400,7 +400,7 @@ function SimOptDecisions.TimeStepping.finalize(
 end
 ```
 
-Note: No need to override `simulate()` - the framework automatically calls these TimeStepping callbacks in sequence.
+Note: No need to override `simulate()` - the framework automatically calls these callbacks in sequence.
 
 ## Running the Analysis
 

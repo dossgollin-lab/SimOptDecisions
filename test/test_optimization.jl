@@ -1,33 +1,48 @@
 @testset "Optimization" begin
     @testset "OptimizationProblem construction" begin
-        # Set up MWE types for optimization
-        struct OptCounterState <: AbstractState
-            value::Float64
-        end
+        # Set up MWE types for optimization using 5-callback pattern
+        struct OptCounterAction <: AbstractAction end
 
         struct OptCounterPolicy <: AbstractPolicy
             increment::Float64
         end
 
-        struct OptCounterParams <: AbstractConfig
+        struct OptCounterConfig <: AbstractConfig
             n_steps::Int
         end
 
         struct OptEmptySOW <: AbstractSOW end
 
-        # Simple for-loop implementation (override full 5-arg simulate signature)
-        function SimOptDecisions.simulate(
-            params::OptCounterParams,
-            sow::OptEmptySOW,
-            policy::OptCounterPolicy,
-            recorder::AbstractRecorder,
-            rng::AbstractRNG,
+        # Implement the 5 callbacks
+        function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptySOW, ::AbstractRNG)
+            return 0.0  # state is just a Float64 counter
+        end
+
+        function SimOptDecisions.get_action(
+            ::OptCounterPolicy, ::Float64, ::OptEmptySOW, ::TimeStep
         )
-            value = 0.0
-            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
-                value += policy.increment
-            end
-            return (final_value=value,)
+            return OptCounterAction()
+        end
+
+        function SimOptDecisions.run_timestep(
+            state::Float64,
+            ::OptCounterAction,
+            ::OptEmptySOW,
+            ::OptCounterConfig,
+            ::TimeStep,
+            ::AbstractRNG,
+        )
+            return (state + 1.0, state)  # increment state, record old value
+        end
+
+        function SimOptDecisions.time_axis(config::OptCounterConfig, ::OptEmptySOW)
+            return 1:config.n_steps
+        end
+
+        function SimOptDecisions.finalize(
+            final_state::Float64, ::Vector, config::OptCounterConfig, ::OptEmptySOW
+        )
+            return (final_value=final_state,)
         end
 
         # Implement policy interface for optimization
@@ -36,7 +51,7 @@
         SimOptDecisions.params(p::OptCounterPolicy) = [p.increment]
 
         # Create optimization problem
-        params = OptCounterParams(10)
+        config = OptCounterConfig(10)
         sows = [OptEmptySOW() for _ in 1:5]
 
         function metric_calculator(outcomes)
@@ -44,10 +59,10 @@
         end
 
         prob = OptimizationProblem(
-            params, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
+            config, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
         )
 
-        @test prob.config === params
+        @test prob.config === config
         @test length(prob.sows) == 5
         @test prob.policy_type === OptCounterPolicy
         @test length(prob.objectives) == 1
@@ -56,7 +71,7 @@
 
         # Test with options
         prob2 = OptimizationProblem(
-            params,
+            config,
             sows,
             OptCounterPolicy,
             metric_calculator,
@@ -68,40 +83,55 @@
     end
 
     @testset "evaluate_policy" begin
-        # Reuse MWE types (defined in previous testset but need to redefine here)
-        struct EvalCounterState <: AbstractState
-            value::Float64
-        end
+        # Set up MWE types using 5-callback pattern
+        struct EvalCounterAction <: AbstractAction end
 
         struct EvalCounterPolicy <: AbstractPolicy
             increment::Float64
         end
 
-        struct EvalCounterParams <: AbstractConfig
+        struct EvalCounterConfig <: AbstractConfig
             n_steps::Int
         end
 
         struct EvalEmptySOW <: AbstractSOW end
 
-        # Simple for-loop implementation (override full 5-arg simulate signature)
-        function SimOptDecisions.simulate(
-            params::EvalCounterParams,
-            sow::EvalEmptySOW,
-            policy::EvalCounterPolicy,
-            recorder::AbstractRecorder,
-            rng::AbstractRNG,
+        # Implement the 5 callbacks
+        function SimOptDecisions.initialize(::EvalCounterConfig, ::EvalEmptySOW, ::AbstractRNG)
+            return 0.0
+        end
+
+        function SimOptDecisions.get_action(
+            policy::EvalCounterPolicy, ::Float64, ::EvalEmptySOW, ::TimeStep
         )
-            value = 0.0
-            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
-                value += policy.increment
-            end
-            return (final_value=value,)
+            return EvalCounterAction()
+        end
+
+        function SimOptDecisions.run_timestep(
+            state::Float64,
+            ::EvalCounterAction,
+            ::EvalEmptySOW,
+            ::EvalCounterConfig,
+            ::TimeStep,
+            ::AbstractRNG,
+        )
+            return (state + 5.0, state)  # Fixed increment of 5.0 for this test
+        end
+
+        function SimOptDecisions.time_axis(config::EvalCounterConfig, ::EvalEmptySOW)
+            return 1:config.n_steps
+        end
+
+        function SimOptDecisions.finalize(
+            final_state::Float64, ::Vector, config::EvalCounterConfig, ::EvalEmptySOW
+        )
+            return (final_value=final_state,)
         end
 
         SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
         EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
 
-        params = EvalCounterParams(10)
+        config = EvalCounterConfig(10)
         sows = [EvalEmptySOW() for _ in 1:5]
 
         function eval_metric_calculator(outcomes)
@@ -109,7 +139,7 @@
         end
 
         prob = OptimizationProblem(
-            params, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
+            config, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
         )
 
         policy = EvalCounterPolicy(5.0)

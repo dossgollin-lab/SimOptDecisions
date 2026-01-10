@@ -31,20 +31,26 @@ struct MyPolicy <: AbstractPolicy
     invest_fraction::Float64
 end
 
-# 2. Implement TimeStepping callbacks (simulate() auto-calls these)
-function SimOptDecisions.TimeStepping.run_timestep(
-    state::Float64, config::MyConfig, sow::MySOW,
-    policy::MyPolicy, t::TimeStep, rng::AbstractRNG
+struct MyAction <: AbstractAction end
+
+# 2. Implement the five callbacks (simulate() auto-calls these)
+SimOptDecisions.initialize(::MyConfig, ::MySOW, ::AbstractRNG) = 100.0
+SimOptDecisions.time_axis(config::MyConfig, ::MySOW) = 1:config.horizon
+
+function SimOptDecisions.get_action(::MyPolicy, ::Float64, ::MySOW, ::TimeStep)
+    return MyAction()
+end
+
+function SimOptDecisions.run_timestep(
+    state::Float64, ::MyAction, sow::MySOW,
+    config::MyConfig, t::TimeStep, rng::AbstractRNG
 )
-    growth = state * sow.growth_rate * policy.invest_fraction
+    growth = state * sow.growth_rate
     return (state + growth, growth)  # (new_state, step_record)
 end
 
-SimOptDecisions.TimeStepping.time_axis(config::MyConfig, sow::MySOW) = 1:config.horizon
-SimOptDecisions.TimeStepping.initialize(::MyConfig, ::MySOW, ::AbstractRNG) = 100.0
-
-function SimOptDecisions.TimeStepping.finalize(final_state, outputs, config::MyConfig, sow::MySOW)
-    return (final_value=final_state, total_growth=sum(outputs))
+function SimOptDecisions.finalize(final_state, step_records, config::MyConfig, sow::MySOW)
+    return (final_value=final_state, total_growth=sum(step_records))
 end
 
 # 3. Run simulation (RNG required for reproducibility)
@@ -54,7 +60,7 @@ policy = MyPolicy(0.5)
 rng = Random.Xoshiro(42)
 
 result = simulate(config, sow, policy, rng)
-# result.final_value ≈ 128, result.total_growth ≈ 28
+# result.final_value ≈ 163, result.total_growth ≈ 63
 ```
 
 ## Documentation
@@ -62,7 +68,7 @@ result = simulate(config, sow, policy, rng)
 See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions.jl/) for:
 
 - Detailed API reference
-- The TimeStepping interface for time-stepped simulations
+- The five callbacks for time-stepped simulations
 - Optimization with multi-objective support
 - The house elevation example demonstrating flood risk decision-making
 
@@ -77,7 +83,7 @@ Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
 
 - **Type-stable simulation** — Zero-allocation hot loops with `NoRecorder`
 - **Flexible time axes** — Works with integers, floats, or `Date` ranges
-- **Structured TimeStepping** — Clean interface with `initialize`, `run_timestep`, `time_axis`, `finalize`
+- **Structured callbacks** — Clean interface with `initialize`, `get_action`, `run_timestep`, `time_axis`, `finalize`
 - **Optional recording** — Trace simulation history for debugging
 - **Extensible optimization** — Plug in Metaheuristics.jl or custom backends
 - **Multi-objective support** — Pareto frontier extraction

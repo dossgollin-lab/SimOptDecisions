@@ -176,25 +176,25 @@ abstract type AbstractConstraint end
 A constraint that must be satisfied for a solution to be feasible.
 The function should return true if the policy is feasible.
 """
-struct FeasibilityConstraint <: AbstractConstraint
+struct FeasibilityConstraint{F} <: AbstractConstraint
     name::Symbol
-    func::Function  # policy -> Bool (true = feasible)
+    func::F  # policy -> Bool (true = feasible)
 end
 
 """
 A constraint that adds a penalty to the objective(s) when violated.
 The function should return 0.0 for no violation, positive for violation.
 """
-struct PenaltyConstraint{T<:AbstractFloat} <: AbstractConstraint
+struct PenaltyConstraint{T<:AbstractFloat,F} <: AbstractConstraint
     name::Symbol
-    func::Function  # policy -> Float64 (0.0 = no violation)
+    func::F  # policy -> Float64 (0.0 = no violation)
     weight::T
 
     function PenaltyConstraint(
-        name::Symbol, func::Function, weight::T
-    ) where {T<:AbstractFloat}
+        name::Symbol, func::F, weight::T
+    ) where {T<:AbstractFloat,F}
         weight >= 0 || throw(ArgumentError("Penalty weight must be non-negative"))
-        new{T}(name, func, weight)
+        new{T,F}(name, func, weight)
     end
 end
 

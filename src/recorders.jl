@@ -36,13 +36,25 @@ end
 # ============================================================================
 
 """
-    SimulationTrace{S,R,T,A}
+    SimulationTrace{I,S,R,T,A}
 
-Immutable trace of a simulation run. Contains states, step_records, times, and actions.
+Immutable trace of a simulation run.
+
+# Fields
+- `initial_state::I`: State at t=0 before any actions
+- `states::Vector{S}`: States after each timestep (length = n_timesteps)
+- `step_records::Vector{R}`: Records from each timestep (length = n_timesteps)
+- `times::Vector{T}`: Time values for each timestep (length = n_timesteps)
+- `actions::Vector{A}`: Actions taken at each timestep (length = n_timesteps)
+
+All vectors are aligned: `states[i]`, `step_records[i]`, `times[i]`, `actions[i]`
+correspond to timestep i.
+
 Created from TraceRecorderBuilder via `build_trace`.
-Implements Tables.jl interface.
+Implements Tables.jl interface for the per-timestep data.
 """
-struct SimulationTrace{S,R,T,A}
+struct SimulationTrace{I,S,R,T,A}
+    initial_state::I
     states::Vector{S}
     step_records::Vector{R}
     times::Vector{T}
@@ -53,19 +65,25 @@ end
     build_trace(r::TraceRecorderBuilder) -> SimulationTrace
 
 Convert TraceRecorderBuilder to typed SimulationTrace.
-Skips initial state (index 1) which has time=nothing, action=nothing.
+The first recorded state becomes `initial_state`; subsequent entries form the vectors.
 """
 function build_trace(r::TraceRecorderBuilder)
     if length(r.states) < 2
-        error("Cannot build trace from empty TraceRecorderBuilder")
+        error("Cannot build trace: need at least initial state + one timestep")
     end
 
+    # Initial state is at index 1 (before any actions)
+    initial_state = r.states[1]
+
+    # Timestep data starts at index 2
+    I = typeof(initial_state)
     S = typeof(r.states[2])
     R = typeof(r.step_records[2])
     T = typeof(r.times[2])
     A = typeof(r.actions[2])
 
-    return SimulationTrace{S,R,T,A}(
+    return SimulationTrace{I,S,R,T,A}(
+        initial_state,
         convert(Vector{S}, r.states[2:end]),
         convert(Vector{R}, r.step_records[2:end]),
         convert(Vector{T}, r.times[2:end]),
@@ -111,6 +129,6 @@ function Tables.getcolumn(t::SimulationTrace, i::Int)
     end
 end
 
-function Tables.schema(t::SimulationTrace{S,R,T,A}) where {S,R,T,A}
+function Tables.schema(t::SimulationTrace{I,S,R,T,A}) where {I,S,R,T,A}
     return Tables.Schema((:state, :step_record, :time, :action), (S, R, T, A))
 end

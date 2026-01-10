@@ -63,11 +63,11 @@ end
 # ============================================================================
 
 """Defines a simulation-optimization problem. See examples for usage."""
-struct OptimizationProblem{P<:AbstractConfig,S<:AbstractSOW,T<:AbstractPolicy}
-    config::P
+struct OptimizationProblem{C<:AbstractConfig,S<:AbstractSOW,P<:AbstractPolicy,F}
+    config::C
     sows::Vector{S}
-    policy_type::Type{T}
-    metric_calculator::Function
+    policy_type::Type{P}
+    metric_calculator::F
     objectives::Vector{Objective}
     batch_size::AbstractBatchSize
     constraints::Vector{AbstractConstraint}
@@ -77,12 +77,12 @@ end
 function OptimizationProblem(
     config::AbstractConfig,
     sows::AbstractVector{<:AbstractSOW},
-    policy_type::Type{T},
-    metric_calculator::Function,
+    policy_type::Type{P},
+    metric_calculator::F,
     objectives::AbstractVector{<:Objective};
     batch_size::AbstractBatchSize=FullBatch(),
     constraints::AbstractVector{<:AbstractConstraint}=AbstractConstraint[],
-) where {T<:AbstractPolicy}
+) where {P<:AbstractPolicy,F}
     # Validate inputs
     _validate_sows(sows)
     _validate_policy_interface(policy_type)
