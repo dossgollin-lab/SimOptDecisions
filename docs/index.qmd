@@ -217,7 +217,10 @@ prob = OptimizationProblem(
 )
 
 result = SimOptDecisions.optimize(prob, MetaheuristicsBackend())
-best_policy = result.best_policy
+
+# All Pareto-optimal solutions are equally valid; pick one at random
+idx = rand(1:length(result.pareto_params))
+policy = MyPolicy(result.pareto_params[idx])
 ```
 
 ### Multi-Objective Optimization

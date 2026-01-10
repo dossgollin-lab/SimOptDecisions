@@ -326,8 +326,14 @@ backend = MetaheuristicsBackend(; algorithm=:ECA, max_iterations=100, population
 ```{julia}
 opt_result = SimOptDecisions.optimize(prob, backend)
 
-println("Optimal invest fraction: $(round(opt_result.best_policy.invest_fraction, digits=3))")
-println("Expected value: \$$(round(-opt_result.best_objectives[1], digits=2))")
+# All solutions on the Pareto front are equally optimal (no single "best")
+# Here we just pick one at random to display
+idx = rand(1:length(opt_result.pareto_params))
+params = opt_result.pareto_params[idx]
+objectives = opt_result.pareto_objectives[idx]
+
+println("Invest fraction: $(round(params[1], digits=3))")
+println("Expected value: \$$(round(objectives[1], digits=2))")
 ```
 
 ## Summary: Adapting This Example
