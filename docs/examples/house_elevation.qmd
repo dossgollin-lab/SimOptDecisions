@@ -130,43 +130,37 @@ end
 
 ### Policy
 
-The policy has a single continuous parameter: the elevation height in feet.
-The optimizer explores `[0, 14]` continuously; after optimization, we discretize the Pareto front to practical values (0 or 3–14 ft).
+The policy has two parameters that work together to determine the elevation:
 
-::: {.callout-tip}
-## Continuous Relaxation for Discrete Choices
+1. **`elevate_gate`** (0–1): A soft binary choice. If > 0.5, the house is elevated; otherwise it stays at ground level.
+2. **`elevation_amount`** (0–14 ft): How high to elevate if we choose to elevate.
 
-Real elevation choices are discrete: you either don't elevate (0 ft) or elevate to at least 3 ft (the minimum practical height per USACE).
-Rather than encoding this as a constraint (which creates discontinuities that confuse convergence metrics), we:
-
-1. **Optimize continuously** over `[0, 14]` — the optimizer sees a smooth landscape
-2. **Discretize after optimization** — snap Pareto solutions to valid values and re-evaluate
-
-This preserves smooth convergence behavior while still producing practical recommendations.
-:::
+This two-parameter formulation lets the optimizer discover that "no elevation" may be optimal for some objectives, without requiring a separate policy type.
 
 ```{julia}
 #| output: false
 struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::T  # continuous: 0-14 ft during optimization
+    elevate_gate::T      # in (0, 1): if > 0.5 then elevate, else don't
+    elevation_amount::T  # feet above current ground level (0-14)
 end
 
-# For optimization: convert between policy and parameter vector
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
-SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
-SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
+# For optimization, we need to define how to convert between policy and parameter vector
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1], params[2])
+SimOptDecisions.params(p::ElevationPolicy) = [p.elevate_gate, p.elevation_amount]
+SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 1.0), (0.0, 14.0)]
 ```
 
 ```{julia}
 #| output: false
-# Define the action: directly use the policy's elevation parameter
+# Define the action: elevation is gated by the binary decision parameter
 function SimOptDecisions.get_action(
     policy::ElevationPolicy,
     state,  # unused for static policy
     sow::HouseElevationSOW,
     t::TimeStep,
 )
-    return ElevationAction(policy.elevation_ft)
+    elevation = policy.elevate_gate > 0.5 ? policy.elevation_amount : 0.0
+    return ElevationAction(elevation)
 end
 ```
 
@@ -250,9 +244,6 @@ We use the cost model from [Doss-Gollin et al. (2022)](https://github.com/jdossg
 
 Compute elevation cost as a fraction of house value.
 Based on USACE cost estimates with piecewise-linear rates.
-
-The base cost phases in over the first foot to create a smooth function
-for continuous optimization (avoids discontinuity at Δh=0).
 """
 function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
     Δh <= 0 && return 0.0
@@ -260,11 +251,7 @@ function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
 
     # Cost structure from Doss-Gollin et al. (2022)
     # Base cost covers permits, engineering, temporary relocation, etc.
-    full_base_cost = 10_000 + 300 + 470 + 4_300 + 2_175 + 3_500  # = $20,745
-
-    # Phase in base cost over first foot (creates smooth transition at Δh=0)
-    # This reflects that very small elevations aren't practical
-    base_cost = full_base_cost * min(Δh, 1.0)
+    base_cost = 10_000 + 300 + 470 + 4_300 + 2_175 + 3_500  # = $20,745
 
     # Per-square-foot rates increase with elevation height ($/ft²)
     # These are interpolated based on elevation
@@ -282,7 +269,7 @@ function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
         rate = rates[i + 1]
     end
 
-    cost_dollars = base_cost + area_ft2 * rate * Δh
+    cost_dollars = base_cost + area_ft2 * rate
     return cost_dollars / house_value
 end
 
@@ -441,7 +428,9 @@ elevations = 0:14
 results = Dict{Int,Vector{Float64}}()
 
 for elev in elevations
-    policy = ElevationPolicy(Float64(elev))
+    # For elev=0, use gate < 0.5 (no elevation); for elev > 0, use gate > 0.5
+    gate = elev == 0 ? 0.0 : 1.0
+    policy = ElevationPolicy(gate, Float64(elev))
     outcomes = [simulate(config, sow, policy).npv_damages for sow in sows]
     results[elev] = outcomes
 end
@@ -596,7 +585,8 @@ let
         best_elev = 0
         best_cost = Inf
         for elev in elevations
-            policy = ElevationPolicy(Float64(elev))
+            gate = elev == 0 ? 0.0 : 1.0
+            policy = ElevationPolicy(gate, Float64(elev))
             outcomes = [simulate(config, sow, policy).npv_damages for sow in filtered_sows]
             total = elevation_cost(elev) + mean(outcomes)
             if total < best_cost
@@ -762,73 +752,6 @@ println(
 )
 ```
 
-### Post-Discretization
-
-The optimizer explored continuous elevations, but real decisions must be discrete.
-We snap Pareto solutions to practical values and re-evaluate:
-
-```{julia}
-#| output: false
-"""
-Discretize a continuous elevation to practical values.
-Returns 0 if below threshold, otherwise rounds to nearest integer ≥ 3.
-"""
-function discretize_elevation(elev::Real; threshold=1.5, min_elevation=3)
-    elev < threshold && return 0.0
-    return max(min_elevation, round(Int, elev)) |> Float64
-end
-
-# Collect and discretize Pareto solutions
-pareto_pts = collect(SimOptDecisions.pareto_front(opt_result))
-discrete_policies = unique([
-    ElevationPolicy(discretize_elevation(p[1]))
-    for (p, _) in pareto_pts
-])
-
-# Re-evaluate discretized policies to get accurate metrics
-discrete_results = []
-for policy in discrete_policies
-    outcomes = [simulate(config, sow, policy) for sow in sows]
-    metrics = calculate_metrics(outcomes)
-    push!(discrete_results, (
-        elevation=policy.elevation_ft,
-        construction_cost=metrics.construction_cost,
-        expected_damage=metrics.expected_damage,
-    ))
-end
-```
-
-```{julia}
-#| label: fig-discrete-pareto
-#| fig-cap: "Discretized Pareto front with practical elevation values (0 or 3-14 ft)"
-#| code-fold: true
-let
-    fig = Figure(; size=(600, 500))
-    ax = Axis(
-        fig[1, 1];
-        xlabel="Construction cost (fraction of house value)",
-        ylabel="Expected NPV damages (fraction of house value)",
-        title="Discretized Recommendations",
-    )
-
-    costs = [r.construction_cost for r in discrete_results]
-    damages = [r.expected_damage for r in discrete_results]
-    elevs = [r.elevation for r in discrete_results]
-
-    scatter!(ax, costs, damages; markersize=15, color=:steelblue)
-
-    for (i, elev) in enumerate(elevs)
-        text!(ax, costs[i], damages[i];
-            text="$(Int(elev)) ft", align=(:left, :bottom), offset=(5, 5))
-    end
-
-    fig
-end
-```
-
-The discretized results give actionable recommendations: elevate to 0 ft (don't elevate), 3 ft, 4 ft, etc.
-Each point represents a distinct practical choice.
-
 ## Discussion
 
 This model makes several simplifying assumptions worth noting:
@@ -866,7 +789,5 @@ This example showed a more complex application of the framework. Here's what you
 3. **Validate with grid search first**: Before running optimization, explore the space manually (like we did with 0-14 ft elevations). This catches bugs and builds intuition.
 
 4. **Use multi-objective optimization** when you have competing objectives. The Pareto front shows the efficient frontier—selecting a point is a separate decision.
-
-5. **Continuous relaxation for discrete choices**: When your problem has discrete options (like "don't elevate" vs "elevate 3+ ft"), optimize continuously and discretize after. This preserves smooth convergence behavior while producing practical recommendations.
 
 For more advanced usage, see the [package documentation](https://github.com/dossgollin-lab/SimOptDecisions.jl).
