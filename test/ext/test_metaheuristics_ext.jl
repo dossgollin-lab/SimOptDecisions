@@ -58,12 +58,15 @@ using Metaheuristics
         result = SimOptDecisions.optimize(prob, backend)
 
         # Check result structure
-        @test result isa OptimizationResult{MHCounterPolicy}
+        @test result isa OptimizationResult{Float64}
         @test length(result.best_params) == 1
         @test length(result.best_objectives) == 1
-        @test result.best_policy isa MHCounterPolicy
         @test haskey(result.convergence_info, :iterations)
         @test haskey(result.convergence_info, :f_calls)
+
+        # Construct policy from params
+        best_policy = MHCounterPolicy(result.best_params)
+        @test best_policy isa MHCounterPolicy
 
         # Best params should be close to 0 (minimizing mean_value)
         @test result.best_params[1] >= 0.0

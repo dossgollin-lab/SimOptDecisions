@@ -32,18 +32,25 @@ end
 """
 Result of an optimization run.
 
+For **single-objective** optimization, `best_params` contains the global optimum.
+
+For **multi-objective** optimization, there is no single "best" - the Pareto front
+contains all non-dominated solutions. The `best_params` field provides one reasonable
+choice using normalized equal weighting. Users who need different selection criteria
+should iterate over `pareto_front(result)` directly.
+
+To construct a policy from the result: `PolicyType(result.best_params)`
+
 # Fields
-- `best_params::Vector{T}`: Best parameter vector found
-- `best_objectives::Vector{T}`: Objective values at best solution
-- `best_policy::P`: The best policy constructed from best_params
+- `best_params::Vector{T}`: Parameter vector for selected solution
+- `best_objectives::Vector{T}`: Objective values at selected solution
 - `convergence_info::Dict{Symbol,Any}`: Backend-specific convergence information
 - `pareto_params::Vector{Vector{T}}`: Pareto front parameter vectors (multi-objective)
 - `pareto_objectives::Vector{Vector{T}}`: Pareto front objective values (multi-objective)
 """
-struct OptimizationResult{P<:AbstractPolicy,T<:AbstractFloat}
+struct OptimizationResult{T<:AbstractFloat}
     best_params::Vector{T}
     best_objectives::Vector{T}
-    best_policy::P
     convergence_info::Dict{Symbol,Any}
     pareto_params::Vector{Vector{T}}
     pareto_objectives::Vector{Vector{T}}
@@ -231,11 +238,11 @@ merge_into_pareto!(result, prob, ElevationPolicy(0.0))  # add "no elevation" bas
 ```
 """
 function merge_into_pareto!(
-    result::OptimizationResult{P,T},
+    result::OptimizationResult{T},
     prob::OptimizationProblem,
     policy::AbstractPolicy;
     seed::Int=42,
-) where {P,T}
+) where {T}
     # Evaluate the policy
     metrics = evaluate_policy(prob, policy; seed=seed)
 
@@ -290,14 +297,11 @@ function merge_into_pareto!(
     if !isempty(result.pareto_objectives)
         best_idx = _select_best_pareto_idx(result.pareto_objectives, prob.objectives)
 
-        # Update best fields (these are mutable vectors, so we can modify in place)
+        # Update best fields
         empty!(result.best_params)
         append!(result.best_params, result.pareto_params[best_idx])
         empty!(result.best_objectives)
         append!(result.best_objectives, result.pareto_objectives[best_idx])
-
-        # Note: best_policy is immutable, can't update it in-place
-        # Users should reconstruct: policy_type(result.best_params)
     end
 
     return result

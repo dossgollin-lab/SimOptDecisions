@@ -190,10 +190,9 @@ Denormalizes parameters from [0,1] space back to actual bounds.
 """
 function _wrap_result(
     mh_result,
-    ::Type{P},
     prob::OptimizationProblem,
     bounds_vec::Vector{Tuple{Float64,Float64}},
-) where {P<:AbstractPolicy}
+)
     n_objectives = length(prob.objectives)
 
     if n_objectives == 1
@@ -205,10 +204,9 @@ function _wrap_result(
         # Un-negate maximized objectives
         best_f = _unnegate_objectives(best_f_raw, prob.objectives)
 
-        return OptimizationResult{P,Float64}(
+        return OptimizationResult{Float64}(
             best_x,
             best_f,
-            P(best_x),
             Dict{Symbol,Any}(
                 :iterations => mh_result.iteration,
                 :f_calls => mh_result.f_calls,
@@ -237,10 +235,9 @@ function _wrap_result(
         best_x = isempty(pareto_params) ? zeros(length(bounds_vec)) : pareto_params[best_idx]
         best_f = isempty(pareto_objectives) ? zeros(n_objectives) : pareto_objectives[best_idx]
 
-        return OptimizationResult{P,Float64}(
+        return OptimizationResult{Float64}(
             best_x,
             best_f,
-            P(best_x),
             Dict{Symbol,Any}(
                 :iterations => mh_result.iteration,
                 :f_calls => mh_result.f_calls,
@@ -348,7 +345,7 @@ function SimOptDecisions.optimize_backend(
     mh_result = Metaheuristics.optimize(fitness, normalized_bounds, algorithm)
 
     # Wrap result (denormalizing parameters back to real space)
-    return _wrap_result(mh_result, P, prob, bounds_vec)
+    return _wrap_result(mh_result, prob, bounds_vec)
 end
 
 end # module SimOptMetaheuristicsExt

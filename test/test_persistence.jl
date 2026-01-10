@@ -101,10 +101,9 @@ end
             x::Float64
         end
 
-        result = OptimizationResult{ExpResultPolicy,Float64}(
+        result = OptimizationResult{Float64}(
             [0.7],
             [5.0],
-            ExpResultPolicy(0.7),
             Dict{Symbol,Any}(),
             Vector{Vector{Float64}}(),
             Vector{Vector{Float64}}(),
@@ -117,7 +116,6 @@ end
             loaded = load_experiment(tmpfile)
             @test loaded.config.seed == 123
             @test loaded.result.best_params == [0.7]
-            @test loaded.result.best_policy.x == 0.7
             @test loaded.version == "0.1.0"
         finally
             rm(tmpfile; force=true)

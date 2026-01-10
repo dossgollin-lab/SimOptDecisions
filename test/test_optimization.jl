@@ -237,10 +237,9 @@
             x::Float64
         end
 
-        result = OptimizationResult{ResultPolicy,Float64}(
+        result = OptimizationResult{Float64}(
             [0.5],
             [10.0],
-            ResultPolicy(0.5),
             Dict{Symbol,Any}(:iterations => 100),
             [[0.3], [0.5], [0.7]],
             [[12.0], [10.0], [8.0]],
@@ -248,8 +247,10 @@
 
         @test result.best_params == [0.5]
         @test result.best_objectives == [10.0]
-        @test result.best_policy.x == 0.5
         @test result.convergence_info[:iterations] == 100
+
+        # Construct policy from params
+        @test ResultPolicy(result.best_params).x == 0.5
 
         # Test pareto_front iteration
         front = collect(SimOptDecisions.pareto_front(result))
