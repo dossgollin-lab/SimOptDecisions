@@ -67,7 +67,7 @@ using Metaheuristics
         @test length(result.pareto_objectives) == 1
 
         # Get the solution from the front
-        params, objectives = first(SimOptDecisions.SimOptDecisions.pareto_front(result))
+        params, objectives = first(SimOptDecisions.pareto_front(result))
         @test length(params) == 1
         @test length(objectives) == 1
 
