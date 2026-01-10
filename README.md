@@ -1,5 +1,8 @@
 # SimOptDecisions.jl
 
+[![Tests](https://github.com/dossgollin-lab/SimOptDecisions.jl/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dossgollin-lab/SimOptDecisions.jl/actions/workflows/test.yml)
+[![Documentation](https://github.com/dossgollin-lab/SimOptDecisions.jl/actions/workflows/docs.yml/badge.svg?branch=main)](https://dossgollin-lab.github.io/SimOptDecisions.jl/)
+
 A Julia framework for simulation-optimization under deep uncertainty.
 
 ## What is SimOptDecisions.jl?
