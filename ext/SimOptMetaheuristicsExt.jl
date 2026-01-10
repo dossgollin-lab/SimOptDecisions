@@ -17,7 +17,7 @@ import SimOptDecisions:
     PenaltyConstraint,
     Maximize,
     evaluate_policy,
-    param_bounds
+    get_bounds
 
 # ============================================================================
 # Algorithm Selection
@@ -276,8 +276,8 @@ function SimOptDecisions.optimize_backend(
     P = prob.policy_type
     n_objectives = length(prob.objectives)
 
-    # Get actual bounds for denormalization
-    bounds_vec = [(Float64(lo), Float64(hi)) for (lo, hi) in param_bounds(P)]
+    # Get actual bounds for denormalization (uses custom bounds if specified)
+    bounds_vec = get_bounds(prob)
     n_params = length(bounds_vec)
 
     # Optimizer works in normalized [0,1] space

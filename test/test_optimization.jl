@@ -80,6 +80,39 @@
         )
         @test prob2.batch_size isa FixedBatch
         @test prob2.batch_size.n == 3
+
+        # Test with custom bounds
+        prob3 = OptimizationProblem(
+            config,
+            sows,
+            OptCounterPolicy,
+            metric_calculator,
+            [minimize(:mean_value)];
+            bounds=[(3.0, 7.0)],
+        )
+        @test prob3.bounds == [(3.0, 7.0)]
+        @test get_bounds(prob3) == [(3.0, 7.0)]
+
+        # Default bounds come from param_bounds
+        @test prob.bounds === nothing
+        @test get_bounds(prob) == [(0.0, 10.0)]
+    end
+
+    @testset "dominates" begin
+        # a dominates b: all <= and at least one <
+        @test dominates([1.0, 1.0], [2.0, 2.0])
+        @test dominates([1.0, 2.0], [2.0, 2.0])
+        @test dominates([2.0, 1.0], [2.0, 2.0])
+
+        # Neither dominates
+        @test !dominates([1.0, 3.0], [2.0, 2.0])  # a better on 1, b better on 2
+        @test !dominates([2.0, 2.0], [1.0, 3.0])
+
+        # Equal: not dominated
+        @test !dominates([1.0, 1.0], [1.0, 1.0])
+
+        # b dominates a
+        @test !dominates([2.0, 2.0], [1.0, 1.0])
     end
 
     @testset "evaluate_policy" begin

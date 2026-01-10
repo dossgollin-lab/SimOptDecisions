@@ -58,6 +58,156 @@ function pareto_front(result::OptimizationResult)
     return zip(result.pareto_params, result.pareto_objectives)
 end
 
+"""
+    dominates(a::Vector, b::Vector) -> Bool
+
+Return true if solution `a` dominates solution `b` (all objectives ≤ and at least one <).
+Assumes minimization for all objectives.
+"""
+function dominates(a::AbstractVector, b::AbstractVector)
+    dominated = false
+    for (ai, bi) in zip(a, b)
+        if ai > bi
+            return false  # a is worse in at least one objective
+        elseif ai < bi
+            dominated = true  # a is strictly better in at least one
+        end
+    end
+    return dominated
+end
+
+"""
+    merge_into_pareto!(result::OptimizationResult, prob::OptimizationProblem, policy::AbstractPolicy; seed=42)
+
+Evaluate a policy and merge it into the optimization result's Pareto front.
+The policy is evaluated using the problem's config, SOWs, and metric calculator.
+Dominance is checked: the policy is added only if not dominated, and any
+existing solutions dominated by it are removed.
+
+Updates `best_policy` and `best_objectives` if the new policy becomes the best
+(using normalized equal weighting).
+
+# Example
+```julia
+result = optimize(prob, backend)
+merge_into_pareto!(result, prob, ElevationPolicy(0.0))  # add "no elevation" baseline
+```
+"""
+function merge_into_pareto!(
+    result::OptimizationResult{P,T},
+    prob::OptimizationProblem,
+    policy::AbstractPolicy;
+    seed::Int=42,
+) where {P,T}
+    # Evaluate the policy
+    metrics = evaluate_policy(prob, policy; seed=seed)
+
+    # Extract objectives (applying direction: negate for Maximize since we store un-negated)
+    objectives = Vector{T}(undef, length(prob.objectives))
+    for (i, obj) in enumerate(prob.objectives)
+        val = T(metrics[obj.name])
+        objectives[i] = val  # Store un-negated (original scale)
+    end
+
+    # For dominance checking, we need to compare in minimization space
+    # (negate maximized objectives for comparison)
+    function to_min_space(objs)
+        return [prob.objectives[i].direction == Maximize ? -objs[i] : objs[i]
+                for i in eachindex(objs)]
+    end
+
+    new_min = to_min_space(objectives)
+
+    # Check if new solution is dominated by any existing solution
+    for existing_obj in result.pareto_objectives
+        existing_min = to_min_space(existing_obj)
+        if dominates(existing_min, new_min)
+            return result  # New solution is dominated, don't add
+        end
+    end
+
+    # Remove existing solutions dominated by new solution
+    keep_indices = Int[]
+    for (i, existing_obj) in enumerate(result.pareto_objectives)
+        existing_min = to_min_space(existing_obj)
+        if !dominates(new_min, existing_min)
+            push!(keep_indices, i)
+        end
+    end
+
+    # Filter to non-dominated solutions
+    new_pareto_params = result.pareto_params[keep_indices]
+    new_pareto_objectives = result.pareto_objectives[keep_indices]
+
+    # Add new solution
+    push!(new_pareto_params, collect(T, params(policy)))
+    push!(new_pareto_objectives, objectives)
+
+    # Update result's Pareto front (modify in place via the vectors)
+    empty!(result.pareto_params)
+    empty!(result.pareto_objectives)
+    append!(result.pareto_params, new_pareto_params)
+    append!(result.pareto_objectives, new_pareto_objectives)
+
+    # Recompute best using normalized weighting
+    if !isempty(result.pareto_objectives)
+        best_idx = _select_best_pareto_idx(result.pareto_objectives, prob.objectives)
+
+        # Update best fields (these are mutable vectors, so we can modify in place)
+        empty!(result.best_params)
+        append!(result.best_params, result.pareto_params[best_idx])
+        empty!(result.best_objectives)
+        append!(result.best_objectives, result.pareto_objectives[best_idx])
+
+        # Note: best_policy is immutable, can't update it in-place
+        # Users should reconstruct: policy_type(result.best_params)
+    end
+
+    return result
+end
+
+"""
+Select best solution from Pareto front using normalized equal weighting.
+Works with un-negated objectives, respecting direction.
+"""
+function _select_best_pareto_idx(pareto_objectives::Vector{Vector{T}}, objectives) where {T}
+    if length(pareto_objectives) <= 1
+        return 1
+    end
+
+    n_obj = length(pareto_objectives[1])
+    n_sol = length(pareto_objectives)
+
+    # Convert to minimization space for comparison
+    min_space = [[objectives[j].direction == Maximize ? -pareto_objectives[i][j] : pareto_objectives[i][j]
+                  for j in 1:n_obj] for i in 1:n_sol]
+
+    # Find min/max for each objective
+    mins = [minimum(min_space[i][j] for i in 1:n_sol) for j in 1:n_obj]
+    maxs = [maximum(min_space[i][j] for i in 1:n_sol) for j in 1:n_obj]
+
+    # Compute normalized sum (lower is better)
+    best_idx = 1
+    best_score = Inf
+    for i in 1:n_sol
+        score = 0.0
+        for j in 1:n_obj
+            range = maxs[j] - mins[j]
+            if range > 0
+                score += (min_space[i][j] - mins[j]) / range
+            else
+                score += 0.5
+            end
+        end
+        if score < best_score
+            best_score = score
+            best_idx = i
+        end
+    end
+
+    return best_idx
+end
+
 # ============================================================================
 # Optimization Problem
 # ============================================================================
@@ -71,6 +221,21 @@ struct OptimizationProblem{C<:AbstractConfig,S<:AbstractSOW,P<:AbstractPolicy,F}
     objectives::Vector{Objective}
     batch_size::AbstractBatchSize
     constraints::Vector{AbstractConstraint}
+    bounds::Union{Nothing,Vector{Tuple{Float64,Float64}}}
+end
+
+"""
+    get_bounds(prob::OptimizationProblem)
+
+Get the parameter bounds for the problem. Uses custom bounds if specified,
+otherwise falls back to `param_bounds(prob.policy_type)`.
+"""
+function get_bounds(prob::OptimizationProblem)
+    if prob.bounds !== nothing
+        return prob.bounds
+    else
+        return [(Float64(lo), Float64(hi)) for (lo, hi) in param_bounds(prob.policy_type)]
+    end
 end
 
 # Primary constructor with validation
@@ -82,6 +247,7 @@ function OptimizationProblem(
     objectives::AbstractVector{<:Objective};
     batch_size::AbstractBatchSize=FullBatch(),
     constraints::AbstractVector{<:AbstractConstraint}=AbstractConstraint[],
+    bounds::Union{Nothing,AbstractVector{<:Tuple}}=nothing,
 ) where {P<:AbstractPolicy,F}
     # Validate inputs
     _validate_sows(sows)
@@ -92,9 +258,10 @@ function OptimizationProblem(
     sows_vec = collect(sows)
     obj_vec = collect(objectives)
     const_vec = collect(constraints)
+    bounds_vec = bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
 
     return OptimizationProblem(
-        config, sows_vec, policy_type, metric_calculator, obj_vec, batch_size, const_vec
+        config, sows_vec, policy_type, metric_calculator, obj_vec, batch_size, const_vec, bounds_vec
     )
 end
 

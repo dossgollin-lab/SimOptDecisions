@@ -130,39 +130,43 @@ end
 
 ### Policy
 
-The policy has two parameters that work together to determine the elevation:
-
-1. **`elevate_gate`** (0–1): A soft binary choice. If > 0.5, the house is elevated; otherwise it stays at ground level.
-2. **`elevation_amount`** (0–14 ft): How high to elevate if we choose to elevate.
-
-This two-parameter formulation lets the optimizer discover that "no elevation" may be optimal for some objectives, without requiring a separate policy type.
+The policy has a single parameter: the elevation height in feet.
 
 ```{julia}
 #| output: false
 struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevate_gate::T      # in (0, 1): if > 0.5 then elevate, else don't
-    elevation_amount::T  # feet above current ground level (0-14)
+    elevation_ft::T  # feet above current ground level
 end
 
 # For optimization, we need to define how to convert between policy and parameter vector
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1], params[2])
-SimOptDecisions.params(p::ElevationPolicy) = [p.elevate_gate, p.elevation_amount]
-SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 1.0), (0.0, 14.0)]
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
+SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
+SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
 ```
 
 ```{julia}
 #| output: false
-# Define the action: elevation is gated by the binary decision parameter
 function SimOptDecisions.get_action(
     policy::ElevationPolicy,
     state,  # unused for static policy
     sow::HouseElevationSOW,
     t::TimeStep,
 )
-    elevation = policy.elevate_gate > 0.5 ? policy.elevation_amount : 0.0
-    return ElevationAction(elevation)
+    return ElevationAction(policy.elevation_ft)
 end
 ```
+
+::: {.callout-tip}
+## Handling Discrete Choices in Optimization
+
+Real elevation choices are discrete: you either don't elevate (0 ft) or elevate to at least 3 ft (the minimum practical height).
+Rather than encoding this discontinuity in the policy (which confuses convergence metrics), we use a **two-phase approach**:
+
+1. **Phase 1**: Optimize over continuous [3, 14] ft using custom `bounds`
+2. **Phase 2**: Add the "no elevation" baseline using `merge_into_pareto!`
+
+This gives the optimizer a smooth landscape while still including discrete alternatives.
+:::
 
 ## The Model
 
@@ -428,9 +432,7 @@ elevations = 0:14
 results = Dict{Int,Vector{Float64}}()
 
 for elev in elevations
-    # For elev=0, use gate < 0.5 (no elevation); for elev > 0, use gate > 0.5
-    gate = elev == 0 ? 0.0 : 1.0
-    policy = ElevationPolicy(gate, Float64(elev))
+    policy = ElevationPolicy(Float64(elev))
     outcomes = [simulate(config, sow, policy).npv_damages for sow in sows]
     results[elev] = outcomes
 end
@@ -585,8 +587,7 @@ let
         best_elev = 0
         best_cost = Inf
         for elev in elevations
-            gate = elev == 0 ? 0.0 : 1.0
-            policy = ElevationPolicy(gate, Float64(elev))
+            policy = ElevationPolicy(Float64(elev))
             outcomes = [simulate(config, sow, policy).npv_damages for sow in filtered_sows]
             total = elevation_cost(elev) + mean(outcomes)
             if total < best_cost
@@ -655,17 +656,21 @@ end
 Now we can set up a problem that trades off upfront construction cost against expected future damages.
 These are **conflicting objectives**: higher elevation costs more upfront but reduces damages.
 
+We use the two-phase approach: optimize over [3, 14] ft (the continuous range), then add the "no elevation" baseline.
+
 ```{julia}
 #| output: false
 import Metaheuristics  # loads extension for SimOptDecisions.optimize
 
-# Create the optimization problem
+# Create the optimization problem with custom bounds [3, 14]
+# This gives the optimizer a smooth, continuous search space
 prob = OptimizationProblem(
     config,
     sows,
     ElevationPolicy,
     calculate_metrics,
     [minimize(:construction_cost), minimize(:expected_damage)];
+    bounds=[(3.0, 14.0)],  # override default [0, 14] to avoid discrete gap
 )
 ```
 
@@ -681,6 +686,9 @@ backend = MetaheuristicsBackend(;
 
 ```{julia}
 opt_result = SimOptDecisions.optimize(prob, backend)
+
+# Add the "no elevation" baseline to the Pareto front
+merge_into_pareto!(opt_result, prob, ElevationPolicy(0.0))
 ```
 
 ### Visualizing the Pareto Front
@@ -789,5 +797,7 @@ This example showed a more complex application of the framework. Here's what you
 3. **Validate with grid search first**: Before running optimization, explore the space manually (like we did with 0-14 ft elevations). This catches bugs and builds intuition.
 
 4. **Use multi-objective optimization** when you have competing objectives. The Pareto front shows the efficient frontier—selecting a point is a separate decision.
+
+5. **Handle discrete choices with two-phase optimization**: When your problem has discrete alternatives (like "don't elevate" vs "elevate 3+ ft"), use custom `bounds` to optimize the continuous region, then use `merge_into_pareto!` to add fixed baselines. This gives the optimizer a smooth landscape while still including discrete options.
 
 For more advanced usage, see the [package documentation](https://github.com/dossgollin-lab/SimOptDecisions.jl).
