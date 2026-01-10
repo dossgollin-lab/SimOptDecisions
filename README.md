@@ -1,7 +1,7 @@
 # SimOptDecisions.jl
 
-[![Tests](https://github.com/dossgollin-lab/SimOptDecisions.jl/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dossgollin-lab/SimOptDecisions.jl/actions/workflows/test.yml)
-[![Documentation](https://github.com/dossgollin-lab/SimOptDecisions.jl/actions/workflows/docs.yml/badge.svg?branch=main)](https://dossgollin-lab.github.io/SimOptDecisions.jl/)
+[![Tests](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/test.yml)
+[![Documentation](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/docs.yml/badge.svg?branch=main)](https://dossgollin-lab.github.io/SimOptDecisions/)
 
 A Julia framework for simulation-optimization under deep uncertainty.
 
@@ -68,7 +68,7 @@ result = simulate(config, sow, policy, rng)
 
 ## Documentation
 
-See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions.jl/) for:
+See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions/) for:
 
 - Detailed API reference
 - The five callbacks for time-stepped simulations
@@ -79,7 +79,7 @@ See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions.jl
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
+Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions")
 ```
 
 ## Key Features
