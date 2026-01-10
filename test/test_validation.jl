@@ -5,21 +5,21 @@
 
         @test SimOptDecisions._validate_sows([OptTestSOW1(), OptTestSOW1()]) === nothing
         @test_throws ArgumentError SimOptDecisions._validate_sows([])
-        @test_throws ArgumentError SimOptDecisions._validate_sows(
-            [OptTestSOW1(), OptTestSOW2()]
-        )
+        @test_throws ArgumentError SimOptDecisions._validate_sows([
+            OptTestSOW1(), OptTestSOW2()
+        ])
     end
 
     @testset "Objectives validation" begin
         @test SimOptDecisions._validate_objectives([minimize(:cost)]) === nothing
-        @test SimOptDecisions._validate_objectives(
-            [minimize(:cost), maximize(:reliability)]
-        ) === nothing
+        @test SimOptDecisions._validate_objectives([
+            minimize(:cost), maximize(:reliability)
+        ]) === nothing
 
         @test_throws ArgumentError SimOptDecisions._validate_objectives([])
-        @test_throws ArgumentError SimOptDecisions._validate_objectives(
-            [minimize(:cost), minimize(:cost)]
-        )  # Duplicate
+        @test_throws ArgumentError SimOptDecisions._validate_objectives([
+            minimize(:cost), minimize(:cost)
+        ])  # Duplicate
     end
 
     @testset "Policy interface validation" begin
@@ -43,7 +43,9 @@
         SimOptDecisions.param_bounds(::Type{BadBoundsPolicy}) = [(1.0, 0.0)]  # lower > upper
         BadBoundsPolicy(x::AbstractVector) = BadBoundsPolicy(x[1])
 
-        @test_throws ArgumentError SimOptDecisions._validate_policy_interface(BadBoundsPolicy)
+        @test_throws ArgumentError SimOptDecisions._validate_policy_interface(
+            BadBoundsPolicy
+        )
     end
 
     @testset "Constraint types" begin

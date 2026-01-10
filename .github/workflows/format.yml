@@ -4,11 +4,18 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   format:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: julia-actions/setup-julia@v2
         with:
           version: "1"
@@ -17,12 +24,8 @@ jobs:
         run: |
           julia -e 'import Pkg; Pkg.add("JuliaFormatter")'
           julia -e 'using JuliaFormatter; format(".", BlueStyle())'
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v7
+      - name: Commit formatting changes
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "style: format Julia files with BlueStyle"
-          title: "style: Auto-format with JuliaFormatter (BlueStyle)"
-          branch: auto-juliaformatter
-          delete-branch: true
-          labels: formatting, automated
+          commit_message: "style: auto-format with JuliaFormatter (BlueStyle)"
+          branch: ${{ github.head_ref || github.ref_name }}

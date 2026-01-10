@@ -15,10 +15,12 @@ Use this when defining fallback methods for interface functions.
 """
 function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
     hint = isempty(signature) ? "" : ", $signature"
-    throw(ArgumentError(
-        "Interface method `$fn` not implemented for $T.\n" *
-        "Add: `SimOptDecisions.$fn(::$T$hint) = ...`"
-    ))
+    throw(
+        ArgumentError(
+            "Interface method `$fn` not implemented for $T.\n" *
+            "Add: `SimOptDecisions.$fn(::$T$hint) = ...`",
+        ),
+    )
 end
 
 """
@@ -45,8 +47,11 @@ Map state + SOW to action. Called by the framework before each `run_timestep`.
 
 Must be implemented for each policy type. Return value must be `<:AbstractAction`.
 """
-get_action(p::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) =
-    interface_not_implemented(:get_action, typeof(p), "state, sow::AbstractSOW, t::TimeStep")
+function get_action(p::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep)
+    interface_not_implemented(
+        :get_action, typeof(p), "state, sow::AbstractSOW, t::TimeStep"
+    )
+end
 
 # Helper for validation - called at simulation start
 function _validate_time_axis(times)

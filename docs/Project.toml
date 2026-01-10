@@ -1,6 +1,7 @@
 [deps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
 Metaheuristics = "bcdb8e00-2c21-11e9-3065-2b553b22f898"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 SimOptDecisions = "8764eb7a-9599-4112-a7c7-9b4115e89f97"

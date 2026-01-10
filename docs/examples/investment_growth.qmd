@@ -4,9 +4,7 @@ subtitle: "A minimal working example"
 author: "Doss-Gollin Lab @ Rice CEVE"
 engine: julia
 execute:
-  exeflags: ["+1.12", "--threads=auto"]
-  freeze: false
-  cache: false
+  exeflags: ["--project=.."]
 ---
 
 ## Overview
@@ -29,12 +27,6 @@ This example walks through each step so you can adapt it to your own problem.
 :::
 
 ## Setup
-
-```{julia}
-#| output: false
-using Pkg: Pkg
-Pkg.activate(dirname(dirname(@__FILE__)))
-```
 
 ```{julia}
 #| output: false

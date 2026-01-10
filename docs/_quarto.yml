@@ -3,6 +3,7 @@ project:
   output-dir: _site
 
 website:
+  site-url: https://dossgollin-lab.github.io/SimOptDecisions/
   title: "SimOptDecisions.jl"
   description: "A Julia framework for simulation-optimization under uncertainty"
   navbar:
@@ -17,12 +18,12 @@ website:
             text: House Elevation
     right:
       - icon: github
-        href: https://github.com/dossgollin-lab/SimOptDecisions.jl
+        href: https://github.com/dossgollin-lab/SimOptDecisions
   page-footer:
     left: "SimOptDecisions.jl - Dossgollin Lab"
     right:
       - icon: github
-        href: https://github.com/dossgollin-lab/SimOptDecisions.jl
+        href: https://github.com/dossgollin-lab/SimOptDecisions
 
 format:
   html:
@@ -40,7 +41,7 @@ format:
 # Julia engine configuration
 engine: julia
 execute:
-  exeflags: ["+1.12", "--project=@.", "--threads=auto"]
-  freeze: false
-  cache: false
+  exeflags: ["--project=@.", "--threads=auto"]
+  freeze: auto
+  cache: true
 

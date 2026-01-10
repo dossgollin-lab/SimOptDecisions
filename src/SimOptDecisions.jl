@@ -22,7 +22,8 @@ include("plotting.jl")
 # ============================================================================
 
 # Abstract types (users subtype these)
-export AbstractState, AbstractPolicy, AbstractConfig, AbstractSOW, AbstractRecorder, AbstractAction
+export AbstractState,
+    AbstractPolicy, AbstractConfig, AbstractSOW, AbstractRecorder, AbstractAction
 
 # TimeStep struct
 export TimeStep
