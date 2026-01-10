@@ -3,16 +3,25 @@
 
 using CairoMakie
 
+# Test types for "to_scalars interface"
+struct PlotTestState <: AbstractState
+    x::Float64
+    y::Float64
+end
+
+SimOptDecisions.to_scalars(s::PlotTestState) = (x=s.x, y=s.y)
+
+# Test types for "to_scalars error for unimplemented"
+struct NoScalarsState <: AbstractState
+    value::Float64
+end
+
+# ============================================================================
+# Tests
+# ============================================================================
+
 @testset "MakieExt" begin
     @testset "to_scalars interface" begin
-        # Define a test state with to_scalars implementation
-        struct PlotTestState <: AbstractState
-            x::Float64
-            y::Float64
-        end
-
-        SimOptDecisions.to_scalars(s::PlotTestState) = (x=s.x, y=s.y)
-
         state = PlotTestState(1.0, 2.0)
         scalars = to_scalars(state)
 
@@ -22,10 +31,6 @@ using CairoMakie
     end
 
     @testset "to_scalars error for unimplemented" begin
-        struct NoScalarsState <: AbstractState
-            value::Float64
-        end
-
         state = NoScalarsState(1.0)
         @test_throws ArgumentError to_scalars(state)
     end

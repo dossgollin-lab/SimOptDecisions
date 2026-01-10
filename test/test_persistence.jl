@@ -4,6 +4,47 @@ function _checkpoint_metric_calc(outcomes)
     (mean=sum(o.final for o in outcomes) / length(outcomes),)
 end
 
+# Test types for "ExperimentConfig construction"
+struct PersistTestSOW <: AbstractSOW
+    id::Int
+end
+
+# Test types for "Checkpoint save/load"
+struct CheckpointState <: AbstractState
+    v::Float64
+end
+
+struct CheckpointPolicy <: AbstractPolicy
+    x::Float64
+end
+
+struct CheckpointParams <: AbstractConfig end
+struct CheckpointSOW <: AbstractSOW end
+
+function SimOptDecisions.simulate(
+    params::CheckpointParams, sow::CheckpointSOW, policy::CheckpointPolicy, rng::AbstractRNG
+)
+    value = 0.0
+    for ts in SimOptDecisions.Utils.timeindex(1:5)
+        value += policy.x
+    end
+    return (final=value,)
+end
+
+SimOptDecisions.param_bounds(::Type{CheckpointPolicy}) = [(0.0, 1.0)]
+CheckpointPolicy(x::AbstractVector) = CheckpointPolicy(x[1])
+
+# Test types for "Experiment save/load"
+struct ExpTestSOW <: AbstractSOW end
+
+struct ExpResultPolicy <: AbstractPolicy
+    x::Float64
+end
+
+# ============================================================================
+# Tests
+# ============================================================================
+
 @testset "Persistence" begin
     @testset "SharedParameters" begin
         sp = SharedParameters(; discount_rate=0.03, horizon=50)
@@ -15,10 +56,6 @@ end
     end
 
     @testset "ExperimentConfig construction" begin
-        struct PersistTestSOW <: AbstractSOW
-            id::Int
-        end
-
         sows = [PersistTestSOW(i) for i in 1:10]
         shared = SharedParameters(; rate=0.05)
         backend = MetaheuristicsBackend()
@@ -35,35 +72,6 @@ end
     end
 
     @testset "Checkpoint save/load" begin
-        # Create a minimal problem for testing
-        struct CheckpointState <: AbstractState
-            v::Float64
-        end
-
-        struct CheckpointPolicy <: AbstractPolicy
-            x::Float64
-        end
-
-        struct CheckpointParams <: AbstractConfig end
-        struct CheckpointSOW <: AbstractSOW end
-
-        # Simple for-loop implementation
-        function SimOptDecisions.simulate(
-            params::CheckpointParams,
-            sow::CheckpointSOW,
-            policy::CheckpointPolicy,
-            rng::AbstractRNG,
-        )
-            value = 0.0
-            for ts in SimOptDecisions.Utils.timeindex(1:5)
-                value += policy.x
-            end
-            return (final=value,)
-        end
-
-        SimOptDecisions.param_bounds(::Type{CheckpointPolicy}) = [(0.0, 1.0)]
-        CheckpointPolicy(x::AbstractVector) = CheckpointPolicy(x[1])
-
         prob = OptimizationProblem(
             CheckpointParams(),
             [CheckpointSOW()],
@@ -90,16 +98,10 @@ end
     end
 
     @testset "Experiment save/load" begin
-        struct ExpTestSOW <: AbstractSOW end
-
         sows = [ExpTestSOW() for _ in 1:3]
         shared = SharedParameters(; param1=1.0)
         backend = MetaheuristicsBackend()
         config = ExperimentConfig(123, sows, shared, backend)
-
-        struct ExpResultPolicy <: AbstractPolicy
-            x::Float64
-        end
 
         result = OptimizationResult{Float64}(
             Dict{Symbol,Any}(),
