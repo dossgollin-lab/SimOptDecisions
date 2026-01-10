@@ -253,6 +253,6 @@
         @test front[3] == ([0.7], [8.0])
 
         # Construct policy from params in the front
-        @test ResultPolicy(front[1][1]).x == 0.3
+        @test ResultPolicy(front[1][1][1]).x == 0.3
     end
 end

@@ -32,17 +32,17 @@ using CairoMakie
 
     @testset "plot_trace" begin
         # Create a simple SimulationTrace with NamedTuple step_records
-        states = [0.0, 1.0, 2.0, 2.5]
+        initial_state = 0.0
+        states = [1.0, 2.0, 2.5]
         step_records = [
-            (position=0.0, velocity=1.0),
             (position=1.0, velocity=1.0),
             (position=2.0, velocity=0.5),
             (position=2.5, velocity=0.0),
         ]
-        times = [1, 2, 3, 4]
-        actions = [nothing, nothing, nothing, nothing]  # Placeholder actions
+        times = [1, 2, 3]
+        actions = [nothing, nothing, nothing]
 
-        trace = SimulationTrace(states, step_records, times, actions)
+        trace = SimulationTrace(initial_state, states, step_records, times, actions)
 
         # Test plotting
         fig, axes = plot_trace(trace)
@@ -54,24 +54,16 @@ using CairoMakie
 
     @testset "plot_trace empty error" begin
         # Create empty trace and test that plot_trace throws an error
-        trace = SimulationTrace(Float64[], NamedTuple[], Int[], Nothing[])
+        trace = SimulationTrace(0.0, Float64[], NamedTuple[], Int[], Nothing[])
         @test_throws ErrorException plot_trace(trace)
     end
 
     @testset "plot_pareto 2-objective" begin
-        # Create mock policy type
-        struct ParetoTestPolicy <: AbstractPolicy
-            x::Float64
-        end
-
         # Create a result with Pareto front data
         pareto_params = [[0.1], [0.3], [0.5], [0.7], [0.9]]
         pareto_objectives = [[1.0, 9.0], [2.0, 7.0], [4.0, 4.0], [7.0, 2.0], [9.0, 1.0]]
 
-        result = OptimizationResult{ParetoTestPolicy,Float64}(
-            [0.5],
-            [4.0, 4.0],
-            ParetoTestPolicy(0.5),
+        result = OptimizationResult{Float64}(
             Dict{Symbol,Any}(:iterations => 100, :n_pareto => 5),
             pareto_params,
             pareto_objectives,
@@ -84,14 +76,7 @@ using CairoMakie
     end
 
     @testset "plot_pareto empty error" begin
-        struct EmptyParetoPolicy <: AbstractPolicy
-            x::Float64
-        end
-
-        result = OptimizationResult{EmptyParetoPolicy,Float64}(
-            [0.5],
-            [1.0],
-            EmptyParetoPolicy(0.5),
+        result = OptimizationResult{Float64}(
             Dict{Symbol,Any}(),
             Vector{Vector{Float64}}(),  # Empty Pareto front
             Vector{Vector{Float64}}(),
@@ -101,18 +86,11 @@ using CairoMakie
     end
 
     @testset "plot_pareto single objective error" begin
-        struct SingleObjPolicy <: AbstractPolicy
-            x::Float64
-        end
-
         # Pareto front with single objective (invalid for plot_pareto)
         pareto_params = [[0.5]]
         pareto_objectives = [[1.0]]  # Only 1 objective
 
-        result = OptimizationResult{SingleObjPolicy,Float64}(
-            [0.5],
-            [1.0],
-            SingleObjPolicy(0.5),
+        result = OptimizationResult{Float64}(
             Dict{Symbol,Any}(),
             pareto_params,
             pareto_objectives,

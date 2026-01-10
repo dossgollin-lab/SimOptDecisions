@@ -67,7 +67,7 @@ using Metaheuristics
         @test length(result.pareto_objectives) == 1
 
         # Get the solution from the front
-        params, objectives = first(pareto_front(result))
+        params, objectives = first(SimOptDecisions.SimOptDecisions.pareto_front(result))
         @test length(params) == 1
         @test length(objectives) == 1
 
@@ -139,7 +139,7 @@ using Metaheuristics
         @test haskey(result.convergence_info, :n_pareto)
 
         # Each solution in front should have 2 params and 2 objectives
-        for (params, objectives) in pareto_front(result)
+        for (params, objectives) in SimOptDecisions.pareto_front(result)
             @test length(params) == 2
             @test length(objectives) == 2
         end
@@ -169,7 +169,7 @@ using Metaheuristics
 
         # With maximize, objectives should be positive (un-negated)
         # The result should favor higher increment values
-        _, objectives = first(pareto_front(result))
+        _, objectives = first(SimOptDecisions.pareto_front(result))
         @test objectives[1] >= 0
     end
 
@@ -201,7 +201,7 @@ using Metaheuristics
 
         # Best solution should respect constraint (increment >= 2.0)
         # Due to optimization dynamics, this might not be exact but should be close
-        params, _ = first(pareto_front(result))
+        params, _ = first(SimOptDecisions.pareto_front(result))
         @test params[1] >= 1.5  # Allow some tolerance
     end
 
@@ -237,7 +237,7 @@ using Metaheuristics
 
         # Result should exist and be valid
         @test result isa OptimizationResult{Float64}
-        params, _ = first(pareto_front(result))
+        params, _ = first(SimOptDecisions.pareto_front(result))
         @test params[1] >= 0.0
         @test params[1] <= 10.0
     end
