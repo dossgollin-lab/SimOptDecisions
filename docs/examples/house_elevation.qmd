@@ -752,13 +752,13 @@ Points near the origin (low cost, low damage) are infeasible—you can't get pro
 The optimizer finds the efficient frontier: for any given construction budget, these are the elevations that minimize expected damages.
 
 ```{julia}
-# Construct policy from best parameters
-best_policy = ElevationPolicy(opt_result.best_params)
-println("Best policy found: elevation = $(round(best_policy.elevation_ft, digits=1)) ft")
-println(
-    "Objectives: construction_cost = $(round(opt_result.best_objectives[1], digits=3)), ",
-    "expected_damage = $(round(opt_result.best_objectives[2], digits=3))",
-)
+# Show solutions from the Pareto front
+println("Pareto front solutions ($(length(opt_result.pareto_params)) points):")
+for (params, objectives) in pareto_front(opt_result)
+    policy = ElevationPolicy(params)
+    println("  Elevation: $(round(policy.elevation_ft, digits=1)) ft → " *
+            "cost=$(round(objectives[1], digits=3)), damage=$(round(objectives[2], digits=3))")
+end
 ```
 
 ## Discussion

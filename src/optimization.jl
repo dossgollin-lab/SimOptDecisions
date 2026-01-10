@@ -32,25 +32,18 @@ end
 """
 Result of an optimization run.
 
-For **single-objective** optimization, `best_params` contains the global optimum.
+The Pareto front contains all non-dominated solutions. For single-objective problems,
+this is a single point. For multi-objective problems, users iterate over the front
+and select based on their preferences.
 
-For **multi-objective** optimization, there is no single "best" - the Pareto front
-contains all non-dominated solutions. The `best_params` field provides one reasonable
-choice using normalized equal weighting. Users who need different selection criteria
-should iterate over `pareto_front(result)` directly.
-
-To construct a policy from the result: `PolicyType(result.best_params)`
+To construct a policy: `PolicyType(params)` where `params` comes from iterating `pareto_front(result)`.
 
 # Fields
-- `best_params::Vector{T}`: Parameter vector for selected solution
-- `best_objectives::Vector{T}`: Objective values at selected solution
 - `convergence_info::Dict{Symbol,Any}`: Backend-specific convergence information
-- `pareto_params::Vector{Vector{T}}`: Pareto front parameter vectors (multi-objective)
-- `pareto_objectives::Vector{Vector{T}}`: Pareto front objective values (multi-objective)
+- `pareto_params::Vector{Vector{T}}`: Pareto front parameter vectors
+- `pareto_objectives::Vector{Vector{T}}`: Pareto front objective values
 """
 struct OptimizationResult{T<:AbstractFloat}
-    best_params::Vector{T}
-    best_objectives::Vector{T}
     convergence_info::Dict{Symbol,Any}
     pareto_params::Vector{Vector{T}}
     pareto_objectives::Vector{Vector{T}}
@@ -228,9 +221,6 @@ The policy is evaluated using the problem's config, SOWs, and metric calculator.
 Dominance is checked: the policy is added only if not dominated, and any
 existing solutions dominated by it are removed.
 
-Updates `best_policy` and `best_objectives` if the new policy becomes the best
-(using normalized equal weighting).
-
 # Example
 ```julia
 result = optimize(prob, backend)
@@ -246,15 +236,13 @@ function merge_into_pareto!(
     # Evaluate the policy
     metrics = evaluate_policy(prob, policy; seed=seed)
 
-    # Extract objectives (applying direction: negate for Maximize since we store un-negated)
+    # Extract objectives (store un-negated, original scale)
     objectives = Vector{T}(undef, length(prob.objectives))
     for (i, obj) in enumerate(prob.objectives)
-        val = T(metrics[obj.name])
-        objectives[i] = val  # Store un-negated (original scale)
+        objectives[i] = T(metrics[obj.name])
     end
 
-    # For dominance checking, we need to compare in minimization space
-    # (negate maximized objectives for comparison)
+    # For dominance checking, convert to minimization space
     function to_min_space(objs)
         return [prob.objectives[i].direction == Maximize ? -objs[i] : objs[i]
                 for i in eachindex(objs)]
@@ -293,60 +281,7 @@ function merge_into_pareto!(
     append!(result.pareto_params, new_pareto_params)
     append!(result.pareto_objectives, new_pareto_objectives)
 
-    # Recompute best using normalized weighting
-    if !isempty(result.pareto_objectives)
-        best_idx = _select_best_pareto_idx(result.pareto_objectives, prob.objectives)
-
-        # Update best fields
-        empty!(result.best_params)
-        append!(result.best_params, result.pareto_params[best_idx])
-        empty!(result.best_objectives)
-        append!(result.best_objectives, result.pareto_objectives[best_idx])
-    end
-
     return result
-end
-
-"""
-Select best solution from Pareto front using normalized equal weighting.
-Works with un-negated objectives, respecting direction.
-"""
-function _select_best_pareto_idx(pareto_objectives::Vector{Vector{T}}, objectives) where {T}
-    if length(pareto_objectives) <= 1
-        return 1
-    end
-
-    n_obj = length(pareto_objectives[1])
-    n_sol = length(pareto_objectives)
-
-    # Convert to minimization space for comparison
-    min_space = [[objectives[j].direction == Maximize ? -pareto_objectives[i][j] : pareto_objectives[i][j]
-                  for j in 1:n_obj] for i in 1:n_sol]
-
-    # Find min/max for each objective
-    mins = [minimum(min_space[i][j] for i in 1:n_sol) for j in 1:n_obj]
-    maxs = [maximum(min_space[i][j] for i in 1:n_sol) for j in 1:n_obj]
-
-    # Compute normalized sum (lower is better)
-    best_idx = 1
-    best_score = Inf
-    for i in 1:n_sol
-        score = 0.0
-        for j in 1:n_obj
-            range = maxs[j] - mins[j]
-            if range > 0
-                score += (min_space[i][j] - mins[j]) / range
-            else
-                score += 0.5
-            end
-        end
-        if score < best_score
-            best_score = score
-            best_idx = i
-        end
-    end
-
-    return best_idx
 end
 
 # ============================================================================

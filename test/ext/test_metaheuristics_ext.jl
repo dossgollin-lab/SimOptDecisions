@@ -59,22 +59,25 @@ using Metaheuristics
 
         # Check result structure
         @test result isa OptimizationResult{Float64}
-        @test length(result.best_params) == 1
-        @test length(result.best_objectives) == 1
         @test haskey(result.convergence_info, :iterations)
         @test haskey(result.convergence_info, :f_calls)
 
+        # Single-objective stores result as single-point Pareto front
+        @test length(result.pareto_params) == 1
+        @test length(result.pareto_objectives) == 1
+
+        # Get the solution from the front
+        params, objectives = first(pareto_front(result))
+        @test length(params) == 1
+        @test length(objectives) == 1
+
         # Construct policy from params
-        best_policy = MHCounterPolicy(result.best_params)
+        best_policy = MHCounterPolicy(params)
         @test best_policy isa MHCounterPolicy
 
-        # Best params should be close to 0 (minimizing mean_value)
-        @test result.best_params[1] >= 0.0
-        @test result.best_params[1] <= 10.0
-
-        # Single-objective should have empty Pareto front
-        @test isempty(result.pareto_params)
-        @test isempty(result.pareto_objectives)
+        # Params should be in bounds
+        @test params[1] >= 0.0
+        @test params[1] <= 10.0
     end
 
     @testset "Multi-objective optimization with NSGA2" begin
@@ -128,14 +131,18 @@ using Metaheuristics
         result = SimOptDecisions.optimize(prob, backend)
 
         # Check result structure
-        @test result isa OptimizationResult{MHMultiPolicy}
-        @test length(result.best_params) == 2
-        @test length(result.best_objectives) == 2
+        @test result isa OptimizationResult{Float64}
 
         # Multi-objective should have Pareto front
         @test length(result.pareto_params) > 0
         @test length(result.pareto_objectives) > 0
         @test haskey(result.convergence_info, :n_pareto)
+
+        # Each solution in front should have 2 params and 2 objectives
+        for (params, objectives) in pareto_front(result)
+            @test length(params) == 2
+            @test length(objectives) == 2
+        end
     end
 
     @testset "Maximization objective handling" begin
@@ -160,9 +167,10 @@ using Metaheuristics
 
         result = SimOptDecisions.optimize(prob, backend)
 
-        # With maximize, best_objectives should be positive (un-negated)
+        # With maximize, objectives should be positive (un-negated)
         # The result should favor higher increment values
-        @test result.best_objectives[1] >= 0
+        _, objectives = first(pareto_front(result))
+        @test objectives[1] >= 0
     end
 
     @testset "Constraint handling - FeasibilityConstraint" begin
@@ -193,7 +201,8 @@ using Metaheuristics
 
         # Best solution should respect constraint (increment >= 2.0)
         # Due to optimization dynamics, this might not be exact but should be close
-        @test result.best_params[1] >= 1.5  # Allow some tolerance
+        params, _ = first(pareto_front(result))
+        @test params[1] >= 1.5  # Allow some tolerance
     end
 
     @testset "Constraint handling - PenaltyConstraint" begin
@@ -227,8 +236,9 @@ using Metaheuristics
         result = SimOptDecisions.optimize(prob, backend)
 
         # Result should exist and be valid
-        @test result isa OptimizationResult{MHCounterPolicy}
-        @test result.best_params[1] >= 0.0
-        @test result.best_params[1] <= 10.0
+        @test result isa OptimizationResult{Float64}
+        params, _ = first(pareto_front(result))
+        @test params[1] >= 0.0
+        @test params[1] <= 10.0
     end
 end

@@ -134,52 +134,6 @@ function _apply_constraints(
 end
 
 # ============================================================================
-# Pareto Best Selection
-# ============================================================================
-
-"""
-Select best solution from Pareto front using normalized equal weighting.
-Normalizes each objective to [0,1] range and picks the solution with lowest sum
-(equivalent to picking the point closest to origin in normalized space).
-"""
-function _select_best_pareto(pareto_objectives::Vector{Vector{Float64}})
-    if isempty(pareto_objectives)
-        return 1
-    end
-    if length(pareto_objectives) == 1
-        return 1
-    end
-
-    n_obj = length(pareto_objectives[1])
-    n_sol = length(pareto_objectives)
-
-    # Find min/max for each objective
-    mins = [minimum(pareto_objectives[i][j] for i in 1:n_sol) for j in 1:n_obj]
-    maxs = [maximum(pareto_objectives[i][j] for i in 1:n_sol) for j in 1:n_obj]
-
-    # Compute normalized sum for each solution (lower is better)
-    best_idx = 1
-    best_score = Inf
-    for i in 1:n_sol
-        score = 0.0
-        for j in 1:n_obj
-            range = maxs[j] - mins[j]
-            if range > 0
-                score += (pareto_objectives[i][j] - mins[j]) / range
-            else
-                score += 0.5  # All same value
-            end
-        end
-        if score < best_score
-            best_score = score
-            best_idx = i
-        end
-    end
-
-    return best_idx
-end
-
-# ============================================================================
 # Result Wrapping
 # ============================================================================
 
@@ -196,30 +150,25 @@ function _wrap_result(
     n_objectives = length(prob.objectives)
 
     if n_objectives == 1
-        # Single-objective: extract best solution (in normalized space)
+        # Single-objective: store result as single-point Pareto front
         best_x_norm = Vector{Float64}(Metaheuristics.minimizer(mh_result))
         best_x = _denormalize(best_x_norm, bounds_vec)
         best_f_raw = [Metaheuristics.minimum(mh_result)]
-
-        # Un-negate maximized objectives
         best_f = _unnegate_objectives(best_f_raw, prob.objectives)
 
         return OptimizationResult{Float64}(
-            best_x,
-            best_f,
             Dict{Symbol,Any}(
                 :iterations => mh_result.iteration,
                 :f_calls => mh_result.f_calls,
                 :converged => Metaheuristics.termination_status_message(mh_result),
             ),
-            Vector{Vector{Float64}}(),  # No Pareto front for single-objective
-            Vector{Vector{Float64}}(),
+            [best_x],      # Single point in Pareto front
+            [best_f],
         )
     else
         # Multi-objective: extract Pareto front using non-dominated solutions
         nds = Metaheuristics.get_non_dominated_solutions(mh_result.population)
 
-        # Extract parameters and objectives from Pareto front
         pareto_params = Vector{Vector{Float64}}()
         pareto_objectives = Vector{Vector{Float64}}()
 
@@ -230,14 +179,7 @@ function _wrap_result(
             push!(pareto_objectives, _unnegate_objectives(raw_obj, prob.objectives))
         end
 
-        # Select best using normalized objective weighting (equal importance in [0,1] space)
-        best_idx = _select_best_pareto(pareto_objectives)
-        best_x = isempty(pareto_params) ? zeros(length(bounds_vec)) : pareto_params[best_idx]
-        best_f = isempty(pareto_objectives) ? zeros(n_objectives) : pareto_objectives[best_idx]
-
         return OptimizationResult{Float64}(
-            best_x,
-            best_f,
             Dict{Symbol,Any}(
                 :iterations => mh_result.iteration,
                 :f_calls => mh_result.f_calls,

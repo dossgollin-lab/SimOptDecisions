@@ -102,11 +102,9 @@ end
         end
 
         result = OptimizationResult{Float64}(
-            [0.7],
-            [5.0],
             Dict{Symbol,Any}(),
-            Vector{Vector{Float64}}(),
-            Vector{Vector{Float64}}(),
+            [[0.7]],
+            [[5.0]],
         )
 
         tmpfile = tempname() * ".jld2"
@@ -115,7 +113,7 @@ end
 
             loaded = load_experiment(tmpfile)
             @test loaded.config.seed == 123
-            @test loaded.result.best_params == [0.7]
+            @test loaded.result.pareto_params[1] == [0.7]
             @test loaded.version == "0.1.0"
         finally
             rm(tmpfile; force=true)
