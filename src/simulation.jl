@@ -7,7 +7,7 @@ using Random: default_rng
 """
     simulate(config, sow, policy[, recorder][, rng]) -> outcome
 
-Run a simulation. Calls `TimeStepping.run_simulation` which uses five callbacks:
+Run a simulation. Calls `run_simulation` which uses five callbacks:
 `initialize`, `get_action`, `run_timestep`, `time_axis`, `finalize`.
 
 # Arguments
@@ -36,7 +36,7 @@ function simulate(
     recorder::AbstractRecorder,
     rng::AbstractRNG,
 )
-    return TimeStepping.run_simulation(config, sow, policy, recorder, rng)
+    return run_simulation(config, sow, policy, recorder, rng)
 end
 
 # Without recorder (rng only)

@@ -70,7 +70,6 @@ function SimOptDecisions.plot_pareto(
     figure_kwargs::NamedTuple=NamedTuple(),
     axis_kwargs::NamedTuple=NamedTuple(),
     scatter_kwargs::NamedTuple=NamedTuple(),
-    highlight_best::Bool=true,
     objective_names::Vector{String}=String[],
 )
     pareto_objs = result.pareto_objectives
@@ -104,20 +103,6 @@ function SimOptDecisions.plot_pareto(
 
     scatter!(ax, obj1, obj2; label="Pareto solutions", scatter_kwargs...)
 
-    if highlight_best
-        best_obj = result.best_objectives
-        scatter!(
-            ax,
-            [best_obj[1]],
-            [best_obj[2]];
-            color=:red,
-            markersize=15,
-            marker=:star5,
-            label="Best",
-        )
-        axislegend(ax; position=:rt)
-    end
-
     return (fig, ax)
 end
 
@@ -137,7 +122,6 @@ function SimOptDecisions.plot_parallel(
     figure_kwargs::NamedTuple=NamedTuple(),
     axis_kwargs::NamedTuple=NamedTuple(),
     line_kwargs::NamedTuple=NamedTuple(),
-    highlight_best::Bool=true,
 )
     pareto_params = result.pareto_params
     pareto_objs = result.pareto_objectives
@@ -182,14 +166,6 @@ function SimOptDecisions.plot_parallel(
     for data in all_data
         norm_data = normalize(data)
         lines!(ax, 1:n_axes, norm_data; color=(:blue, 0.3), line_kwargs...)
-    end
-
-    # Highlight best
-    if highlight_best
-        best_data = vcat(result.best_params, result.best_objectives)
-        norm_best = normalize(best_data)
-        lines!(ax, 1:n_axes, norm_best; color=:red, linewidth=2, label="Best")
-        axislegend(ax; position=:rt)
     end
 
     return (fig, ax)

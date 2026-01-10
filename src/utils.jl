@@ -8,7 +8,7 @@
 Low-level helper utilities for common simulation tasks.
 
 For time-stepped simulations, use `simulate()` which automatically calls the
-TimeStepping callbacks (`initialize`, `run_timestep`, `time_axis`, `finalize`).
+callbacks (`initialize`, `get_action`, `run_timestep`, `time_axis`, `finalize`).
 
 # Available Functions
 - `discount_factor(rate, t)`: Compute discount factor for time t
