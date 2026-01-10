@@ -27,7 +27,8 @@ end
         trace = build_trace(builder)
 
         # Type includes initial_state type as first parameter
-        @test trace isa SimulationTrace{Float64,Float64,@NamedTuple{value::Int},Int,RecordTestAction}
+        @test trace isa
+            SimulationTrace{Float64,Float64,@NamedTuple{value::Int},Int,RecordTestAction}
         @test trace.initial_state == 0.0
         @test length(trace.states) == 3
         @test length(trace.step_records) == 3
@@ -36,7 +37,8 @@ end
         @test trace.states == [1.0, 2.0, 3.0]
         @test trace.step_records == [(value=10,), (value=20,), (value=30,)]
         @test trace.times == [1, 2, 3]
-        @test trace.actions == [RecordTestAction(0.1), RecordTestAction(0.2), RecordTestAction(0.3)]
+        @test trace.actions ==
+            [RecordTestAction(0.1), RecordTestAction(0.2), RecordTestAction(0.3)]
     end
 
     @testset "SimulationTrace Tables.jl interface" begin
@@ -57,12 +59,12 @@ end
         @test Tables.getcolumn(trace, :step_record) == [(v=10,), (v=20,), (v=30,)]
         @test Tables.getcolumn(trace, :time) == [100, 200, 300]
         @test Tables.getcolumn(trace, :action) ==
-              [TableTestAction(1), TableTestAction(2), TableTestAction(3)]
+            [TableTestAction(1), TableTestAction(2), TableTestAction(3)]
         @test Tables.getcolumn(trace, 1) == [1.0, 2.0, 3.0]
         @test Tables.getcolumn(trace, 2) == [(v=10,), (v=20,), (v=30,)]
         @test Tables.getcolumn(trace, 3) == [100, 200, 300]
         @test Tables.getcolumn(trace, 4) ==
-              [TableTestAction(1), TableTestAction(2), TableTestAction(3)]
+            [TableTestAction(1), TableTestAction(2), TableTestAction(3)]
 
         # Invalid column access
         @test_throws ArgumentError Tables.getcolumn(trace, :invalid)

@@ -96,9 +96,7 @@ end
         pareto_objectives = [[1.0]]  # Only 1 objective
 
         result = OptimizationResult{Float64}(
-            Dict{Symbol,Any}(),
-            pareto_params,
-            pareto_objectives,
+            Dict{Symbol,Any}(), pareto_params, pareto_objectives
         )
 
         @test_throws ErrorException plot_pareto(result)

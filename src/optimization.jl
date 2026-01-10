@@ -126,10 +126,18 @@ function OptimizationProblem(
     sows_vec = collect(sows)
     obj_vec = collect(objectives)
     const_vec = collect(constraints)
-    bounds_vec = bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
+    bounds_vec =
+        bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
 
     return OptimizationProblem(
-        config, sows_vec, policy_type, metric_calculator, obj_vec, batch_size, const_vec, bounds_vec
+        config,
+        sows_vec,
+        policy_type,
+        metric_calculator,
+        obj_vec,
+        batch_size,
+        const_vec,
+        bounds_vec,
     )
 end
 
@@ -244,8 +252,10 @@ function merge_into_pareto!(
 
     # For dominance checking, convert to minimization space
     function to_min_space(objs)
-        return [prob.objectives[i].direction == Maximize ? -objs[i] : objs[i]
-                for i in eachindex(objs)]
+        return [
+            prob.objectives[i].direction == Maximize ? -objs[i] : objs[i] for
+            i in eachindex(objs)
+        ]
     end
 
     new_min = to_min_space(objectives)

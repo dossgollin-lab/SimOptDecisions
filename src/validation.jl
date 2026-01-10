@@ -190,9 +190,7 @@ struct PenaltyConstraint{T<:AbstractFloat,F} <: AbstractConstraint
     func::F  # policy -> Float64 (0.0 = no violation)
     weight::T
 
-    function PenaltyConstraint(
-        name::Symbol, func::F, weight::T
-    ) where {T<:AbstractFloat,F}
+    function PenaltyConstraint(name::Symbol, func::F, weight::T) where {T<:AbstractFloat,F}
         weight >= 0 || throw(ArgumentError("Penalty weight must be non-negative"))
         new{T,F}(name, func, weight)
     end

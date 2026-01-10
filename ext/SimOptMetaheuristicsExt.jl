@@ -143,9 +143,7 @@ Handles both single and multi-objective cases.
 Denormalizes parameters from [0,1] space back to actual bounds.
 """
 function _wrap_result(
-    mh_result,
-    prob::OptimizationProblem,
-    bounds_vec::Vector{Tuple{Float64,Float64}},
+    mh_result, prob::OptimizationProblem, bounds_vec::Vector{Tuple{Float64,Float64}}
 )
     n_objectives = length(prob.objectives)
 

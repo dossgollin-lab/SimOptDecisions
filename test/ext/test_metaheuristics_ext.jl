@@ -47,10 +47,7 @@ SimOptDecisions.param_bounds(::Type{MHMultiPolicy}) = [(0.0, 10.0), (0.0, 10.0)]
 MHMultiPolicy(x::AbstractVector) = MHMultiPolicy(x[1], x[2])
 
 function SimOptDecisions.simulate(
-    params::MHCounterParams,
-    sow::MHEmptySOW,
-    policy::MHMultiPolicy,
-    rng::AbstractRNG,
+    params::MHCounterParams, sow::MHEmptySOW, policy::MHMultiPolicy, rng::AbstractRNG
 )
     value = 0.0
     for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)

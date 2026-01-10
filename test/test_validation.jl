@@ -31,7 +31,9 @@ struct ValidatablePolicy <: AbstractPolicy end
     @testset "SOW validation" begin
         @test SimOptDecisions._validate_sows([OptTestSOW1(), OptTestSOW1()]) === nothing
         @test_throws ArgumentError SimOptDecisions._validate_sows([])
-        @test_throws ArgumentError SimOptDecisions._validate_sows([OptTestSOW1(), OptTestSOW2()])
+        @test_throws ArgumentError SimOptDecisions._validate_sows([
+            OptTestSOW1(), OptTestSOW2()
+        ])
     end
 
     @testset "Objectives validation" begin
@@ -54,7 +56,9 @@ struct ValidatablePolicy <: AbstractPolicy end
         @test SimOptDecisions._validate_policy_interface(GoodOptPolicy) === nothing
 
         # Test bounds validation
-        @test_throws ArgumentError SimOptDecisions._validate_policy_interface(BadBoundsPolicy)
+        @test_throws ArgumentError SimOptDecisions._validate_policy_interface(
+            BadBoundsPolicy
+        )
     end
 
     @testset "Constraint types" begin

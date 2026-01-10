@@ -15,12 +15,19 @@ function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptySOW, ::Abstrac
     return 0.0  # state is just a Float64 counter
 end
 
-function SimOptDecisions.get_action(::OptCounterPolicy, ::Float64, ::OptEmptySOW, ::TimeStep)
+function SimOptDecisions.get_action(
+    ::OptCounterPolicy, ::Float64, ::OptEmptySOW, ::TimeStep
+)
     return OptCounterAction()
 end
 
 function SimOptDecisions.run_timestep(
-    state::Float64, ::OptCounterAction, ::OptEmptySOW, ::OptCounterConfig, ::TimeStep, ::AbstractRNG
+    state::Float64,
+    ::OptCounterAction,
+    ::OptEmptySOW,
+    ::OptCounterConfig,
+    ::TimeStep,
+    ::AbstractRNG,
 )
     return (state + 1.0, state)  # increment state, record old value
 end
@@ -63,7 +70,12 @@ function SimOptDecisions.get_action(
 end
 
 function SimOptDecisions.run_timestep(
-    state::Float64, ::EvalCounterAction, ::EvalEmptySOW, ::EvalCounterConfig, ::TimeStep, ::AbstractRNG
+    state::Float64,
+    ::EvalCounterAction,
+    ::EvalEmptySOW,
+    ::EvalCounterConfig,
+    ::TimeStep,
+    ::AbstractRNG,
 )
     return (state + 5.0, state)  # Fixed increment of 5.0 for this test
 end

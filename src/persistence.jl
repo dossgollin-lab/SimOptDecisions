@@ -155,7 +155,11 @@ function save_experiment(
     filename::AbstractString, config::ExperimentConfig, result::OptimizationResult
 )
     JLD2.jldsave(
-        filename; config=config, result=result, timestamp=Dates.now(), version=PACKAGE_VERSION
+        filename;
+        config=config,
+        result=result,
+        timestamp=Dates.now(),
+        version=PACKAGE_VERSION,
     )
     return nothing
 end

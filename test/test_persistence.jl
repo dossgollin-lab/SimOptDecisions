@@ -103,11 +103,7 @@ end
         backend = MetaheuristicsBackend()
         config = ExperimentConfig(123, sows, shared, backend)
 
-        result = OptimizationResult{Float64}(
-            Dict{Symbol,Any}(),
-            [[0.7]],
-            [[5.0]],
-        )
+        result = OptimizationResult{Float64}(Dict{Symbol,Any}(), [[0.7]], [[5.0]])
 
         tmpfile = tempname() * ".jld2"
         try
