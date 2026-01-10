@@ -25,10 +25,16 @@ Before making code changes, read [STYLE.md](STYLE.md) for project conventions.
 
 | Callback | Signature | Returns |
 |----------|-----------|---------|
-| `initialize` | `(config, sow, rng)` | `state` |
+| `initialize` | `(config, sow, rng)` | `state` (or `nothing` for stateless) |
 | `get_action` | `(policy, state, sow, t)` | `<:AbstractAction` |
 | `run_timestep` | `(state, action, sow, config, t, rng)` | `(new_state, step_record)` |
-| `time_axis` | `(config, sow)` | Iterable |
+| `time_axis` | `(config, sow)` | Iterable with `length()` |
 | `finalize` | `(final_state, step_records, config, sow)` | Outcome |
 
-All five callbacks are **required** - no defaults.
+All five callbacks are **required**. The framework throws helpful errors if missing.
+
+## Recording
+
+`SimulationTrace` captures simulation history with `initial_state` field separate from per-timestep vectors:
+- `initial_state`: State at t=0 (before any actions)
+- `states`, `step_records`, `times`, `actions`: Aligned vectors for each timestep

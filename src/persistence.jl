@@ -1,3 +1,19 @@
+using TOML
+
+# ============================================================================
+# Package Version
+# ============================================================================
+
+# Read version from Project.toml at module load time
+const _PROJECT_TOML = joinpath(@__DIR__, "..", "Project.toml")
+const PACKAGE_VERSION = let
+    if isfile(_PROJECT_TOML)
+        TOML.parsefile(_PROJECT_TOML)["version"]
+    else
+        "unknown"
+    end
+end
+
 # ============================================================================
 # Shared Parameters
 # ============================================================================
@@ -102,7 +118,7 @@ function save_checkpoint(
         optimizer_state=optimizer_state,
         metadata=metadata,
         timestamp=Dates.now(),
-        version="0.1.0",
+        version=PACKAGE_VERSION,
     )
     return nothing
 end
@@ -139,7 +155,11 @@ function save_experiment(
     filename::AbstractString, config::ExperimentConfig, result::OptimizationResult
 )
     JLD2.jldsave(
-        filename; config=config, result=result, timestamp=Dates.now(), version="0.1.0"
+        filename;
+        config=config,
+        result=result,
+        timestamp=Dates.now(),
+        version=PACKAGE_VERSION,
     )
     return nothing
 end

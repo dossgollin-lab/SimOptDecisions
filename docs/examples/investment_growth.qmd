@@ -158,7 +158,7 @@ Create the initial state at `t=0`:
 
 ```{julia}
 #| output: false
-function SimOptDecisions.TimeStepping.initialize(
+function SimOptDecisions.initialize(
     config::InvestmentConfig, ::InvestmentSOW, ::AbstractRNG
 )
     return PortfolioState(config.initial_value)
@@ -184,7 +184,7 @@ Define the timesteps to simulate:
 
 ```{julia}
 #| output: false
-function SimOptDecisions.TimeStepping.time_axis(config::InvestmentConfig, ::InvestmentSOW)
+function SimOptDecisions.time_axis(config::InvestmentConfig, ::InvestmentSOW)
     return 1:config.horizon
 end
 ```
@@ -195,7 +195,7 @@ The core simulation logic. Receives the action computed by `get_action`:
 
 ```{julia}
 #| output: false
-function SimOptDecisions.TimeStepping.run_timestep(
+function SimOptDecisions.run_timestep(
     state::PortfolioState,
     action::InvestmentAction,
     sow::InvestmentSOW,
@@ -222,7 +222,7 @@ Aggregate step records into the outcome returned by `simulate`:
 
 ```{julia}
 #| output: false
-function SimOptDecisions.TimeStepping.finalize(
+function SimOptDecisions.finalize(
     final_state::PortfolioState,
     step_records::Vector,
     config::InvestmentConfig,

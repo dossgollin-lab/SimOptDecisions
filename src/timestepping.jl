@@ -1,40 +1,19 @@
 # ============================================================================
-# TimeStepping - Structured interface for time-stepped simulations
+# Time-stepped simulation interface
 # ============================================================================
-
-"""
-    TimeStepping
-
-Submodule for time-stepped simulations. Implement five callbacks:
-
-| Function | Purpose | Returns |
-|----------|---------|---------|
-| `initialize(config, sow, rng)` | Create initial state | `state` |
-| `get_action(policy, state, sow, t)` | Map state to action | `<:AbstractAction` |
-| `run_timestep(state, action, sow, config, t, rng)` | Execute one step | `(new_state, step_record)` |
-| `time_axis(config, sow)` | Define time points | Iterable |
-| `finalize(final_state, step_records, config, sow)` | Aggregate results | `Outcome` |
-
-`simulate()` automatically calls these via `run_simulation`. See docs for examples.
-"""
-module TimeStepping
+#
+# Users implement five callbacks:
+# | Function | Purpose | Returns |
+# |----------|---------|---------|
+# | `initialize(config, sow, rng)` | Create initial state | `state` |
+# | `get_action(policy, state, sow, t)` | Map state to action | `<:AbstractAction` |
+# | `run_timestep(state, action, sow, config, t, rng)` | Execute one step | `(new_state, step_record)` |
+# | `time_axis(config, sow)` | Define time points | Iterable |
+# | `finalize(final_state, step_records, config, sow)` | Aggregate results | `Outcome` |
+#
+# `simulate()` automatically calls these via `run_simulation`. See docs for examples.
 
 using Random: AbstractRNG, default_rng
-
-using ..SimOptDecisions:
-    AbstractConfig,
-    AbstractSOW,
-    AbstractPolicy,
-    AbstractAction,
-    AbstractRecorder,
-    TimeStep,
-    NoRecorder,
-    record!,
-    get_action,
-    interface_not_implemented,
-    _validate_time_axis
-
-using ..SimOptDecisions.Utils: timeindex
 
 # ============================================================================
 # TimeSeriesParameter - Time-indexed data for SOWs
@@ -78,13 +57,13 @@ Base.iterate(ts::TimeSeriesParameter) = iterate(ts.data)
 Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.data, state)
 
 # ============================================================================
-# User-Implemented Interface Functions
+# User-Implemented Callback Functions
 # ============================================================================
 
 """
     initialize(config::AbstractConfig, sow::AbstractSOW, rng::AbstractRNG) -> state
 
-Create initial state for simulation. Must be implemented.
+Create initial state for simulation. Required callback.
 Return `nothing` for stateless models, or `<:AbstractState` for stateful models.
 """
 function initialize end
@@ -98,7 +77,7 @@ end
 """
     run_timestep(state, action::AbstractAction, sow::AbstractSOW, config::AbstractConfig, t::TimeStep, rng::AbstractRNG) -> (new_state, step_record)
 
-Execute one timestep transition. Must be implemented.
+Execute one timestep transition. Required callback.
 
 The framework calls `get_action(policy, state, sow, t)` before this function
 and passes the resulting action. Implement the transition logic here.
@@ -108,14 +87,14 @@ function run_timestep end
 """
     time_axis(config::AbstractConfig, sow::AbstractSOW) -> Iterable
 
-Return time points iterable with defined `length()`. Must be implemented.
+Return time points iterable with defined `length()`. Required callback.
 """
 function time_axis end
 
 """
     finalize(final_state, step_records::Vector, config::AbstractConfig, sow::AbstractSOW) -> Outcome
 
-Aggregate step records into final outcome. Must be implemented.
+Aggregate step records into final outcome. Required callback.
 """
 function finalize end
 
@@ -155,7 +134,7 @@ function run_simulation(
     state = initialize(config, sow, rng)
     record!(recorder, state, nothing, nothing, nothing)
 
-    timesteps = timeindex(times)
+    timesteps = Utils.timeindex(times)
     first_ts, rest = Iterators.peel(timesteps)
 
     # Framework calls get_action, then run_timestep
@@ -199,5 +178,3 @@ end
 function run_simulation(config::AbstractConfig, sow::AbstractSOW, policy::AbstractPolicy)
     return run_simulation(config, sow, policy, NoRecorder(), default_rng())
 end
-
-end # module TimeStepping

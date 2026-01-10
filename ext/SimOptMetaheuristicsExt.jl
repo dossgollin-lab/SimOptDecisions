@@ -17,7 +17,7 @@ import SimOptDecisions:
     PenaltyConstraint,
     Maximize,
     evaluate_policy,
-    param_bounds
+    get_bounds
 
 # ============================================================================
 # Algorithm Selection
@@ -143,39 +143,30 @@ Handles both single and multi-objective cases.
 Denormalizes parameters from [0,1] space back to actual bounds.
 """
 function _wrap_result(
-    mh_result,
-    ::Type{P},
-    prob::OptimizationProblem,
-    bounds_vec::Vector{Tuple{Float64,Float64}},
-) where {P<:AbstractPolicy}
+    mh_result, prob::OptimizationProblem, bounds_vec::Vector{Tuple{Float64,Float64}}
+)
     n_objectives = length(prob.objectives)
 
     if n_objectives == 1
-        # Single-objective: extract best solution (in normalized space)
+        # Single-objective: store result as single-point Pareto front
         best_x_norm = Vector{Float64}(Metaheuristics.minimizer(mh_result))
         best_x = _denormalize(best_x_norm, bounds_vec)
         best_f_raw = [Metaheuristics.minimum(mh_result)]
-
-        # Un-negate maximized objectives
         best_f = _unnegate_objectives(best_f_raw, prob.objectives)
 
-        return OptimizationResult{P,Float64}(
-            best_x,
-            best_f,
-            P(best_x),
+        return OptimizationResult{Float64}(
             Dict{Symbol,Any}(
                 :iterations => mh_result.iteration,
                 :f_calls => mh_result.f_calls,
                 :converged => Metaheuristics.termination_status_message(mh_result),
             ),
-            Vector{Vector{Float64}}(),  # No Pareto front for single-objective
-            Vector{Vector{Float64}}(),
+            [best_x],      # Single point in Pareto front
+            [best_f],
         )
     else
         # Multi-objective: extract Pareto front using non-dominated solutions
         nds = Metaheuristics.get_non_dominated_solutions(mh_result.population)
 
-        # Extract parameters and objectives from Pareto front
         pareto_params = Vector{Vector{Float64}}()
         pareto_objectives = Vector{Vector{Float64}}()
 
@@ -186,14 +177,7 @@ function _wrap_result(
             push!(pareto_objectives, _unnegate_objectives(raw_obj, prob.objectives))
         end
 
-        # Select best as first Pareto solution (or could use hypervolume)
-        best_x = isempty(pareto_params) ? zeros(length(bounds_vec)) : pareto_params[1]
-        best_f = isempty(pareto_objectives) ? zeros(n_objectives) : pareto_objectives[1]
-
-        return OptimizationResult{P,Float64}(
-            best_x,
-            best_f,
-            P(best_x),
+        return OptimizationResult{Float64}(
             Dict{Symbol,Any}(
                 :iterations => mh_result.iteration,
                 :f_calls => mh_result.f_calls,
@@ -229,19 +213,23 @@ function SimOptDecisions.optimize_backend(
     P = prob.policy_type
     n_objectives = length(prob.objectives)
 
-    # Get actual bounds for denormalization
-    bounds_vec = [(Float64(lo), Float64(hi)) for (lo, hi) in param_bounds(P)]
+    # Get actual bounds for denormalization (uses custom bounds if specified)
+    bounds_vec = get_bounds(prob)
     n_params = length(bounds_vec)
 
     # Optimizer works in normalized [0,1] space
     normalized_bounds = zeros(2, n_params)
     normalized_bounds[2, :] .= 1.0  # All upper bounds are 1.0
 
+    # Get seed from backend options, defaulting to 42
+    sim_seed = get(backend.options, :seed, 42)::Int
+
     # Evaluate a single solution vector (in normalized space) and return objectives
+    # Uses fixed seed for consistent policy comparison across optimization
     function _evaluate_one(x_normalized)
         x_real = _denormalize(x_normalized, bounds_vec)
         policy = P(x_real)
-        rng = Random.Xoshiro(hash(x_normalized))
+        rng = Random.Xoshiro(sim_seed)
         metrics = evaluate_policy(prob, policy, rng)
         objectives = _extract_objectives(metrics, prob.objectives)
         return _apply_constraints(objectives, policy, prob.constraints)
@@ -297,7 +285,7 @@ function SimOptDecisions.optimize_backend(
     mh_result = Metaheuristics.optimize(fitness, normalized_bounds, algorithm)
 
     # Wrap result (denormalizing parameters back to real space)
-    return _wrap_result(mh_result, P, prob, bounds_vec)
+    return _wrap_result(mh_result, prob, bounds_vec)
 end
 
 end # module SimOptMetaheuristicsExt

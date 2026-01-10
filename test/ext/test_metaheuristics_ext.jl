@@ -6,38 +6,61 @@ using Metaheuristics
 # Note: Both Metaheuristics and SimOptDecisions export `optimize`,
 # so we use fully qualified SimOptDecisions.optimize in tests
 
+# Test types for single-objective optimization
+struct MHCounterState <: AbstractState
+    value::Float64
+end
+
+struct MHCounterPolicy <: AbstractPolicy
+    increment::Float64
+end
+
+struct MHCounterParams <: AbstractConfig
+    n_steps::Int
+end
+
+struct MHEmptySOW <: AbstractSOW end
+
+# Simple for-loop implementation
+function SimOptDecisions.simulate(
+    params::MHCounterParams, sow::MHEmptySOW, policy::MHCounterPolicy, rng::AbstractRNG
+)
+    value = 0.0
+    for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+        value += policy.increment
+    end
+    return (final_value=value,)
+end
+
+# Implement policy interface
+SimOptDecisions.param_bounds(::Type{MHCounterPolicy}) = [(0.0, 10.0)]
+MHCounterPolicy(x::AbstractVector) = MHCounterPolicy(x[1])
+SimOptDecisions.params(p::MHCounterPolicy) = [p.increment]
+
+# Test types for multi-objective optimization
+struct MHMultiPolicy <: AbstractPolicy
+    param1::Float64
+    param2::Float64
+end
+
+SimOptDecisions.param_bounds(::Type{MHMultiPolicy}) = [(0.0, 10.0), (0.0, 10.0)]
+MHMultiPolicy(x::AbstractVector) = MHMultiPolicy(x[1], x[2])
+
+function SimOptDecisions.simulate(
+    params::MHCounterParams, sow::MHEmptySOW, policy::MHMultiPolicy, rng::AbstractRNG
+)
+    value = 0.0
+    for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+        value += policy.param1 - policy.param2 * 0.1
+    end
+    return (final_value=value,)
+end
+
+# ============================================================================
+# Tests
+# ============================================================================
+
 @testset "MetaheuristicsExt" begin
-    # Define MWE types for optimization testing
-    struct MHCounterState <: AbstractState
-        value::Float64
-    end
-
-    struct MHCounterPolicy <: AbstractPolicy
-        increment::Float64
-    end
-
-    struct MHCounterParams <: AbstractConfig
-        n_steps::Int
-    end
-
-    struct MHEmptySOW <: AbstractSOW end
-
-    # Simple for-loop implementation
-    function SimOptDecisions.simulate(
-        params::MHCounterParams, sow::MHEmptySOW, policy::MHCounterPolicy, rng::AbstractRNG
-    )
-        value = 0.0
-        for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
-            value += policy.increment
-        end
-        return (final_value=value,)
-    end
-
-    # Implement policy interface
-    SimOptDecisions.param_bounds(::Type{MHCounterPolicy}) = [(0.0, 10.0)]
-    MHCounterPolicy(x::AbstractVector) = MHCounterPolicy(x[1])
-    SimOptDecisions.params(p::MHCounterPolicy) = [p.increment]
-
     @testset "Single-objective optimization with ECA" begin
         params = MHCounterParams(10)
         sows = [MHEmptySOW() for _ in 1:5]
@@ -58,46 +81,29 @@ using Metaheuristics
         result = SimOptDecisions.optimize(prob, backend)
 
         # Check result structure
-        @test result isa OptimizationResult{MHCounterPolicy}
-        @test length(result.best_params) == 1
-        @test length(result.best_objectives) == 1
-        @test result.best_policy isa MHCounterPolicy
+        @test result isa OptimizationResult{Float64}
         @test haskey(result.convergence_info, :iterations)
         @test haskey(result.convergence_info, :f_calls)
 
-        # Best params should be close to 0 (minimizing mean_value)
-        @test result.best_params[1] >= 0.0
-        @test result.best_params[1] <= 10.0
+        # Single-objective stores result as single-point Pareto front
+        @test length(result.pareto_params) == 1
+        @test length(result.pareto_objectives) == 1
 
-        # Single-objective should have empty Pareto front
-        @test isempty(result.pareto_params)
-        @test isempty(result.pareto_objectives)
+        # Get the solution from the front
+        opt_params, objectives = first(SimOptDecisions.pareto_front(result))
+        @test length(opt_params) == 1
+        @test length(objectives) == 1
+
+        # Construct policy from params
+        best_policy = MHCounterPolicy(opt_params)
+        @test best_policy isa MHCounterPolicy
+
+        # Params should be in bounds
+        @test opt_params[1] >= 0.0
+        @test opt_params[1] <= 10.0
     end
 
     @testset "Multi-objective optimization with NSGA2" begin
-        # Define a 2-parameter policy for multi-objective
-        struct MHMultiPolicy <: AbstractPolicy
-            param1::Float64
-            param2::Float64
-        end
-
-        SimOptDecisions.param_bounds(::Type{MHMultiPolicy}) = [(0.0, 10.0), (0.0, 10.0)]
-        MHMultiPolicy(x::AbstractVector) = MHMultiPolicy(x[1], x[2])
-
-        # Simple for-loop implementation for MHMultiPolicy
-        function SimOptDecisions.simulate(
-            params::MHCounterParams,
-            sow::MHEmptySOW,
-            policy::MHMultiPolicy,
-            rng::AbstractRNG,
-        )
-            value = 0.0
-            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
-                value += policy.param1 - policy.param2 * 0.1
-            end
-            return (final_value=value,)
-        end
-
         params = MHCounterParams(5)
         sows = [MHEmptySOW() for _ in 1:3]
 
@@ -125,14 +131,18 @@ using Metaheuristics
         result = SimOptDecisions.optimize(prob, backend)
 
         # Check result structure
-        @test result isa OptimizationResult{MHMultiPolicy}
-        @test length(result.best_params) == 2
-        @test length(result.best_objectives) == 2
+        @test result isa OptimizationResult{Float64}
 
         # Multi-objective should have Pareto front
         @test length(result.pareto_params) > 0
         @test length(result.pareto_objectives) > 0
         @test haskey(result.convergence_info, :n_pareto)
+
+        # Each solution in front should have 2 params and 2 objectives
+        for (opt_params, objectives) in SimOptDecisions.pareto_front(result)
+            @test length(opt_params) == 2
+            @test length(objectives) == 2
+        end
     end
 
     @testset "Maximization objective handling" begin
@@ -157,9 +167,10 @@ using Metaheuristics
 
         result = SimOptDecisions.optimize(prob, backend)
 
-        # With maximize, best_objectives should be positive (un-negated)
+        # With maximize, objectives should be positive (un-negated)
         # The result should favor higher increment values
-        @test result.best_objectives[1] >= 0
+        _, objectives = first(SimOptDecisions.pareto_front(result))
+        @test objectives[1] >= 0
     end
 
     @testset "Constraint handling - FeasibilityConstraint" begin
@@ -190,7 +201,8 @@ using Metaheuristics
 
         # Best solution should respect constraint (increment >= 2.0)
         # Due to optimization dynamics, this might not be exact but should be close
-        @test result.best_params[1] >= 1.5  # Allow some tolerance
+        opt_params, _ = first(SimOptDecisions.pareto_front(result))
+        @test opt_params[1] >= 1.5  # Allow some tolerance
     end
 
     @testset "Constraint handling - PenaltyConstraint" begin
@@ -224,8 +236,9 @@ using Metaheuristics
         result = SimOptDecisions.optimize(prob, backend)
 
         # Result should exist and be valid
-        @test result isa OptimizationResult{MHCounterPolicy}
-        @test result.best_params[1] >= 0.0
-        @test result.best_params[1] <= 10.0
+        @test result isa OptimizationResult{Float64}
+        opt_params, _ = first(SimOptDecisions.pareto_front(result))
+        @test opt_params[1] >= 0.0
+        @test opt_params[1] <= 10.0
     end
 end

@@ -130,7 +130,7 @@ SimOptDecisions.jl/
 │   ├── SimOptDecisions.jl    # Main module, exports
 │   ├── types.jl              # Abstract types, TimeStep, Objective, AbstractAction
 │   ├── simulation.jl         # simulate() entry point
-│   ├── timestepping.jl       # TimeStepping submodule, callbacks
+│   ├── timestepping.jl       # Callbacks: initialize, run_timestep, time_axis, finalize
 │   ├── recorders.jl          # NoRecorder, SimulationTrace, Tables.jl
 │   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
 │   ├── validation.jl         # _validate_* functions, constraints

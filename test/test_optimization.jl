@@ -1,42 +1,116 @@
+# Test types for "OptimizationProblem construction"
+struct OptCounterAction <: AbstractAction end
+
+struct OptCounterPolicy <: AbstractPolicy
+    increment::Float64
+end
+
+struct OptCounterConfig <: AbstractConfig
+    n_steps::Int
+end
+
+struct OptEmptySOW <: AbstractSOW end
+
+function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptySOW, ::AbstractRNG)
+    return 0.0  # state is just a Float64 counter
+end
+
+function SimOptDecisions.get_action(
+    ::OptCounterPolicy, ::Float64, ::OptEmptySOW, ::TimeStep
+)
+    return OptCounterAction()
+end
+
+function SimOptDecisions.run_timestep(
+    state::Float64,
+    ::OptCounterAction,
+    ::OptEmptySOW,
+    ::OptCounterConfig,
+    ::TimeStep,
+    ::AbstractRNG,
+)
+    return (state + 1.0, state)  # increment state, record old value
+end
+
+function SimOptDecisions.time_axis(config::OptCounterConfig, ::OptEmptySOW)
+    return 1:config.n_steps
+end
+
+function SimOptDecisions.finalize(
+    final_state::Float64, ::Vector, config::OptCounterConfig, ::OptEmptySOW
+)
+    return (final_value=final_state,)
+end
+
+SimOptDecisions.param_bounds(::Type{OptCounterPolicy}) = [(0.0, 10.0)]
+OptCounterPolicy(x::AbstractVector) = OptCounterPolicy(x[1])
+SimOptDecisions.params(p::OptCounterPolicy) = [p.increment]
+
+# Test types for "evaluate_policy"
+struct EvalCounterAction <: AbstractAction end
+
+struct EvalCounterPolicy <: AbstractPolicy
+    increment::Float64
+end
+
+struct EvalCounterConfig <: AbstractConfig
+    n_steps::Int
+end
+
+struct EvalEmptySOW <: AbstractSOW end
+
+function SimOptDecisions.initialize(::EvalCounterConfig, ::EvalEmptySOW, ::AbstractRNG)
+    return 0.0
+end
+
+function SimOptDecisions.get_action(
+    policy::EvalCounterPolicy, ::Float64, ::EvalEmptySOW, ::TimeStep
+)
+    return EvalCounterAction()
+end
+
+function SimOptDecisions.run_timestep(
+    state::Float64,
+    ::EvalCounterAction,
+    ::EvalEmptySOW,
+    ::EvalCounterConfig,
+    ::TimeStep,
+    ::AbstractRNG,
+)
+    return (state + 5.0, state)  # Fixed increment of 5.0 for this test
+end
+
+function SimOptDecisions.time_axis(config::EvalCounterConfig, ::EvalEmptySOW)
+    return 1:config.n_steps
+end
+
+function SimOptDecisions.finalize(
+    final_state::Float64, ::Vector, config::EvalCounterConfig, ::EvalEmptySOW
+)
+    return (final_value=final_state,)
+end
+
+SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
+EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
+
+# Test types for "Batch selection"
+struct BatchTestSOW <: AbstractSOW
+    id::Int
+end
+
+# Test types for "OptimizationResult and pareto_front"
+struct ResultPolicy <: AbstractPolicy
+    x::Float64
+end
+
+# ============================================================================
+# Tests
+# ============================================================================
+
 @testset "Optimization" begin
     @testset "OptimizationProblem construction" begin
-        # Set up MWE types for optimization
-        struct OptCounterState <: AbstractState
-            value::Float64
-        end
-
-        struct OptCounterPolicy <: AbstractPolicy
-            increment::Float64
-        end
-
-        struct OptCounterParams <: AbstractConfig
-            n_steps::Int
-        end
-
-        struct OptEmptySOW <: AbstractSOW end
-
-        # Simple for-loop implementation (override full 5-arg simulate signature)
-        function SimOptDecisions.simulate(
-            params::OptCounterParams,
-            sow::OptEmptySOW,
-            policy::OptCounterPolicy,
-            recorder::AbstractRecorder,
-            rng::AbstractRNG,
-        )
-            value = 0.0
-            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
-                value += policy.increment
-            end
-            return (final_value=value,)
-        end
-
-        # Implement policy interface for optimization
-        SimOptDecisions.param_bounds(::Type{OptCounterPolicy}) = [(0.0, 10.0)]
-        OptCounterPolicy(x::AbstractVector) = OptCounterPolicy(x[1])
-        SimOptDecisions.params(p::OptCounterPolicy) = [p.increment]
-
         # Create optimization problem
-        params = OptCounterParams(10)
+        config = OptCounterConfig(10)
         sows = [OptEmptySOW() for _ in 1:5]
 
         function metric_calculator(outcomes)
@@ -44,10 +118,10 @@
         end
 
         prob = OptimizationProblem(
-            params, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
+            config, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
         )
 
-        @test prob.config === params
+        @test prob.config === config
         @test length(prob.sows) == 5
         @test prob.policy_type === OptCounterPolicy
         @test length(prob.objectives) == 1
@@ -56,7 +130,7 @@
 
         # Test with options
         prob2 = OptimizationProblem(
-            params,
+            config,
             sows,
             OptCounterPolicy,
             metric_calculator,
@@ -65,43 +139,43 @@
         )
         @test prob2.batch_size isa FixedBatch
         @test prob2.batch_size.n == 3
+
+        # Test with custom bounds
+        prob3 = OptimizationProblem(
+            config,
+            sows,
+            OptCounterPolicy,
+            metric_calculator,
+            [minimize(:mean_value)];
+            bounds=[(3.0, 7.0)],
+        )
+        @test prob3.bounds == [(3.0, 7.0)]
+        @test get_bounds(prob3) == [(3.0, 7.0)]
+
+        # Default bounds come from param_bounds
+        @test prob.bounds === nothing
+        @test get_bounds(prob) == [(0.0, 10.0)]
+    end
+
+    @testset "dominates" begin
+        # a dominates b: all <= and at least one <
+        @test dominates([1.0, 1.0], [2.0, 2.0])
+        @test dominates([1.0, 2.0], [2.0, 2.0])
+        @test dominates([2.0, 1.0], [2.0, 2.0])
+
+        # Neither dominates
+        @test !dominates([1.0, 3.0], [2.0, 2.0])  # a better on 1, b better on 2
+        @test !dominates([2.0, 2.0], [1.0, 3.0])
+
+        # Equal: not dominated
+        @test !dominates([1.0, 1.0], [1.0, 1.0])
+
+        # b dominates a
+        @test !dominates([2.0, 2.0], [1.0, 1.0])
     end
 
     @testset "evaluate_policy" begin
-        # Reuse MWE types (defined in previous testset but need to redefine here)
-        struct EvalCounterState <: AbstractState
-            value::Float64
-        end
-
-        struct EvalCounterPolicy <: AbstractPolicy
-            increment::Float64
-        end
-
-        struct EvalCounterParams <: AbstractConfig
-            n_steps::Int
-        end
-
-        struct EvalEmptySOW <: AbstractSOW end
-
-        # Simple for-loop implementation (override full 5-arg simulate signature)
-        function SimOptDecisions.simulate(
-            params::EvalCounterParams,
-            sow::EvalEmptySOW,
-            policy::EvalCounterPolicy,
-            recorder::AbstractRecorder,
-            rng::AbstractRNG,
-        )
-            value = 0.0
-            for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
-                value += policy.increment
-            end
-            return (final_value=value,)
-        end
-
-        SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
-        EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
-
-        params = EvalCounterParams(10)
+        config = EvalCounterConfig(10)
         sows = [EvalEmptySOW() for _ in 1:5]
 
         function eval_metric_calculator(outcomes)
@@ -109,7 +183,7 @@
         end
 
         prob = OptimizationProblem(
-            params, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
+            config, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
         )
 
         policy = EvalCounterPolicy(5.0)
@@ -141,10 +215,6 @@
     end
 
     @testset "Batch selection" begin
-        struct BatchTestSOW <: AbstractSOW
-            id::Int
-        end
-
         sows = [BatchTestSOW(i) for i in 1:100]
         rng = Random.Xoshiro(42)
 
@@ -170,22 +240,12 @@
     end
 
     @testset "OptimizationResult and pareto_front" begin
-        struct ResultPolicy <: AbstractPolicy
-            x::Float64
-        end
-
-        result = OptimizationResult{ResultPolicy,Float64}(
-            [0.5],
-            [10.0],
-            ResultPolicy(0.5),
+        result = OptimizationResult{Float64}(
             Dict{Symbol,Any}(:iterations => 100),
             [[0.3], [0.5], [0.7]],
             [[12.0], [10.0], [8.0]],
         )
 
-        @test result.best_params == [0.5]
-        @test result.best_objectives == [10.0]
-        @test result.best_policy.x == 0.5
         @test result.convergence_info[:iterations] == 100
 
         # Test pareto_front iteration
@@ -194,5 +254,8 @@
         @test front[1] == ([0.3], [12.0])
         @test front[2] == ([0.5], [10.0])
         @test front[3] == ([0.7], [8.0])
+
+        # Construct policy from params in the front
+        @test ResultPolicy(front[1][1][1]).x == 0.3
     end
 end

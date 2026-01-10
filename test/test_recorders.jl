@@ -1,3 +1,16 @@
+# Test types for recorders
+struct RecordTestAction <: AbstractAction
+    value::Float64
+end
+
+struct TableTestAction <: AbstractAction
+    x::Int
+end
+
+# ============================================================================
+# Tests
+# ============================================================================
+
 @testset "Recorders" begin
     @testset "NoRecorder" begin
         r = NoRecorder()
@@ -5,20 +18,18 @@
     end
 
     @testset "TraceRecorderBuilder and SimulationTrace" begin
-        # Define a test action type
-        struct TestAction <: AbstractAction
-            value::Float64
-        end
-
         builder = TraceRecorderBuilder()
-        record!(builder, nothing, nothing, nothing, nothing)  # Initial state
-        record!(builder, 1.0, (value=10,), 1, TestAction(0.1))
-        record!(builder, 2.0, (value=20,), 2, TestAction(0.2))
-        record!(builder, 3.0, (value=30,), 3, TestAction(0.3))
+        record!(builder, 0.0, nothing, nothing, nothing)  # Initial state (t=0)
+        record!(builder, 1.0, (value=10,), 1, RecordTestAction(0.1))
+        record!(builder, 2.0, (value=20,), 2, RecordTestAction(0.2))
+        record!(builder, 3.0, (value=30,), 3, RecordTestAction(0.3))
 
         trace = build_trace(builder)
 
-        @test trace isa SimulationTrace{Float64,@NamedTuple{value::Int},Int,TestAction}
+        # Type includes initial_state type as first parameter
+        @test trace isa
+            SimulationTrace{Float64,Float64,@NamedTuple{value::Int},Int,RecordTestAction}
+        @test trace.initial_state == 0.0
         @test length(trace.states) == 3
         @test length(trace.step_records) == 3
         @test length(trace.times) == 3
@@ -26,20 +37,20 @@
         @test trace.states == [1.0, 2.0, 3.0]
         @test trace.step_records == [(value=10,), (value=20,), (value=30,)]
         @test trace.times == [1, 2, 3]
-        @test trace.actions == [TestAction(0.1), TestAction(0.2), TestAction(0.3)]
+        @test trace.actions ==
+            [RecordTestAction(0.1), RecordTestAction(0.2), RecordTestAction(0.3)]
     end
 
     @testset "SimulationTrace Tables.jl interface" begin
-        struct TableTestAction <: AbstractAction
-            x::Int
-        end
-
         trace = SimulationTrace(
+            0.0,  # initial_state
             [1.0, 2.0, 3.0],
             [(v=10,), (v=20,), (v=30,)],
             [100, 200, 300],
             [TableTestAction(1), TableTestAction(2), TableTestAction(3)],
         )
+
+        @test trace.initial_state == 0.0
 
         @test Tables.istable(typeof(trace))
         @test Tables.columnaccess(typeof(trace))
