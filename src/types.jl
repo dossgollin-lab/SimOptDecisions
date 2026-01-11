@@ -28,12 +28,12 @@ Wraps time information passed to simulation callbacks.
 
 - `t`: 1-based index into time_axis
 - `val`: Actual time value (Int, Float64, Date, etc.)
-- `is_last`: Whether this is the final time step
+
+Use `is_first(ts)` and `is_last(ts, times)` helper methods to check position.
 """
 struct TimeStep{V}
     t::Int
     val::V
-    is_last::Bool
 end
 
 # ============================================================================

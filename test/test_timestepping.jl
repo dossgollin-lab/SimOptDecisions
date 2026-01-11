@@ -407,7 +407,7 @@ end
         sow = TSTestSOW()
         policy = TSTestPolicy()
         rng = Random.Xoshiro(42)
-        ts = TimeStep(1, 1, false)
+        ts = TimeStep(1, 1)
         action = TSTestAction()
 
         # run_timestep should throw MethodError if not implemented
@@ -548,9 +548,9 @@ end
         @test ts[3] == 3.0
 
         # TimeStep indexing
-        @test ts[TimeStep(1, 2020, false)] == 1.0
-        @test ts[TimeStep(2, 2021, false)] == 2.0
-        @test ts[TimeStep(3, 2022, true)] == 3.0
+        @test ts[TimeStep(1, 2020)] == 1.0
+        @test ts[TimeStep(2, 2021)] == 2.0
+        @test ts[TimeStep(3, 2022)] == 3.0
 
         # Bounds errors
         @test_throws TimeSeriesParameterBoundsError ts[0]

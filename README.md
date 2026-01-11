@@ -2,8 +2,55 @@
 
 [![Tests](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/test.yml)
 [![Documentation](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/docs.yml/badge.svg?branch=main)](https://dossgollin-lab.github.io/SimOptDecisions/)
+![Julia 1.10+](https://img.shields.io/badge/Julia-1.10%2B-blue)
 
-A Julia framework for simulation-optimization under deep uncertainty.
+A Julia framework for simulation-based decision analysis and parametric policy search under uncertainty.
+
+## Framework Overview
+
+```
+Inputs you define:
+  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────────┐
+  │ Config │  │ Policy │  │  SOWs  │  │ Objectives │
+  └───┬────┘  └───┬────┘  └───┬────┘  └─────┬──────┘
+      │           │           │             │
+      ▼           ▼           ▼             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ optimize()                                                      │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ evaluate_policy()                                           │ │
+│ │   loops over SOWs                                           │ │
+│ │ ┌─────────────────────────────────────────────────────────┐ │ │
+│ │ │ simulate()                                              │ │ │
+│ │ │                                                         │ │ │
+│ │ │   initialize()     ───►  State                          │ │ │
+│ │ │   time_axis()      ───►  times                          │ │ │
+│ │ │                                                         │ │ │
+│ │ │   ┌───────────────────────────────────────────────────┐ │ │ │
+│ │ │   │ for t in times                                    │ │ │ │
+│ │ │   │   get_action()   ───►  Action                     │ │ │ │
+│ │ │   │   run_timestep() ───►  State, StepRecord          │ │ │ │
+│ │ │   └───────────────────────────────────────────────────┘ │ │ │
+│ │ │                                                         │ │ │
+│ │ │   finalize(step_records)  ───►  Outcome                 │ │ │
+│ │ └─────────────────────────────────────────────────────────┘ │ │
+│ │                                                             │ │
+│ │   calculate_metrics(outcomes)  ───►  Metrics                │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│   Objectives extract from Metrics  ───►  OptimizationResult     │
+└─────────────────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+                                          ┌─────────────────┐
+                                          │  Pareto Front   │
+                                          │ (params, values)│
+                                          └─────────────────┘
+
+Legend: You implement the 5 callbacks (initialize, time_axis, get_action,
+        run_timestep, finalize) plus calculate_metrics. The framework
+        handles the loops and optimization.
+```
 
 ## What is SimOptDecisions.jl?
 

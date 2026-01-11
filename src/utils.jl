@@ -13,10 +13,42 @@ callbacks (`initialize`, `get_action`, `run_timestep`, `time_axis`, `finalize`).
 # Available Functions
 - `discount_factor(rate, t)`: Compute discount factor for time t
 - `timeindex(times)`: Create iterator of TimeStep from a time axis
+- `is_first(ts)`: Check if TimeStep is the first in sequence
+- `is_last(ts, times)`: Check if TimeStep is the last in sequence
 """
 module Utils
 
 using ..SimOptDecisions: TimeStep
+
+# ============================================================================
+# TimeStep Position Helpers
+# ============================================================================
+
+"""
+    is_first(ts::TimeStep) -> Bool
+
+Check if a TimeStep is the first in the sequence (t == 1).
+"""
+is_first(ts::TimeStep) = ts.t == 1
+
+"""
+    is_last(ts::TimeStep, times) -> Bool
+    is_last(ts::TimeStep, n::Integer) -> Bool
+
+Check if a TimeStep is the last in the sequence.
+
+# Examples
+```julia
+times = 1:10
+for ts in timeindex(times)
+    if is_last(ts, times)
+        println("Final step!")
+    end
+end
+```
+"""
+is_last(ts::TimeStep, times) = ts.t == length(times)
+is_last(ts::TimeStep, n::Integer) = ts.t == n
 
 # ============================================================================
 # Discounting
@@ -53,7 +85,10 @@ date ranges, vectors, etc.
 ```julia
 # Integer range
 for ts in timeindex(1:10)
-    println("Step \$(ts.t), value \$(ts.val), last=\$(ts.is_last)")
+    println("Step \$(ts.t), value \$(ts.val)")
+    if is_last(ts, 10)
+        println("Done!")
+    end
 end
 
 # Date range
@@ -64,8 +99,7 @@ end
 ```
 """
 function timeindex(times)
-    n = length(times)
-    return (TimeStep(i, v, i == n) for (i, v) in enumerate(times))
+    return (TimeStep(i, v) for (i, v) in enumerate(times))
 end
 
 end # module Utils

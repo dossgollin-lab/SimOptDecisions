@@ -5,20 +5,30 @@ project:
 website:
   site-url: https://dossgollin-lab.github.io/SimOptDecisions/
   title: "SimOptDecisions.jl"
-  description: "A Julia framework for simulation-optimization under uncertainty"
+  description: "A Julia framework for simulation-based decision analysis and parametric policy search under uncertainty"
   navbar:
-    left:
+    right:
+      - icon: github
+        href: https://github.com/dossgollin-lab/SimOptDecisions
+  sidebar:
+    style: docked
+    contents:
       - href: index.qmd
         text: Home
-      - text: Examples
-        menu:
+      - section: "Guide"
+        contents:
+          - href: guide/getting-started.qmd
+            text: Getting Started
+      - section: "Details"
+        contents:
+          - href: details/timestepping.qmd
+            text: Time Stepping
+      - section: "Examples"
+        contents:
           - href: examples/investment_growth.qmd
             text: Investment Growth
           - href: examples/house_elevation.qmd
             text: House Elevation
-    right:
-      - icon: github
-        href: https://github.com/dossgollin-lab/SimOptDecisions
   page-footer:
     left: "SimOptDecisions.jl - Dossgollin Lab"
     right:
@@ -30,7 +40,7 @@ format:
     #theme: _assets/theme/theme-rice.scss
     #css: styles.css
     theme: [sandstone, _assets/theme/theme-rice.scss]
-    toc: false
+    toc: true
     anchor-sections: true
     code-overflow: wrap
     citations-hover: true
@@ -44,4 +54,3 @@ execute:
   exeflags: ["--project=@.", "--threads=auto"]
   freeze: auto
   cache: true
-
