@@ -5,6 +5,52 @@
 
 A Julia framework for simulation-optimization under deep uncertainty.
 
+## Framework Overview
+
+```
+Inputs you define:
+  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────────┐
+  │ Config │  │ Policy │  │  SOWs  │  │ Objectives │
+  └───┬────┘  └───┬────┘  └───┬────┘  └─────┬──────┘
+      │           │           │             │
+      ▼           ▼           ▼             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ optimize()                                                      │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ evaluate_policy()                                           │ │
+│ │   loops over SOWs                                           │ │
+│ │ ┌─────────────────────────────────────────────────────────┐ │ │
+│ │ │ simulate()                                              │ │ │
+│ │ │                                                         │ │ │
+│ │ │   initialize()     ───►  State                          │ │ │
+│ │ │   time_axis()      ───►  times                          │ │ │
+│ │ │                                                         │ │ │
+│ │ │   ┌───────────────────────────────────────────────────┐ │ │ │
+│ │ │   │ for t in times                                    │ │ │ │
+│ │ │   │   get_action()   ───►  Action                     │ │ │ │
+│ │ │   │   run_timestep() ───►  State, StepRecord          │ │ │ │
+│ │ │   └───────────────────────────────────────────────────┘ │ │ │
+│ │ │                                                         │ │ │
+│ │ │   finalize(step_records)  ───►  Outcome                 │ │ │
+│ │ └─────────────────────────────────────────────────────────┘ │ │
+│ │                                                             │ │
+│ │   calculate_metrics(outcomes)  ───►  Metrics                │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│   Objectives extract from Metrics  ───►  OptimizationResult     │
+└─────────────────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+                                          ┌─────────────────┐
+                                          │  Pareto Front   │
+                                          │ (params, values)│
+                                          └─────────────────┘
+
+Legend: You implement the 5 callbacks (initialize, time_axis, get_action,
+        run_timestep, finalize) plus calculate_metrics. The framework
+        handles the loops and optimization.
+```
+
 ## What is SimOptDecisions.jl?
 
 Many real-world decisions must be made under deep uncertainty—we don't know exactly what the future holds, but we need to choose strategies that will perform well across a range of possible futures. SimOptDecisions.jl provides a structured approach for:

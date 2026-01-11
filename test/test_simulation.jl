@@ -207,7 +207,7 @@ end
         @test_throws MethodError simulate(config, sow, policy, rng)
 
         # get_action should throw helpful error if not implemented
-        ts = TimeStep(1, 1, false)
+        ts = TimeStep(1, 1)
         @test_throws ArgumentError get_action(policy, TestState(), sow, ts)
     end
 
@@ -215,7 +215,7 @@ end
         @testset "custom get_action (state-dependent)" begin
             policy = InventoryPolicy(10.0, 50.0)
             sow = DemandSOW(5.0)
-            ts = TimeStep(1, 1, false)
+            ts = TimeStep(1, 1)
 
             # Low inventory -> order
             low_state = InventoryState(5.0)
@@ -232,7 +232,7 @@ end
         @testset "get_action with nothing state" begin
             policy = StatelessPolicy(2.0)
             sow = InfoSOW(10.0)
-            ts = TimeStep(3, 3, false)
+            ts = TimeStep(3, 3)
 
             action = get_action(policy, nothing, sow, ts)
             @test action isa AbstractAction
@@ -242,7 +242,7 @@ end
         @testset "get_action for static policy" begin
             policy = StaticElevationPolicy(8.0)
             sow = FloodSOW()
-            ts = TimeStep(1, 1, false)
+            ts = TimeStep(1, 1)
 
             action = get_action(policy, nothing, sow, ts)
             @test action isa AbstractAction
@@ -328,23 +328,26 @@ end
         # Integer range
         times = collect(SimOptDecisions.Utils.timeindex(1:5))
         @test length(times) == 5
-        @test times[1] == TimeStep(1, 1, false)
-        @test times[5] == TimeStep(5, 5, true)
+        @test times[1] == TimeStep(1, 1)
+        @test times[5] == TimeStep(5, 5)
         @test all(ts -> ts.t == ts.val, times)
 
-        # Check is_last
-        @test all(ts -> !ts.is_last, times[1:4])
-        @test times[5].is_last
+        # Check is_first and is_last helper methods
+        @test SimOptDecisions.Utils.is_first(times[1])
+        @test all(ts -> !SimOptDecisions.Utils.is_last(ts, 5), times[1:4])
+        @test SimOptDecisions.Utils.is_last(times[5], 5)
 
         # Non-1-based range
         times2 = collect(SimOptDecisions.Utils.timeindex(2020:2025))
         @test length(times2) == 6
-        @test times2[1] == TimeStep(1, 2020, false)
-        @test times2[6] == TimeStep(6, 2025, true)
+        @test times2[1] == TimeStep(1, 2020)
+        @test times2[6] == TimeStep(6, 2025)
 
         # Single element
         times3 = collect(SimOptDecisions.Utils.timeindex(1:1))
         @test length(times3) == 1
-        @test times3[1] == TimeStep(1, 1, true)
+        @test times3[1] == TimeStep(1, 1)
+        @test SimOptDecisions.Utils.is_first(times3[1])
+        @test SimOptDecisions.Utils.is_last(times3[1], 1)
     end
 end

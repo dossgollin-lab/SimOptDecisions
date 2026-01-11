@@ -1,0 +1,243 @@
+---
+title: "Getting Started"
+---
+
+This guide walks through the core concepts and shows you how to build your first simulation-optimization model.
+
+## Core Concepts
+
+### The `simulate` Function
+
+At the heart of SimOptDecisions.jl is the `simulate` function:
+
+```julia
+outcome = simulate(config, sow, policy)           # uses default RNG
+outcome = simulate(config, sow, policy, rng)      # explicit RNG
+outcome = simulate(config, sow, policy, recorder) # with recording
+outcome = simulate(config, sow, policy, recorder, rng)  # full signature
+```
+
+This runs one simulation given:
+
+- **config**: Fixed parameters that define your model (things that don't change across scenarios)
+- **sow**: A State of the World representing one uncertain scenario
+- **policy**: A decision rule that determines actions
+- **recorder**: Optional, defaults to `NoRecorder()`. Use `TraceRecorderBuilder()` to capture simulation history
+- **rng**: Optional, defaults to `Random.default_rng()`. Explicit RNG for reproducibility
+
+By default, `simulate` calls `run_simulation`, which executes the five callbacks you implement.
+
+### Fixed Parameters (Config)
+
+Fixed parameters are shared across all scenarios—things that don't change with uncertainty.
+Subtype `AbstractConfig`:
+
+```julia
+struct MyConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int
+    initial_value::T
+end
+```
+
+### States of the World (SOW)
+
+The **State of the World (SOW)** represents exogenous information—things outside your control that affect outcomes.
+Use parametric types for type stability:
+
+```julia
+struct ClimateSOW{T<:AbstractFloat} <: AbstractSOW
+    temperature_trend::T
+    storm_arrival_rate::T
+end
+```
+
+Each SOW instance represents one possible realization of uncertain quantities.
+You typically sample many SOWs to evaluate policy robustness.
+
+For time-varying uncertainties, use `TimeSeriesParameter{T}` instead of `Vector{T}`.
+This wrapper provides safe indexing via `TimeStep`.
+
+### Actions
+
+An **Action** represents a decision at a specific timestep. Define actions by subtyping `AbstractAction`:
+
+```julia
+struct InventoryAction{T<:AbstractFloat} <: AbstractAction
+    order_quantity::T
+end
+
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T
+end
+```
+
+### Policies
+
+A **Policy** is a parameterized decision rule—it specifies *how* to make decisions, not the decisions themselves.
+Define policies by subtyping `AbstractPolicy` and implementing `get_action`:
+
+```julia
+struct InventoryPolicy{T<:AbstractFloat} <: AbstractPolicy
+    reorder_point::T
+    order_quantity::T
+end
+
+function SimOptDecisions.get_action(
+    policy::InventoryPolicy, state, sow, t::TimeStep
+)
+    if state.level < policy.reorder_point
+        return InventoryAction(policy.order_quantity)
+    else
+        return InventoryAction(zero(policy.order_quantity))
+    end
+end
+```
+
+For **static policies** where parameters directly define the action:
+
+```julia
+SimOptDecisions.get_action(p::ElevationPolicy, state, sow, t) = ElevationAction(p.elevation_ft)
+```
+
+### Outcomes vs Metrics
+
+**Outcome**: The result of a *single* simulation (one policy × one SOW).
+What `simulate` returns—can be any type (typically a NamedTuple).
+
+**Metric**: A statistic computed by *aggregating outcomes across many SOWs*.
+This is what the optimizer tries to minimize or maximize.
+
+```julia
+function calculate_metrics(outcomes)
+    costs = [o.npv_cost for o in outcomes]
+    return (
+        expected_cost = mean(costs),
+        worst_case = maximum(costs),
+    )
+end
+```
+
+## The Five Callbacks
+
+Most simulations iterate through discrete time steps.
+Implement these five callbacks and `simulate()` will automatically use them:
+
+| Callback | Purpose | Returns |
+|----------|---------|---------|
+| `SimOptDecisions.initialize(config, sow, rng)` | Create initial state | `state` (or `nothing` for stateless) |
+| `SimOptDecisions.get_action(policy, state, sow, t)` | Map state to action | `<:AbstractAction` |
+| `SimOptDecisions.run_timestep(state, action, sow, config, t, rng)` | Execute one step | `(new_state, step_record)` |
+| `SimOptDecisions.time_axis(config, sow)` | Define time points | Iterable with `length()` |
+| `SimOptDecisions.finalize(final_state, step_records, config, sow)` | Aggregate results | `Outcome` |
+
+All five callbacks are **required**. The framework throws helpful errors if any are missing.
+
+::: {.callout-note}
+## Why AbstractAction?
+`get_action` must return a subtype of `AbstractAction`. This enables type-stable dispatch in `run_timestep` and makes actions explicit and inspectable for debugging and recording.
+:::
+
+**step_record**: Data tracked at each timestep, returned as the second element from `run_timestep`. All step records are collected and passed to `finalize`.
+
+The framework calls these in order:
+
+1. `initialize` creates the initial state
+2. For each timestep:
+   - `get_action` computes the action from the policy and current state
+   - `run_timestep` applies the action and returns the new state
+3. `finalize` aggregates all step records into the final outcome
+
+```julia
+result = simulate(config, sow, policy, Random.Xoshiro(42))
+```
+
+For non-timestepped models (closed-form solutions, external simulators), override `simulate()` directly.
+
+## Optimization
+
+### Evaluating Policies Across SOWs
+
+Use `evaluate_policy` to run simulations across an ensemble of SOWs and compute aggregated metrics:
+
+```julia
+prob = OptimizationProblem(config, sows, MyPolicy, calculate_metrics, objectives)
+metrics = evaluate_policy(prob, policy)  # runs simulate on all SOWs, then aggregates via calculate_metrics
+```
+
+### Setting Up Optimization
+
+For optimization, your policy needs bounds and a vector constructor:
+
+```julia
+MyPolicy(params::AbstractVector) = MyPolicy(params[1], params[2])
+SimOptDecisions.param_bounds(::Type{MyPolicy}) = [(0.0, 1.0), (0.0, 10.0)]
+```
+
+Set up the optimization problem:
+
+```julia
+using Metaheuristics
+
+prob = OptimizationProblem(
+    config,
+    sows,                        # Vector of SOWs to evaluate on
+    MyPolicy,                    # Policy type (not instance)
+    calculate_metrics,           # Aggregation function: (outcomes) -> NamedTuple
+    [minimize(:expected_cost)],  # What to optimize
+)
+
+result = SimOptDecisions.optimize(prob, MetaheuristicsBackend())
+
+# All Pareto-optimal solutions are equally valid; pick one at random
+idx = rand(1:length(result.pareto_params))
+policy = MyPolicy(result.pareto_params[idx])
+```
+
+### Multi-Objective Optimization
+
+For Pareto front exploration:
+
+```julia
+prob = OptimizationProblem(
+    config, sows, MyPolicy, calculate_metrics,
+    [minimize(:expected_cost), minimize(:worst_case)],
+)
+
+result = SimOptDecisions.optimize(prob, MetaheuristicsBackend(algorithm=:NSGA2))
+
+for (params, objectives) in pareto_front(result)
+    println("Params: $params => $objectives")
+end
+```
+
+## Visualization (Requires Makie)
+
+SimOptDecisions provides optional plotting functions when you load a Makie backend (e.g., `CairoMakie`, `GLMakie`).
+
+::: {.callout-warning}
+## Plotting Conventions
+
+The plotting functions work best when your types follow these conventions:
+
+- **`step_record`** should be a `NamedTuple` of scalar values for `plot_trace` to work automatically
+- **`SimulationTrace`** now includes `initial_state` separately from the per-timestep vectors
+
+If your types don't follow these conventions, the plotting functions may not work out of the box. You can always use the `SimulationTrace` data directly with Makie for custom visualizations.
+:::
+
+```julia
+using CairoMakie
+
+# Plot a simulation trace (step_records must be NamedTuples)
+trace = build_trace(recorder)
+plot_trace(trace; fields=[:damage, :cost])
+
+# Plot Pareto front from optimization result
+plot_pareto(result; objective_names=["Cost", "Risk"])
+```
+
+## Next Steps
+
+- **[Investment Growth Example](../examples/investment_growth.qmd)**: A minimal working example
+- **[House Elevation Example](../examples/house_elevation.qmd)**: A complete tutorial with multi-objective optimization
+- **[Time Stepping Details](../details/timestepping.qmd)**: Deep dive into how time stepping works

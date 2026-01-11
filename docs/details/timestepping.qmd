@@ -1,0 +1,226 @@
+---
+title: "Time Stepping"
+---
+
+This page explains how time stepping works in SimOptDecisions.jl, including the `TimeStep` struct, helper methods, and how to work with different time representations.
+
+## The TimeStep Struct
+
+When your callbacks receive a time parameter `t`, it's wrapped in a `TimeStep` struct:
+
+```julia
+struct TimeStep{V}
+    t::Int   # 1-based index into time_axis
+    val::V   # Actual time value (Int, Float64, Date, etc.)
+end
+```
+
+This design separates the **index** (for array access) from the **value** (for domain logic):
+
+```julia
+function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+    # Use t.t for array indexing
+    price = sow.prices[t.t]
+
+    # Use t.val for domain logic (e.g., if time_axis returns years)
+    discount = 1 / (1 + rate)^t.val
+
+    # ...
+end
+```
+
+## Position Helpers
+
+Use the `Utils.is_first` and `Utils.is_last` methods to check position in the sequence:
+
+```julia
+using SimOptDecisions: Utils
+
+# Check if first timestep
+Utils.is_first(ts)  # true if ts.t == 1
+
+# Check if last timestep (pass the time axis or its length)
+Utils.is_last(ts, times)      # true if ts.t == length(times)
+Utils.is_last(ts, n::Integer) # true if ts.t == n
+```
+
+Example usage:
+
+```julia
+function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+    times = time_axis(config, sow)
+
+    if Utils.is_first(t)
+        # First timestep: apply initial setup costs
+        setup_cost = config.setup_cost
+    else
+        setup_cost = 0.0
+    end
+
+    if Utils.is_last(t, times)
+        # Last timestep: apply terminal value
+        terminal_value = state.value * config.salvage_rate
+    else
+        terminal_value = 0.0
+    end
+
+    # ...
+end
+```
+
+## The time_axis Callback
+
+The `time_axis` callback defines what time points your simulation iterates over:
+
+```julia
+function SimOptDecisions.time_axis(config::MyConfig, sow::MySOW)
+    return 1:config.horizon
+end
+```
+
+### Requirements
+
+- Must return an iterable with a defined `length()`
+- Must have a concrete element type (not `Any`)
+
+### Supported Types
+
+**Integer ranges** (most common):
+```julia
+time_axis(config, sow) = 1:config.horizon
+time_axis(config, sow) = 1:100
+```
+
+**Date ranges**:
+```julia
+using Dates
+time_axis(config, sow) = Date(2020):Year(1):Date(2100)
+time_axis(config, sow) = Date(2020, 1, 1):Month(1):Date(2025, 12, 1)
+```
+
+**Float ranges**:
+```julia
+time_axis(config, sow) = 0.0:0.1:10.0
+```
+
+**Vectors**:
+```julia
+time_axis(config, sow) = [2020, 2025, 2030, 2050, 2100]  # irregular spacing
+```
+
+## TimeSeriesParameter
+
+For time-varying data in your SOWs, use `TimeSeriesParameter` instead of plain vectors:
+
+```julia
+struct ClimateSOW{T<:AbstractFloat} <: AbstractSOW
+    temperatures::TimeSeriesParameter{T}  # Not Vector{T}
+end
+
+# Create from a vector
+sow = ClimateSOW(TimeSeriesParameter([20.0, 21.0, 22.0, ...]))
+```
+
+`TimeSeriesParameter` provides safe indexing that works with both integers and `TimeStep`:
+
+```julia
+function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+    # Both work:
+    temp = sow.temperatures[t]     # Index with TimeStep
+    temp = sow.temperatures[t.t]   # Index with integer
+
+    # Bounds checking with helpful error messages
+    # sow.temperatures[100]  # Throws TimeSeriesParameterBoundsError if out of range
+end
+```
+
+## The timeindex Utility
+
+The framework uses `Utils.timeindex` internally to iterate over time axes. You can also use it directly:
+
+```julia
+using SimOptDecisions: Utils
+
+times = 1:5
+for ts in Utils.timeindex(times)
+    println("Step $(ts.t), value $(ts.val)")
+    if Utils.is_last(ts, times)
+        println("Done!")
+    end
+end
+```
+
+Output:
+```
+Step 1, value 1
+Step 2, value 2
+Step 3, value 3
+Step 4, value 4
+Step 5, value 5
+Done!
+```
+
+## Discounting
+
+The `Utils.discount_factor` helper computes standard exponential discounting:
+
+```julia
+Utils.discount_factor(rate, t)  # Returns 1 / (1 + rate)^t
+```
+
+Example:
+```julia
+function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+    cost = compute_cost(state, action)
+    discounted_cost = cost * Utils.discount_factor(config.discount_rate, t.t)
+    return (new_state, (cost=cost, discounted_cost=discounted_cost))
+end
+```
+
+## Common Patterns
+
+### Conditional Logic by Time
+
+```julia
+function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+    # Different behavior in first vs later timesteps
+    if Utils.is_first(t)
+        # Initial investment/setup
+        capital_cost = action.investment
+    else
+        capital_cost = 0.0
+    end
+
+    # Behavior that depends on the actual time value
+    if t.val >= 2050  # Assuming time_axis returns years
+        carbon_price = config.future_carbon_price
+    else
+        carbon_price = config.current_carbon_price
+    end
+end
+```
+
+### Accessing Previous/Future Information
+
+The SOW contains all exogenous information for the entire trajectory:
+
+```julia
+function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+    current_demand = sow.demand[t]
+
+    # Look ahead (if your policy needs it)
+    if t.t < length(sow.demand)
+        next_demand = sow.demand[t.t + 1]
+    end
+end
+```
+
+### Variable-Length Simulations
+
+If simulation length depends on the SOW:
+
+```julia
+function SimOptDecisions.time_axis(config::MyConfig, sow::MySOW)
+    return 1:sow.horizon  # Each SOW can have different length
+end
+```
