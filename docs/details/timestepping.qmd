@@ -48,7 +48,7 @@ Example usage:
 
 ```julia
 function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
-    times = time_axis(config, sow)
+    # Use config.horizon directly for efficiency (avoids calling time_axis each timestep)
 
     if Utils.is_first(t)
         # First timestep: apply initial setup costs
@@ -57,7 +57,7 @@ function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, r
         setup_cost = 0.0
     end
 
-    if Utils.is_last(t, times)
+    if Utils.is_last(t, config.horizon)
         # Last timestep: apply terminal value
         terminal_value = state.value * config.salvage_rate
     else
