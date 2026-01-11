@@ -148,7 +148,7 @@ SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
 #| output: false
 function SimOptDecisions.get_action(
     policy::ElevationPolicy,
-    state,  # unused for static policy
+    state::SeaLevelState,  # unused for static policy, but required
     sow::HouseElevationSOW,
     t::TimeStep,
 )
@@ -176,15 +176,35 @@ The model encapsulates parameters that are **shared across all SOWs and policies
 These are fixed characteristics of the problem, not uncertain quantities.
 We use values from [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/2022-elevation-robustness): a 1500 ft² house worth \$200,000 with a 70-year planning horizon.
 
+We define heights relative to a reference datum (e.g., NAVD88). This structure allows future extensions to include sea-level rise uncertainty.
+
 ```{julia}
 #| output: false
 Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
-    horizon::Int = 70                  # planning horizon (years)
-    gauge_to_house::T = 4.0            # surge level at which water reaches house floor (ft)
-    house_area_ft2::T = 1500.0         # floor area in square feet
-    house_value::T = 200_000.0         # house value in dollars (not land)
+    horizon::Int = 70                       # planning horizon (years)
+    gauge_height_above_ref::T = 0.0         # gauge zero above reference datum (ft)
+    house_height_above_ref::T = 4.0         # house floor above reference datum (ft)
+    house_area_ft2::T = 1500.0              # floor area in square feet
+    house_value::T = 200_000.0              # house value in dollars (not land)
 end
 ```
+
+### State: Mean Sea Level
+
+We track **Mean Sea Level (MSL)** as state. While MSL is constant in this example, the state structure allows future extensions where MSL could increase due to sea-level rise.
+
+```{julia}
+#| output: false
+struct SeaLevelState{T<:AbstractFloat} <: AbstractState
+    msl::T  # Mean sea level relative to reference datum (ft)
+end
+```
+
+::: {.callout-note}
+## Why Track MSL?
+
+In this example, MSL is constant over time. However, the state structure allows future extensions where MSL could vary—for example, sampling sea-level rise trajectories from uncertain projections in the SOW. This demonstrates the pattern of explicit state even for "nearly stateless" models.
+:::
 
 ### Depth-Damage Function
 
@@ -308,7 +328,7 @@ end
 Now we implement the simulation using the five callbacks.
 This provides a structured way to define time-stepped simulations:
 
-1. `initialize` - Create initial state (this model is stateless, so returns `nothing`)
+1. `initialize` - Create initial state (SeaLevelState with MSL)
 2. `get_action` - Map policy + state to action (already defined above)
 3. `run_timestep` - Execute one year: sample surge, compute damage
 4. `time_axis` - Define the time points (years 1 to horizon)
@@ -316,14 +336,14 @@ This provides a structured way to define time-stepped simulations:
 
 ### Initialize
 
-Since flood damage in one year doesn't affect the house's vulnerability in the next year (beyond the elevation decision), this model has no persistent state between timesteps:
+We initialize the state with the current mean sea level. In this example, MSL starts at 0 (the reference datum) and remains constant:
 
 ```{julia}
 #| output: false
 function SimOptDecisions.initialize(
     ::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG
 )
-    return nothing
+    return SeaLevelState(0.0)  # MSL at reference datum
 end
 ```
 
@@ -346,7 +366,7 @@ The framework calls `get_action(policy, state, sow, t)` before this function, so
 ```{julia}
 #| output: false
 function SimOptDecisions.run_timestep(
-    state::Nothing,
+    state::SeaLevelState,
     action::ElevationAction,
     sow::HouseElevationSOW,
     config::HouseElevationConfig,
@@ -354,26 +374,33 @@ function SimOptDecisions.run_timestep(
     rng::AbstractRNG,
 )
     # Construction cost is incurred at t=1 only
-    construction_cost = if t.t == 1
+    construction_cost = if SimOptDecisions.Utils.is_first(t)
         elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value)
     else
         0.0
     end
 
-    # Sample annual maximum surge at the gauge
+    # Sample annual maximum surge at the gauge (relative to gauge zero)
     surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
     surge_at_gauge = rand(rng, surge_dist)
 
-    # Compute flood depth at house
-    # gauge_to_house is the surge level at which water reaches the (unelevated) house floor
-    # With elevation, we need (gauge_to_house + elevation) surge to start flooding
-    flood_depth_at_house = surge_at_gauge - (config.gauge_to_house + action.elevation_ft)
+    # Convert surge to water level relative to reference datum
+    # surge_at_gauge is measured relative to gauge zero
+    water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
+
+    # House floor level (with elevation) relative to reference datum
+    house_floor_level = config.house_height_above_ref + action.elevation_ft
+
+    # Flood depth at house (positive = flooding)
+    flood_depth_at_house = water_level - house_floor_level
 
     # Compute fractional damage
     damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
 
     step_record = (construction_cost=construction_cost, damage_fraction=damage_fraction)
-    return (nothing, step_record)
+
+    # MSL unchanged in this example (constant over time)
+    return (state, step_record)
 end
 ```
 
@@ -384,7 +411,7 @@ After all timesteps, we aggregate the annual damages into a net present value (N
 ```{julia}
 #| output: false
 function SimOptDecisions.finalize(
-    ::Nothing,
+    final_state::SeaLevelState,
     step_records::Vector,
     config::HouseElevationConfig,
     sow::HouseElevationSOW,
@@ -765,13 +792,15 @@ end
 
 This model makes several simplifying assumptions worth noting:
 
-1. **Stationary storm climate**: We sample from a fixed GEV distribution each year. In reality, sea level rise and changing storm patterns would shift this distribution over time. The framework supports time-varying SOWs via `TimeSeriesParameter` if you want to model non-stationarity.
+1. **Stationary storm climate**: We sample from a fixed GEV distribution each year. In reality, changing storm patterns would shift this distribution over time. The framework supports time-varying SOWs via `TimeSeriesParameter` if you want to model non-stationarity.
 
-2. **Independent annual damages**: The model assumes flood damage in one year doesn't affect vulnerability in future years. For a more realistic model, you might track cumulative damage or recovery state.
+2. **Constant sea level**: We track MSL as state but keep it constant at the reference datum. A more realistic model could sample sea-level rise trajectories in the SOW and update MSL each timestep—the state structure already supports this extension.
 
-3. **Single decision point**: We choose elevation once at $t=0$. A more complex model could allow staged investments or adaptive policies that respond to observed flooding.
+3. **Independent annual damages**: The model assumes flood damage in one year doesn't affect vulnerability in future years. For a more realistic model, you might track cumulative damage or recovery state.
 
-4. **Simplified cost model**: The elevation cost function uses USACE estimates but doesn't account for site-specific factors, permitting delays, or temporary relocation costs that vary by household.
+4. **Single decision point**: We choose elevation once at $t=0$. A more complex model could allow staged investments or adaptive policies that respond to observed flooding.
+
+5. **Simplified cost model**: The elevation cost function uses USACE estimates but doesn't account for site-specific factors, permitting delays, or temporary relocation costs that vary by household.
 
 ## Summary: Adapting This Example
 

@@ -1,0 +1,170 @@
+---
+title: "Persistence and Checkpointing"
+subtitle: "Saving experiments and recovering from interruptions"
+---
+
+SimOptDecisions provides tools for saving and loading optimization state, enabling crash recovery and reproducible experiments.
+
+## SharedParameters
+
+`SharedParameters` wraps fixed parameters that are constant across all SOWs and not subject to optimization. Use it for things like discount rates, planning horizons, and physical constants.
+
+```julia
+# Create from keyword arguments
+sp = SharedParameters(discount_rate=0.03, horizon=50, house_value=200_000.0)
+
+# Access like a struct
+sp.discount_rate  # 0.03
+sp.horizon        # 50
+```
+
+::: {.callout-tip}
+## When to Use SharedParameters vs Config
+
+- **Config** (`<:AbstractConfig`): Parameters that affect simulation dynamics and are passed to callbacks
+- **SharedParameters**: Metadata for experiment organization that you might want to save/load separately
+
+In practice, you can put the same values in both. SharedParameters is useful when you want to store experiment metadata alongside optimization results.
+:::
+
+## ExperimentConfig
+
+`ExperimentConfig` captures everything needed to reproduce an experiment:
+
+```julia
+exp_config = ExperimentConfig(
+    42,                    # seed
+    sows,                  # Vector of SOWs
+    shared_params,         # SharedParameters
+    backend;               # AbstractOptimizationBackend
+    timestamp=Dates.now(),
+    git_commit="abc123",   # optional, for reproducibility tracking
+    sow_source="Latin Hypercube sampling from priors"
+)
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `seed` | `Int` | Random seed for reproducibility |
+| `timestamp` | `DateTime` | When the experiment was created |
+| `git_commit` | `String` | Optional git commit hash |
+| `package_versions` | `String` | Optional package version info |
+| `sows` | `Vector{<:AbstractSOW}` | The SOWs used in this experiment |
+| `sow_source` | `String` | Description of how SOWs were generated |
+| `shared` | `SharedParameters` | Fixed parameters |
+| `backend` | `AbstractOptimizationBackend` | Optimization configuration |
+
+## Checkpointing
+
+For long-running optimizations, save intermediate state to recover from crashes.
+
+### Saving a Checkpoint
+
+```julia
+using SimOptDecisions
+
+# During or after optimization
+save_checkpoint(
+    "checkpoint.jld2",
+    prob,              # OptimizationProblem
+    optimizer_state;   # backend-specific state
+    metadata="Iteration 500"
+)
+```
+
+### Loading a Checkpoint
+
+```julia
+checkpoint = load_checkpoint("checkpoint.jld2")
+
+# Returns a NamedTuple with:
+checkpoint.problem         # OptimizationProblem
+checkpoint.optimizer_state # backend-specific state
+checkpoint.metadata        # your metadata string
+checkpoint.timestamp       # when checkpoint was saved
+checkpoint.version         # SimOptDecisions version
+```
+
+## Experiment Saving
+
+After optimization completes, save the full experiment for later analysis:
+
+### Saving an Experiment
+
+```julia
+result = SimOptDecisions.optimize(prob, backend)
+
+save_experiment("experiment_results.jld2", exp_config, result)
+```
+
+### Loading an Experiment
+
+```julia
+experiment = load_experiment("experiment_results.jld2")
+
+# Returns a NamedTuple with:
+experiment.config   # ExperimentConfig
+experiment.result   # OptimizationResult
+experiment.timestamp
+experiment.version
+```
+
+## Example Workflow
+
+```julia
+using SimOptDecisions
+using Random
+using Dates
+
+# 1. Set up experiment configuration
+seed = 42
+rng = Random.Xoshiro(seed)
+sows = [sample_sow(rng) for _ in 1:1000]
+
+shared = SharedParameters(
+    discount_rate=0.03,
+    planning_horizon=50
+)
+
+backend = MetaheuristicsBackend(
+    algorithm=:NSGA2,
+    max_iterations=1000,
+    population_size=100
+)
+
+exp_config = ExperimentConfig(
+    seed, sows, shared, backend;
+    git_commit=read(`git rev-parse HEAD`, String) |> strip,
+    sow_source="1000 SOWs from Latin Hypercube sampling"
+)
+
+# 2. Run optimization
+prob = OptimizationProblem(config, sows, MyPolicy, calculate_metrics, objectives)
+result = SimOptDecisions.optimize(prob, backend)
+
+# 3. Save everything
+save_experiment("my_experiment.jld2", exp_config, result)
+
+# Later: reload and analyze
+exp = load_experiment("my_experiment.jld2")
+for (params, objectives) in pareto_front(exp.result)
+    println("Policy: $params => $objectives")
+end
+```
+
+## File Format
+
+All persistence functions use [JLD2.jl](https://github.com/JuliaIO/JLD2.jl) for serialization. This format:
+
+- Preserves Julia types exactly
+- Supports arbitrary nested structures
+- Is reasonably fast and compact
+- Can be read back with different Julia versions (with caveats)
+
+::: {.callout-warning}
+## Version Compatibility
+
+Saved files include the SimOptDecisions version. If you load a file saved with a different version, types may have changed. The `version` field in loaded data helps you detect this.
+:::

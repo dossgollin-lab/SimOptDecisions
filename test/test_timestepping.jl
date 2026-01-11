@@ -3,6 +3,7 @@ struct TSTestConfig <: AbstractConfig end
 struct TSTestSOW <: AbstractSOW end
 struct TSTestPolicy <: AbstractPolicy end
 struct TSTestAction <: AbstractAction end
+struct TSTestState <: AbstractState end
 
 # Test types for "Callbacks" -> "Stateful counter model"
 struct TSCounterAction <: AbstractAction
@@ -58,56 +59,60 @@ function SimOptDecisions.finalize(
     return (final_value=final_state.value, total_increments=sum(step_records))
 end
 
-# Test types for "Callbacks" -> "Stateless model"
-struct TSStatelessAction <: AbstractAction
+# Test types for "Callbacks" -> "Minimal state model"
+# (Demonstrates that every model needs explicit state, even if minimal)
+struct TSMinimalAction <: AbstractAction
     multiplied_value::Float64
 end
 
-struct TSStatelessConfig <: AbstractConfig
+struct TSMinimalState <: AbstractState end  # Minimal state - just a marker
+
+struct TSMinimalConfig <: AbstractConfig
     horizon::Int
 end
 
-struct TSStatelessSOW <: AbstractSOW
+struct TSMinimalSOW <: AbstractSOW
     multiplier::Float64
 end
 
-struct TSStatelessPolicy <: AbstractPolicy
+struct TSMinimalPolicy <: AbstractPolicy
     base::Float64
 end
 
-function SimOptDecisions.initialize(::TSStatelessConfig, ::TSStatelessSOW, ::AbstractRNG)
-    return nothing
+function SimOptDecisions.initialize(::TSMinimalConfig, ::TSMinimalSOW, ::AbstractRNG)
+    return TSMinimalState()
 end
 
 function SimOptDecisions.get_action(
-    policy::TSStatelessPolicy, state::Nothing, sow::TSStatelessSOW, t::TimeStep
+    policy::TSMinimalPolicy, state::TSMinimalState, sow::TSMinimalSOW, t::TimeStep
 )
-    return TSStatelessAction(policy.base * sow.multiplier * t.t)
+    return TSMinimalAction(policy.base * sow.multiplier * t.t)
 end
 
 function SimOptDecisions.run_timestep(
-    state::Nothing,
-    action::TSStatelessAction,
-    sow::TSStatelessSOW,
-    config::TSStatelessConfig,
+    state::TSMinimalState,
+    action::TSMinimalAction,
+    sow::TSMinimalSOW,
+    config::TSMinimalConfig,
     t::TimeStep,
     ::AbstractRNG,
 )
-    return (nothing, action.multiplied_value)
+    return (state, action.multiplied_value)
 end
 
-function SimOptDecisions.time_axis(config::TSStatelessConfig, ::TSStatelessSOW)
+function SimOptDecisions.time_axis(config::TSMinimalConfig, ::TSMinimalSOW)
     return 1:config.horizon
 end
 
 function SimOptDecisions.finalize(
-    ::Nothing, step_records::Vector, config::TSStatelessConfig, sow::TSStatelessSOW
+    ::TSMinimalState, step_records::Vector, config::TSMinimalConfig, sow::TSMinimalSOW
 )
     return (total=sum(step_records),)
 end
 
 # Test types for "Callbacks" -> "NamedTuple step record"
 struct TSNTAction <: AbstractAction end
+struct TSNTState <: AbstractState end
 
 struct TSNTConfig <: AbstractConfig
     horizon::Int
@@ -121,15 +126,15 @@ end
 struct TSNTPolicy <: AbstractPolicy end
 
 function SimOptDecisions.initialize(::TSNTConfig, ::TSNTsow, ::AbstractRNG)
-    return nothing
+    return TSNTState()
 end
 
-function SimOptDecisions.get_action(::TSNTPolicy, ::Nothing, ::TSNTsow, ::TimeStep)
+function SimOptDecisions.get_action(::TSNTPolicy, ::TSNTState, ::TSNTsow, ::TimeStep)
     return TSNTAction()
 end
 
 function SimOptDecisions.run_timestep(
-    state::Nothing,
+    state::TSNTState,
     action::TSNTAction,
     sow::TSNTsow,
     config::TSNTConfig,
@@ -138,7 +143,7 @@ function SimOptDecisions.run_timestep(
 )
     damage = sow.damage_rate * t.t
     cost = sow.cost_rate * t.t
-    return (nothing, (damage=damage, cost=cost))
+    return (state, (damage=damage, cost=cost))
 end
 
 function SimOptDecisions.time_axis(config::TSNTConfig, ::TSNTsow)
@@ -146,7 +151,7 @@ function SimOptDecisions.time_axis(config::TSNTConfig, ::TSNTsow)
 end
 
 function SimOptDecisions.finalize(
-    ::Nothing, step_records::Vector, config::TSNTConfig, sow::TSNTsow
+    ::TSNTState, step_records::Vector, config::TSNTConfig, sow::TSNTsow
 )
     total_damage = sum(o.damage for o in step_records)
     total_cost = sum(o.cost for o in step_records)
@@ -266,27 +271,31 @@ end
 # Test types for "Callbacks" -> "Type stability"
 struct TSTypeAction <: AbstractAction end
 
+struct TSTypeState{T<:AbstractFloat} <: AbstractState
+    value::T
+end
+
 struct TSTypeConfig <: AbstractConfig end
 struct TSTypeSOW <: AbstractSOW end
 struct TSTypePolicy <: AbstractPolicy end
 
 function SimOptDecisions.initialize(::TSTypeConfig, ::TSTypeSOW, ::AbstractRNG)
-    return 0.0
+    return TSTypeState(0.0)
 end
 
-function SimOptDecisions.get_action(::TSTypePolicy, ::Float64, ::TSTypeSOW, ::TimeStep)
+function SimOptDecisions.get_action(::TSTypePolicy, ::TSTypeState, ::TSTypeSOW, ::TimeStep)
     return TSTypeAction()
 end
 
 function SimOptDecisions.run_timestep(
-    state::Float64,
+    state::TSTypeState,
     action::TSTypeAction,
     sow::TSTypeSOW,
     config::TSTypeConfig,
     t::TimeStep,
     ::AbstractRNG,
 )
-    return (state + 1.0, state)
+    return (TSTypeState(state.value + 1.0), state.value)
 end
 
 function SimOptDecisions.time_axis(::TSTypeConfig, ::TSTypeSOW)
@@ -294,13 +303,14 @@ function SimOptDecisions.time_axis(::TSTypeConfig, ::TSTypeSOW)
 end
 
 function SimOptDecisions.finalize(
-    final_state::Float64, step_records::Vector{Float64}, ::TSTypeConfig, ::TSTypeSOW
+    final_state::TSTypeState, step_records::Vector{Float64}, ::TSTypeConfig, ::TSTypeSOW
 )
-    return (final=final_state, sum=sum(step_records))
+    return (final=final_state.value, sum=sum(step_records))
 end
 
 # Test types for "Callbacks" -> "SOW-dependent finalize"
 struct TSDiscountAction <: AbstractAction end
+struct TSDiscountState <: AbstractState end
 
 struct TSDiscountConfig <: AbstractConfig
     horizon::Int
@@ -313,17 +323,17 @@ end
 struct TSDiscountPolicy <: AbstractPolicy end
 
 function SimOptDecisions.initialize(::TSDiscountConfig, ::TSDiscountSOW, ::AbstractRNG)
-    return nothing
+    return TSDiscountState()
 end
 
 function SimOptDecisions.get_action(
-    ::TSDiscountPolicy, ::Nothing, ::TSDiscountSOW, ::TimeStep
+    ::TSDiscountPolicy, ::TSDiscountState, ::TSDiscountSOW, ::TimeStep
 )
     return TSDiscountAction()
 end
 
 function SimOptDecisions.run_timestep(
-    state::Nothing,
+    state::TSDiscountState,
     action::TSDiscountAction,
     sow::TSDiscountSOW,
     config::TSDiscountConfig,
@@ -331,7 +341,7 @@ function SimOptDecisions.run_timestep(
     ::AbstractRNG,
 )
     damage = 100.0  # Constant damage each year
-    return (nothing, damage)
+    return (state, damage)
 end
 
 function SimOptDecisions.time_axis(config::TSDiscountConfig, ::TSDiscountSOW)
@@ -339,7 +349,7 @@ function SimOptDecisions.time_axis(config::TSDiscountConfig, ::TSDiscountSOW)
 end
 
 function SimOptDecisions.finalize(
-    ::Nothing, damages::Vector, config::TSDiscountConfig, sow::TSDiscountSOW
+    ::TSDiscountState, damages::Vector, config::TSDiscountConfig, sow::TSDiscountSOW
 )
     # Discount using SOW's discount rate
     npv = sum(
@@ -409,20 +419,21 @@ end
         rng = Random.Xoshiro(42)
         ts = TimeStep(1, 1)
         action = TSTestAction()
+        state = TSTestState()
 
-        # run_timestep should throw MethodError if not implemented
-        @test_throws MethodError SimOptDecisions.run_timestep(
-            nothing, action, sow, config, ts, rng
+        # run_timestep should throw ArgumentError if not implemented (via interface_not_implemented)
+        @test_throws ArgumentError SimOptDecisions.run_timestep(
+            state, action, sow, config, ts, rng
         )
 
-        # time_axis should throw MethodError if not implemented
-        @test_throws MethodError SimOptDecisions.time_axis(config, sow)
+        # time_axis should throw ArgumentError if not implemented (via interface_not_implemented)
+        @test_throws ArgumentError SimOptDecisions.time_axis(config, sow)
 
         # initialize should throw ArgumentError if not implemented
         @test_throws ArgumentError SimOptDecisions.initialize(config, sow, rng)
 
         # finalize should throw ArgumentError if not implemented
-        @test_throws ArgumentError SimOptDecisions.finalize(nothing, [], config, sow)
+        @test_throws ArgumentError SimOptDecisions.finalize(state, [], config, sow)
     end
 
     @testset "Stateful counter model" begin
@@ -437,10 +448,10 @@ end
         @test result.total_increments == 50
     end
 
-    @testset "Stateless model (nothing state)" begin
-        config = TSStatelessConfig(5)
-        sow = TSStatelessSOW(2.0)
-        policy = TSStatelessPolicy(10.0)
+    @testset "Minimal state model" begin
+        config = TSMinimalConfig(5)
+        sow = TSMinimalSOW(2.0)
+        policy = TSMinimalPolicy(10.0)
         rng = Random.Xoshiro(42)
 
         result = SimOptDecisions.run_simulation(config, sow, policy, rng)

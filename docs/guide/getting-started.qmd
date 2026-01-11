@@ -124,7 +124,7 @@ Implement these five callbacks and `simulate()` will automatically use them:
 
 | Callback | Purpose | Returns |
 |----------|---------|---------|
-| `SimOptDecisions.initialize(config, sow, rng)` | Create initial state | `state` (or `nothing` for stateless) |
+| `SimOptDecisions.initialize(config, sow, rng)` | Create initial state | `<:AbstractState` |
 | `SimOptDecisions.get_action(policy, state, sow, t)` | Map state to action | `<:AbstractAction` |
 | `SimOptDecisions.run_timestep(state, action, sow, config, t, rng)` | Execute one step | `(new_state, step_record)` |
 | `SimOptDecisions.time_axis(config, sow)` | Define time points | Iterable with `length()` |

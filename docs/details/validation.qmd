@@ -1,0 +1,167 @@
+---
+title: "Validation and Constraints"
+subtitle: "Custom validation hooks and optimization constraints"
+---
+
+SimOptDecisions provides validation hooks for catching configuration errors early and constraint types for guiding optimization.
+
+## Config Validation
+
+Override `validate` to add domain-specific validation for your configuration:
+
+```julia
+function SimOptDecisions.validate(config::MyConfig)
+    config.horizon > 0 || return false
+    config.discount_rate >= 0 || return false
+    return true
+end
+```
+
+This is called automatically before optimization starts. If it returns `false`, optimization throws an `ArgumentError`.
+
+## Policy-Config Compatibility
+
+Override the two-argument form to validate that a policy is compatible with a config:
+
+```julia
+function SimOptDecisions.validate(policy::MyPolicy, config::MyConfig)
+    # Example: policy parameter must be within config bounds
+    policy.threshold <= config.max_threshold || return false
+    return true
+end
+```
+
+## Optimization Constraints
+
+For optimization, you can add constraints that guide the search beyond simple parameter bounds.
+
+### FeasibilityConstraint
+
+A hard constraint that must be satisfied for a solution to be considered valid:
+
+```julia
+# Policy is only feasible if total allocation <= 1.0
+feasibility = FeasibilityConstraint(
+    :budget_limit,
+    policy -> sum(params(policy)) <= 1.0
+)
+
+prob = OptimizationProblem(
+    config, sows, MyPolicy, calculate_metrics, objectives;
+    constraints=[feasibility]
+)
+```
+
+The constraint function takes a policy and returns `true` if feasible, `false` otherwise. Infeasible solutions are rejected by the optimizer.
+
+### PenaltyConstraint
+
+A soft constraint that adds a penalty to objectives when violated:
+
+```julia
+# Penalize solutions that exceed budget (but don't reject them)
+penalty = PenaltyConstraint(
+    :soft_budget,
+    policy -> max(0.0, sum(params(policy)) - 1.0),  # 0 if satisfied
+    1000.0  # weight
+)
+
+prob = OptimizationProblem(
+    config, sows, MyPolicy, calculate_metrics, objectives;
+    constraints=[penalty]
+)
+```
+
+The constraint function returns:
+- `0.0` when satisfied (no penalty)
+- A positive value proportional to the violation magnitude
+
+The penalty is multiplied by the weight and added to all objectives.
+
+## Built-in Validation
+
+The framework automatically validates:
+
+### Policy Interface
+
+Before optimization, the framework checks that your policy type:
+
+1. Implements `param_bounds(::Type{MyPolicy})` returning `Vector{Tuple}`
+2. Has a vector constructor `MyPolicy(x::AbstractVector)`
+3. Returns bounds where `lower <= upper`
+4. Has at least one parameter
+
+```julia
+# These are checked automatically:
+SimOptDecisions.param_bounds(::Type{MyPolicy}) = [(0.0, 1.0), (0.0, 10.0)]
+MyPolicy(x::AbstractVector) = MyPolicy(x[1], x[2])
+```
+
+### SOW Collection
+
+SOWs must be:
+- Non-empty
+- All the same concrete type
+- Subtypes of `AbstractSOW`
+
+### Objectives
+
+Objectives must be:
+- Non-empty (at least one objective)
+- Unique names (no duplicates)
+- Created with `minimize(:name)` or `maximize(:name)`
+
+## Example: Complete Validation Setup
+
+```julia
+using SimOptDecisions
+
+# Custom config validation
+function SimOptDecisions.validate(config::HouseConfig)
+    config.horizon > 0 || return false
+    config.house_value > 0 || return false
+    return true
+end
+
+# Policy-config compatibility
+function SimOptDecisions.validate(policy::ElevationPolicy, config::HouseConfig)
+    # Elevation can't exceed physical maximum
+    policy.elevation_ft <= 14.0 || return false
+    return true
+end
+
+# Set up optimization with constraints
+feasibility = FeasibilityConstraint(
+    :minimum_elevation,
+    p -> p.elevation_ft == 0.0 || p.elevation_ft >= 3.0  # Either 0 or at least 3 ft
+)
+
+prob = OptimizationProblem(
+    config, sows, ElevationPolicy, calculate_metrics,
+    [minimize(:expected_cost), minimize(:worst_case)];
+    constraints=[feasibility]
+)
+
+# Validation happens automatically when you call optimize()
+result = SimOptDecisions.optimize(prob, backend)
+```
+
+## Error Messages
+
+When validation fails, you get descriptive error messages:
+
+```
+ArgumentError: Policy type MyPolicy must implement `param_bounds(::Type{MyPolicy})`
+returning a Vector of (lower, upper) tuples
+```
+
+```
+ArgumentError: param_bounds(::Type{MyPolicy})[2] has lower > upper: 10.0 > 5.0
+```
+
+```
+ArgumentError: All SOWs must be the same concrete type.
+SOW 1 is ClimateSOW{Float64}, but SOW 42 is ClimateSOW{Float32}
+```
+
+These messages tell you exactly what's wrong and how to fix it.

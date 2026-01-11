@@ -69,42 +69,48 @@ using SimOptDecisions
 using Random
 
 # 1. Define your types
-struct MyConfig <: AbstractConfig
+struct MyConfig{T<:AbstractFloat} <: AbstractConfig
     horizon::Int
+    initial_value::T
 end
 
-struct MySOW <: AbstractSOW
-    growth_rate::Float64
+struct MySOW{T<:AbstractFloat} <: AbstractSOW
+    growth_rate::T
 end
 
-struct MyPolicy <: AbstractPolicy
-    invest_fraction::Float64
+struct MyPolicy{T<:AbstractFloat} <: AbstractPolicy
+    invest_fraction::T
 end
 
 struct MyAction <: AbstractAction end
 
+struct MyState{T<:AbstractFloat} <: AbstractState
+    value::T
+end
+
 # 2. Implement the five callbacks (simulate() auto-calls these)
-SimOptDecisions.initialize(::MyConfig, ::MySOW, ::AbstractRNG) = 100.0
+SimOptDecisions.initialize(config::MyConfig, ::MySOW, ::AbstractRNG) = MyState(config.initial_value)
 SimOptDecisions.time_axis(config::MyConfig, ::MySOW) = 1:config.horizon
 
-function SimOptDecisions.get_action(::MyPolicy, ::Float64, ::MySOW, ::TimeStep)
+function SimOptDecisions.get_action(::MyPolicy, ::MyState, ::MySOW, ::TimeStep)
     return MyAction()
 end
 
 function SimOptDecisions.run_timestep(
-    state::Float64, ::MyAction, sow::MySOW,
+    state::MyState, ::MyAction, sow::MySOW,
     config::MyConfig, t::TimeStep, rng::AbstractRNG
 )
-    growth = state * sow.growth_rate
-    return (state + growth, growth)  # (new_state, step_record)
+    growth = state.value * sow.growth_rate
+    new_state = MyState(state.value + growth)
+    return (new_state, growth)  # (new_state, step_record)
 end
 
-function SimOptDecisions.finalize(final_state, step_records, config::MyConfig, sow::MySOW)
-    return (final_value=final_state, total_growth=sum(step_records))
+function SimOptDecisions.finalize(final_state::MyState, step_records, config::MyConfig, sow::MySOW)
+    return (final_value=final_state.value, total_growth=sum(step_records))
 end
 
 # 3. Run simulation (RNG required for reproducibility)
-config = MyConfig(10)
+config = MyConfig(10, 100.0)
 sow = MySOW(0.05)
 policy = MyPolicy(0.5)
 rng = Random.Xoshiro(42)

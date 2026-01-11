@@ -12,13 +12,18 @@ This package is under active development and the API may change.
 
 ## Theoretical Background
 
-This framework implements a sequential decision problem formulation:
+Sequential decision problems typically follow a consistent formulation:
 
 1. **State variables $S_t$** — all information needed to model the system from time $t$ onward
 2. **Decision variables $x_t$** — determined by a policy $X^\pi(S_t)$, returned as `AbstractAction`
 3. **Exogenous information $W_{t+1}$** — information arriving after decision $x_t$ (from SOW)
 4. **Transition function** — how $S_t$ evolves to $S_{t+1}$ given $x_t$ and $W_{t+1}$
 5. **Objective** — used to evaluate the policy over time
+
+This package is inspired by this theoretical framework, as well as by literature on multi-objective optimization and decision-making under deep uncertainty.
+
+We use a **simulation-optimization** framework to design parametric policies that cannot be solved exactly, allowing us to study highly complex, nonlinear, or black-box transition functions (i.e., models) and develop useful decision-support tools.
+It is particularly motivated by the author's work on climate-risk assessment and management, but is applicable to many types of problems.
 
 The `get_action` function implements the policy mapping $X^\pi(S_t) \to x_t$.
 The `run_timestep` function implements the transition function $S_{t+1} = f(S_t, x_t, W_{t+1})$.
@@ -83,6 +88,20 @@ It is **not** a turnkey solution—you write Julia code for your model. The fram
 - Define your types (Config, SOW, Policy, Action, State)
 - Implement the five callbacks shown above
 - Define your metric aggregation logic (`calculate_metrics`)
+
+::: {.callout-tip}
+## Flexible Entry Points
+
+You don't need to use all the loops. Pick the level that fits your task:
+
+| Function | Purpose |
+|----------|---------|
+| `simulate(config, sow, policy)` | Run one scenario — explore dynamics, debug |
+| `evaluate_policy(prob, policy)` | Assess a policy across many SOWs — no optimization |
+| `optimize(prob, backend)` | Search for optimal policy parameters |
+
+Start with `simulate` to understand your model, then scale up.
+:::
 
 ## Key Concepts
 
