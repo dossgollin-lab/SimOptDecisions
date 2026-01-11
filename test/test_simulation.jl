@@ -207,8 +207,8 @@ end
         rng = Random.Xoshiro(42)
 
         # simulate calls run_simulation by default,
-        # which throws MethodError for time_axis (no fallback implementation)
-        @test_throws MethodError simulate(config, sow, policy, rng)
+        # which throws ArgumentError for time_axis (via interface_not_implemented fallback)
+        @test_throws ArgumentError simulate(config, sow, policy, rng)
 
         # get_action should throw helpful error if not implemented
         ts = TimeStep(1, 1)
