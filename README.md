@@ -3,7 +3,7 @@
 [![Tests](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/test.yml)
 [![Documentation](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/docs.yml/badge.svg?branch=main)](https://dossgollin-lab.github.io/SimOptDecisions/)
 
-A Julia framework for simulation-optimization under deep uncertainty.
+A Julia framework for simulation-based decision analysis and parametric policy search under uncertainty.
 
 ## Framework Overview
 

@@ -5,7 +5,7 @@ project:
 website:
   site-url: https://dossgollin-lab.github.io/SimOptDecisions/
   title: "SimOptDecisions.jl"
-  description: "A Julia framework for simulation-optimization under uncertainty"
+  description: "A Julia framework for simulation-based decision analysis and parametric policy search under uncertainty"
   navbar:
     right:
       - icon: github

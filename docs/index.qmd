@@ -1,6 +1,6 @@
 ---
 title: "SimOptDecisions.jl"
-subtitle: "A Julia framework for simulation-optimization under uncertainty"
+subtitle: "A Julia framework for simulation-based decision analysis and parametric policy search under uncertainty"
 author: "Doss-Gollin Lab @ Rice CEVE"
 ---
 
