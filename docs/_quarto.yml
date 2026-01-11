@@ -21,11 +21,9 @@ website:
             text: Getting Started
       - section: "Examples"
         contents:
-          - href: examples/investment_growth.qmd
-            text: Investment Growth
           - href: examples/house_elevation.qmd
             text: House Elevation
-      - section: "Details"
+      - section: "Reference"
         contents:
           - href: details/timestepping.qmd
             text: Time Stepping

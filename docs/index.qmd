@@ -1,6 +1,6 @@
 ---
-title: "SimOptDecisions.jl"
-subtitle: "A Julia framework for simulation-based decision analysis and parametric policy search under uncertainty"
+title: "SimOptDecisions"
+subtitle: "A Julia framework for simulation-based decision analysis under uncertainty"
 author: "Doss-Gollin Lab @ Rice CEVE"
 ---
 
@@ -10,129 +10,63 @@ author: "Doss-Gollin Lab @ Rice CEVE"
 This package is under active development and the API may change.
 :::
 
-## Theoretical Background
+## What is SimOptDecisions?
 
-Sequential decision problems typically follow a consistent formulation:
+SimOptDecisions helps you find good decision strategies when the future is uncertain.
 
-1. **State variables $S_t$** — all information needed to model the system from time $t$ onward
-2. **Decision variables $x_t$** — determined by a policy $X^\pi(S_t)$, returned as `AbstractAction`
-3. **Exogenous information $W_{t+1}$** — information arriving after decision $x_t$ (from SOW)
-4. **Transition function** — how $S_t$ evolves to $S_{t+1}$ given $x_t$ and $W_{t+1}$
-5. **Objective** — used to evaluate the policy over time
+You provide a simulation model and a parameterized policy. The framework runs your model across many possible futures, aggregates the results, and searches for policy parameters that perform well.
 
-This package is inspired by this theoretical framework, as well as by literature on multi-objective optimization and decision-making under deep uncertainty.
+It's useful when you can simulate outcomes but can't solve for optimal decisions analytically.
 
-We use a **simulation-optimization** framework to design parametric policies that cannot be solved exactly, allowing us to study highly complex, nonlinear, or black-box transition functions (i.e., models) and develop useful decision-support tools.
-It is particularly motivated by the author's work on climate-risk assessment and management, but is applicable to many types of problems.
+## Key Vocabulary
 
-The `get_action` function implements the policy mapping $X^\pi(S_t) \to x_t$.
-The `run_timestep` function implements the transition function $S_{t+1} = f(S_t, x_t, W_{t+1})$.
+| Term | What it means |
+|------|---------------|
+| **Config** | Fixed parameters that don't change across scenarios |
+| **SOW** | "State of the World" — one possible future (your uncertain parameters) |
+| **Policy** | A decision rule with tunable parameters |
+| **Action** | What the policy decides at each timestep |
+| **State** | Your model's internal state that evolves over time |
+| **Outcome** | Result of one simulation |
+| **Metric** | Summary statistic across many simulations |
 
-## Framework Overview
+## How It Works
 
 ```
-Inputs you define:
-  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────────┐
-  │ Config │  │ Policy │  │  SOWs  │  │ Objectives │
-  └───┬────┘  └───┬────┘  └───┬────┘  └─────┬──────┘
-      │           │           │             │
-      ▼           ▼           ▼             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ optimize()                                                      │
-│ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ evaluate_policy()                                           │ │
-│ │   loops over SOWs                                           │ │
-│ │ ┌─────────────────────────────────────────────────────────┐ │ │
-│ │ │ simulate()                                              │ │ │
-│ │ │                                                         │ │ │
-│ │ │   initialize()     ───►  State                          │ │ │
-│ │ │   time_axis()      ───►  times                          │ │ │
-│ │ │                                                         │ │ │
-│ │ │   ┌───────────────────────────────────────────────────┐ │ │ │
-│ │ │   │ for t in times                                    │ │ │ │
-│ │ │   │   get_action()   ───►  Action                     │ │ │ │
-│ │ │   │   run_timestep() ───►  State, StepRecord          │ │ │ │
-│ │ │   └───────────────────────────────────────────────────┘ │ │ │
-│ │ │                                                         │ │ │
-│ │ │   finalize(step_records)  ───►  Outcome                 │ │ │
-│ │ └─────────────────────────────────────────────────────────┘ │ │
-│ │                                                             │ │
-│ │   calculate_metrics(outcomes)  ───►  Metrics                │ │
-│ └─────────────────────────────────────────────────────────────┘ │
-│                                                                 │
-│   Objectives extract from Metrics  ───►  OptimizationResult     │
-└─────────────────────────────────────────────────────────────────┘
-                                                    │
-                                                    ▼
-                                          ┌─────────────────┐
-                                          │  Pareto Front   │
-                                          │ (params, values)│
-                                          └─────────────────┘
-
-Legend: You implement the 5 callbacks (initialize, time_axis, get_action,
-        run_timestep, finalize) plus calculate_metrics. The framework
-        handles the loops and optimization.
+┌──────────────────────────────────────────────────────────────┐
+│                        You define                            │
+├──────────────────────────────────────────────────────────────┤
+│  Types: Config, SOW, State, Action, Policy                   │
+│  Callbacks: initialize, get_action, run_timestep,            │
+│             time_axis, finalize                              │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                   Framework handles                          │
+├──────────────────────────────────────────────────────────────┤
+│  simulate(config, sow, policy)     → run one scenario        │
+│  evaluate_policy(prob, policy)     → run across many SOWs    │
+│  optimize(prob, backend)           → search for best params  │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                     ┌────────────────┐
+                     │  Pareto Front  │
+                     └────────────────┘
 ```
-
-## What is SimOptDecisions.jl?
-
-SimOptDecisions.jl is a **framework** for building simulation-optimization models in Julia.
-It is **not** a turnkey solution—you write Julia code for your model. The framework provides:
-
-1. **Structured vocabulary** — Clear concepts: Config, SOW, Policy, Action, State, StepRecord, Outcome, Metric
-2. **Pluggable components** — Swap optimization backends, recording strategies
-3. **Boilerplate handled** — Batching, parallel evaluation, checkpointing, type stability
-
-**You still need to:**
-
-- Define your types (Config, SOW, Policy, Action, State)
-- Implement the five callbacks shown above
-- Define your metric aggregation logic (`calculate_metrics`)
-
-::: {.callout-tip}
-## Flexible Entry Points
-
-You don't need to use all the loops. Pick the level that fits your task:
-
-| Function | Purpose |
-|----------|---------|
-| `simulate(config, sow, policy)` | Run one scenario — explore dynamics, debug |
-| `evaluate_policy(prob, policy)` | Assess a policy across many SOWs — no optimization |
-| `optimize(prob, backend)` | Search for optimal policy parameters |
-
-Start with `simulate` to understand your model, then scale up.
-:::
-
-## Key Concepts
-
-| Concept | Description |
-|---------|-------------|
-| **Config** | Fixed simulation parameters (don't change across scenarios) |
-| **SOW** | State of the World — exogenous uncertainty for one scenario |
-| **Policy** | Decision strategy that produces Actions |
-| **Action** | Decision at a specific timestep |
-| **State** | Internal simulation state |
-| **StepRecord** | Per-timestep tracking data (returned from `run_timestep`) |
-| **Outcome** | Result of one simulation (returned from `finalize`) |
-| **Metrics** | Aggregate statistics across SOWs (for optimization) |
-| **Objective** | What to minimize/maximize (references a Metric) |
 
 ## Installation
 
-**Requires Julia 1.10 or later.**
+Requires Julia 1.10 or later.
 
 ```julia
 using Pkg
 Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
 ```
 
-## Key Features
+## Next Steps
 
-| Feature | Description |
-|---------|-------------|
-| Type-stable simulation | Zero-allocation hot loops with `NoRecorder` |
-| Flexible time axes | Works with integers, floats, or `Date` ranges |
-| Structured callbacks | Clean interface with five callbacks |
-| Action recording | Trace simulation history including actions taken |
-| Extensible optimization | Plug in Metaheuristics.jl or custom backends |
-| Multi-objective support | Pareto frontier extraction |
+→ [Getting Started](guide/getting-started.qmd) — checklist of what to implement + minimal working example
+
+→ [House Elevation Example](examples/house_elevation.qmd) — complete worked example with flood risk optimization
