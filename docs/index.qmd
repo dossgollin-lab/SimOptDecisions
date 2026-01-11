@@ -10,6 +10,19 @@ author: "Doss-Gollin Lab @ Rice CEVE"
 This package is under active development and the API may change.
 :::
 
+## Theoretical Background
+
+This framework implements a sequential decision problem formulation:
+
+1. **State variables $S_t$** — all information needed to model the system from time $t$ onward
+2. **Decision variables $x_t$** — determined by a policy $X^\pi(S_t)$, returned as `AbstractAction`
+3. **Exogenous information $W_{t+1}$** — information arriving after decision $x_t$ (from SOW)
+4. **Transition function** — how $S_t$ evolves to $S_{t+1}$ given $x_t$ and $W_{t+1}$
+5. **Objective** — used to evaluate the policy over time
+
+The `get_action` function implements the policy mapping $X^\pi(S_t) \to x_t$.
+The `run_timestep` function implements the transition function $S_{t+1} = f(S_t, x_t, W_{t+1})$.
+
 ## Framework Overview
 
 ```
@@ -104,16 +117,3 @@ Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
 | Action recording | Trace simulation history including actions taken |
 | Extensible optimization | Plug in Metaheuristics.jl or custom backends |
 | Multi-objective support | Pareto frontier extraction |
-
-## Theoretical Background
-
-This framework implements a sequential decision problem formulation:
-
-1. **State variables $S_t$** — all information needed to model the system from time $t$ onward
-2. **Decision variables $x_t$** — determined by a policy $X^\pi(S_t)$, returned as `AbstractAction`
-3. **Exogenous information $W_{t+1}$** — information arriving after decision $x_t$ (from SOW)
-4. **Transition function** — how $S_t$ evolves to $S_{t+1}$ given $x_t$ and $W_{t+1}$
-5. **Objective** — used to evaluate the policy over time
-
-The `get_action` function implements the policy mapping $X^\pi(S_t) \to x_t$.
-The `run_timestep` function implements the transition function $S_{t+1} = f(S_t, x_t, W_{t+1})$.
