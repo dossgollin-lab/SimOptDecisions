@@ -87,6 +87,8 @@ It is **not** a turnkey solution—you write Julia code for your model. The fram
 
 ## Installation
 
+**Requires Julia 1.10 or later.**
+
 ```julia
 using Pkg
 Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")

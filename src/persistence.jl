@@ -1,14 +1,13 @@
-using TOML
-
 # ============================================================================
 # Package Version
 # ============================================================================
 
 # Read version from Project.toml at module load time
+# Use Base.TOML (stdlib in Julia 1.6+) to avoid dependency issues
 const _PROJECT_TOML = joinpath(@__DIR__, "..", "Project.toml")
 const PACKAGE_VERSION = let
     if isfile(_PROJECT_TOML)
-        TOML.parsefile(_PROJECT_TOML)["version"]
+        Base.TOML.parsefile(_PROJECT_TOML)["version"]
     else
         "unknown"
     end

@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/test.yml)
 [![Documentation](https://github.com/dossgollin-lab/SimOptDecisions/actions/workflows/docs.yml/badge.svg?branch=main)](https://dossgollin-lab.github.io/SimOptDecisions/)
+![Julia 1.10+](https://img.shields.io/badge/Julia-1.10%2B-blue)
 
 A Julia framework for simulation-based decision analysis and parametric policy search under uncertainty.
 
