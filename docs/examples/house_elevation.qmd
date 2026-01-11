@@ -144,6 +144,23 @@ SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
 SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
 ```
 
+### State: Mean Sea Level
+
+We track **Mean Sea Level (MSL)** as state. While MSL is constant in this example, the state structure allows future extensions where MSL could increase due to sea-level rise.
+
+```{julia}
+#| output: false
+struct SeaLevelState{T<:AbstractFloat} <: AbstractState
+    msl::T  # Mean sea level relative to reference datum (ft)
+end
+```
+
+::: {.callout-note}
+## Why Track MSL?
+
+In this example, MSL is constant over time. However, the state structure allows future extensions where MSL could vary—for example, sampling sea-level rise trajectories from uncertain projections in the SOW. This demonstrates the pattern of explicit state even for "nearly stateless" models.
+:::
+
 ```{julia}
 #| output: false
 function SimOptDecisions.get_action(
@@ -188,23 +205,6 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
     house_value::T = 200_000.0              # house value in dollars (not land)
 end
 ```
-
-### State: Mean Sea Level
-
-We track **Mean Sea Level (MSL)** as state. While MSL is constant in this example, the state structure allows future extensions where MSL could increase due to sea-level rise.
-
-```{julia}
-#| output: false
-struct SeaLevelState{T<:AbstractFloat} <: AbstractState
-    msl::T  # Mean sea level relative to reference datum (ft)
-end
-```
-
-::: {.callout-note}
-## Why Track MSL?
-
-In this example, MSL is constant over time. However, the state structure allows future extensions where MSL could vary—for example, sampling sea-level rise trajectories from uncertain projections in the SOW. This demonstrates the pattern of explicit state even for "nearly stateless" models.
-:::
 
 ### Depth-Damage Function
 
