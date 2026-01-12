@@ -32,12 +32,14 @@ function SimOptDecisions.get_action(
     end
 end
 
-# Test types for "get_action interface" -> "get_action with nothing state"
-struct StatelessAction <: AbstractAction
+# Test types for "get_action interface" -> "get_action with minimal state"
+struct MinimalStateAction <: AbstractAction
     action_value::Float64
 end
 
-struct StatelessPolicy <: AbstractPolicy
+struct MinimalStateMarker <: AbstractState end
+
+struct MinimalStatePolicy <: AbstractPolicy
     multiplier::Float64
 end
 
@@ -46,15 +48,17 @@ struct InfoSOW <: AbstractSOW
 end
 
 function SimOptDecisions.get_action(
-    policy::StatelessPolicy, state::Nothing, sow::InfoSOW, t::TimeStep
+    policy::MinimalStatePolicy, state::MinimalStateMarker, sow::InfoSOW, t::TimeStep
 )
-    return StatelessAction(sow.base_value * policy.multiplier * t.t)
+    return MinimalStateAction(sow.base_value * policy.multiplier * t.t)
 end
 
 # Test types for "get_action interface" -> "get_action for static policy"
 struct ElevationAction <: AbstractAction
     elevation::Float64
 end
+
+struct StaticStateMarker <: AbstractState end
 
 struct StaticElevationPolicy <: AbstractPolicy
     elevation_ft::Float64
@@ -63,7 +67,7 @@ end
 struct FloodSOW <: AbstractSOW end
 
 function SimOptDecisions.get_action(
-    policy::StaticElevationPolicy, state, sow::FloodSOW, t::TimeStep
+    policy::StaticElevationPolicy, state::StaticStateMarker, sow::FloodSOW, t::TimeStep
 )
     return ElevationAction(policy.elevation_ft)
 end
@@ -203,8 +207,8 @@ end
         rng = Random.Xoshiro(42)
 
         # simulate calls run_simulation by default,
-        # which throws MethodError for time_axis (no fallback implementation)
-        @test_throws MethodError simulate(config, sow, policy, rng)
+        # which throws ArgumentError for time_axis (via interface_not_implemented fallback)
+        @test_throws ArgumentError simulate(config, sow, policy, rng)
 
         # get_action should throw helpful error if not implemented
         ts = TimeStep(1, 1)
@@ -229,12 +233,12 @@ end
             @test action_high.order == 0.0
         end
 
-        @testset "get_action with nothing state" begin
-            policy = StatelessPolicy(2.0)
+        @testset "get_action with minimal state" begin
+            policy = MinimalStatePolicy(2.0)
             sow = InfoSOW(10.0)
             ts = TimeStep(3, 3)
 
-            action = get_action(policy, nothing, sow, ts)
+            action = get_action(policy, MinimalStateMarker(), sow, ts)
             @test action isa AbstractAction
             @test action.action_value == 60.0  # 10 * 2 * 3
         end
@@ -244,7 +248,7 @@ end
             sow = FloodSOW()
             ts = TimeStep(1, 1)
 
-            action = get_action(policy, nothing, sow, ts)
+            action = get_action(policy, StaticStateMarker(), sow, ts)
             @test action isa AbstractAction
             @test action.elevation == 8.0
         end

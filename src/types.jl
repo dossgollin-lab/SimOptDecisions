@@ -41,15 +41,15 @@ end
 # ============================================================================
 
 """
-    get_action(policy::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep) -> AbstractAction
+    get_action(policy::AbstractPolicy, state::AbstractState, sow::AbstractSOW, t::TimeStep) -> AbstractAction
 
 Map state + SOW to action. Called by the framework before each `run_timestep`.
 
 Must be implemented for each policy type. Return value must be `<:AbstractAction`.
 """
-function get_action(p::AbstractPolicy, state, sow::AbstractSOW, t::TimeStep)
+function get_action(p::AbstractPolicy, state::AbstractState, sow::AbstractSOW, t::TimeStep)
     interface_not_implemented(
-        :get_action, typeof(p), "state, sow::AbstractSOW, t::TimeStep"
+        :get_action, typeof(p), "state::AbstractState, sow::AbstractSOW, t::TimeStep"
     )
 end
 

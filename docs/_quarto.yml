@@ -19,16 +19,18 @@ website:
         contents:
           - href: guide/getting-started.qmd
             text: Getting Started
-      - section: "Details"
+      - section: "Examples"
+        contents:
+          - href: examples/house_elevation.qmd
+            text: House Elevation
+      - section: "Reference"
         contents:
           - href: details/timestepping.qmd
             text: Time Stepping
-      - section: "Examples"
-        contents:
-          - href: examples/investment_growth.qmd
-            text: Investment Growth
-          - href: examples/house_elevation.qmd
-            text: House Elevation
+          - href: details/persistence.qmd
+            text: Persistence
+          - href: details/validation.qmd
+            text: Validation
   page-footer:
     left: "SimOptDecisions.jl - Dossgollin Lab"
     right:

@@ -25,7 +25,7 @@ Before making code changes, read [STYLE.md](STYLE.md) for project conventions.
 
 | Callback | Signature | Returns |
 |----------|-----------|---------|
-| `initialize` | `(config, sow, rng)` | `state` (or `nothing` for stateless) |
+| `initialize` | `(config, sow, rng)` | `<:AbstractState` |
 | `get_action` | `(policy, state, sow, t)` | `<:AbstractAction` |
 | `run_timestep` | `(state, action, sow, config, t, rng)` | `(new_state, step_record)` |
 | `time_axis` | `(config, sow)` | Iterable with `length()` |

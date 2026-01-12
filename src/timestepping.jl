@@ -61,10 +61,10 @@ Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.data, state)
 # ============================================================================
 
 """
-    initialize(config::AbstractConfig, sow::AbstractSOW, rng::AbstractRNG) -> state
+    initialize(config::AbstractConfig, sow::AbstractSOW, rng::AbstractRNG) -> AbstractState
 
 Create initial state for simulation. Required callback.
-Return `nothing` for stateless models, or `<:AbstractState` for stateful models.
+Must return `<:AbstractState`. Every simulation should have explicit state.
 """
 function initialize end
 
@@ -75,7 +75,7 @@ function initialize(config::AbstractConfig, ::AbstractSOW, ::AbstractRNG)
 end
 
 """
-    run_timestep(state, action::AbstractAction, sow::AbstractSOW, config::AbstractConfig, t::TimeStep, rng::AbstractRNG) -> (new_state, step_record)
+    run_timestep(state::AbstractState, action::AbstractAction, sow::AbstractSOW, config::AbstractConfig, t::TimeStep, rng::AbstractRNG) -> (new_state, step_record)
 
 Execute one timestep transition. Required callback.
 
@@ -84,6 +84,21 @@ and passes the resulting action. Implement the transition logic here.
 """
 function run_timestep end
 
+function run_timestep(
+    state::AbstractState,
+    action::AbstractAction,
+    sow::AbstractSOW,
+    config::AbstractConfig,
+    t::TimeStep,
+    rng::AbstractRNG,
+)
+    interface_not_implemented(
+        :run_timestep,
+        typeof(config),
+        "state::AbstractState, action::AbstractAction, sow::AbstractSOW, t::TimeStep, rng::AbstractRNG",
+    )
+end
+
 """
     time_axis(config::AbstractConfig, sow::AbstractSOW) -> Iterable
 
@@ -91,16 +106,24 @@ Return time points iterable with defined `length()`. Required callback.
 """
 function time_axis end
 
+function time_axis(config::AbstractConfig, sow::AbstractSOW)
+    interface_not_implemented(:time_axis, typeof(config), "sow::AbstractSOW")
+end
+
 """
-    finalize(final_state, step_records::Vector, config::AbstractConfig, sow::AbstractSOW) -> Outcome
+    finalize(final_state::AbstractState, step_records::Vector, config::AbstractConfig, sow::AbstractSOW) -> Outcome
 
 Aggregate step records into final outcome. Required callback.
 """
 function finalize end
 
-function finalize(final_state, step_records::Vector, config::AbstractConfig, ::AbstractSOW)
+function finalize(
+    final_state::AbstractState, step_records::Vector, config::AbstractConfig, ::AbstractSOW
+)
     interface_not_implemented(
-        :finalize, typeof(config), "final_state, step_records::Vector, sow::AbstractSOW"
+        :finalize,
+        typeof(config),
+        "final_state::AbstractState, step_records::Vector, sow::AbstractSOW",
     )
 end
 
