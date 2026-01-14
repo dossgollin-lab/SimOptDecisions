@@ -19,6 +19,8 @@ import SimOptDecisions: finalize
     include("test_validation.jl")
     include("test_optimization.jl")
     include("test_persistence.jl")
+    include("test_parameters.jl")
+    include("test_exploration.jl")
     include("test_aqua.jl")
 
     # Extension tests (Metaheuristics and CairoMakie are loaded at the top)

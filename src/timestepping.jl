@@ -56,6 +56,13 @@ Base.length(ts::TimeSeriesParameter) = length(ts.data)
 Base.iterate(ts::TimeSeriesParameter) = iterate(ts.data)
 Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.data, state)
 
+"""
+    value(ts::TimeSeriesParameter) -> Vector{T}
+
+Extract the underlying data vector from a TimeSeriesParameter.
+"""
+value(ts::TimeSeriesParameter) = ts.data
+
 # ============================================================================
 # User-Implemented Callback Functions
 # ============================================================================

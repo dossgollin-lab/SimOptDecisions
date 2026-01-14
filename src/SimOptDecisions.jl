@@ -16,6 +16,8 @@ include("simulation.jl")
 include("optimization.jl")
 include("persistence.jl")
 include("plotting.jl")
+include("sinks.jl")
+include("exploration.jl")
 
 # ============================================================================
 # Exports
@@ -78,5 +80,24 @@ export save_experiment, load_experiment
 
 # Plotting (requires Makie extension)
 export to_scalars, plot_trace, plot_pareto, plot_parallel
+
+# ---------- Phase 4 Exports: Exploratory Modeling ----------
+
+# Parameter types
+export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
+export value
+
+# Sinks
+export AbstractResultSink, NoSink, InMemorySink
+export AbstractFileSink, StreamingSink
+export write_header!, write_rows!, close!
+
+# Exploration
+export ExplorationResult, explore
+export outcomes_for_policy, outcomes_for_sow
+export ExploratoryInterfaceError
+
+# Exploration plotting (requires Makie extension)
+export plot_exploration, plot_exploration_parallel, plot_exploration_scatter
 
 end # module SimOptDecisions

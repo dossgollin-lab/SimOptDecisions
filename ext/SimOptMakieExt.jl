@@ -6,12 +6,16 @@ import SimOptDecisions:
     plot_trace,
     plot_pareto,
     plot_parallel,
+    plot_exploration,
+    plot_exploration_parallel,
+    plot_exploration_scatter,
     to_scalars,
     SimulationTrace,
     OptimizationResult,
+    ExplorationResult,
     AbstractState
 
-using Makie: Figure, Axis, lines!, scatter!, axislegend
+using Makie: Figure, Axis, Colorbar, lines!, scatter!, heatmap!, axislegend
 
 # ============================================================================
 # plot_trace Implementation
@@ -166,6 +170,187 @@ function SimOptDecisions.plot_parallel(
     for data in all_data
         norm_data = normalize(data)
         lines!(ax, 1:n_axes, norm_data; color=(:blue, 0.3), line_kwargs...)
+    end
+
+    return (fig, ax)
+end
+
+# ============================================================================
+# Exploration Plotting Implementations
+# ============================================================================
+
+"""Plot exploration results as heatmap."""
+function SimOptDecisions.plot_exploration(
+    result::ExplorationResult;
+    outcome_field::Symbol,
+    policy_param::Union{Symbol,Nothing}=nothing,
+    sow_param::Union{Symbol,Nothing}=nothing,
+    figure_kwargs::NamedTuple=NamedTuple(),
+    axis_kwargs::NamedTuple=NamedTuple(),
+    heatmap_kwargs::NamedTuple=NamedTuple(),
+)
+    # Find the outcome column (with or without prefix)
+    outcome_col = Symbol(:outcome_, outcome_field)
+    first_row = first(result.rows)
+    if outcome_col ∉ keys(first_row)
+        # Try without prefix
+        if outcome_field ∈ keys(first_row)
+            outcome_col = outcome_field
+        else
+            error("Outcome field `$outcome_field` not found. Available: $(keys(first_row))")
+        end
+    end
+
+    n_p, n_s = size(result)
+    values = [Float64(result[p, s][outcome_col]) for p in 1:n_p, s in 1:n_s]
+
+    # Determine axis labels
+    if isnothing(policy_param)
+        x_labels = string.(1:n_p)
+        x_title = "Policy Index"
+    else
+        policy_col = Symbol(:policy_, policy_param)
+        if policy_col ∉ keys(first_row)
+            policy_col = policy_param
+        end
+        x_labels = [string(result[p, 1][policy_col]) for p in 1:n_p]
+        x_title = String(policy_param)
+    end
+
+    if isnothing(sow_param)
+        y_labels = string.(1:n_s)
+        y_title = "SOW Index"
+    else
+        sow_col = Symbol(:sow_, sow_param)
+        if sow_col ∉ keys(first_row)
+            sow_col = sow_param
+        end
+        y_labels = [string(result[1, s][sow_col]) for s in 1:n_s]
+        y_title = String(sow_param)
+    end
+
+    fig = Figure(; figure_kwargs...)
+    ax = Axis(
+        fig[1, 1];
+        xlabel=x_title,
+        ylabel=y_title,
+        title="Exploration: $(outcome_field)",
+        xticks=(1:n_p, x_labels),
+        yticks=(1:n_s, y_labels),
+        axis_kwargs...,
+    )
+
+    hm = heatmap!(ax, 1:n_p, 1:n_s, values; heatmap_kwargs...)
+    Colorbar(fig[1, 2], hm; label=String(outcome_field))
+
+    return (fig, ax)
+end
+
+"""Parallel coordinates for exploration results."""
+function SimOptDecisions.plot_exploration_parallel(
+    result::ExplorationResult;
+    columns::Vector{Symbol}=Symbol[],
+    figure_kwargs::NamedTuple=NamedTuple(),
+    axis_kwargs::NamedTuple=NamedTuple(),
+    line_kwargs::NamedTuple=NamedTuple(),
+    color_by::Union{Symbol,Nothing}=nothing,
+)
+    # Default: use all policy params + outcome columns
+    if isempty(columns)
+        columns = vcat(result.policy_columns, result.outcome_columns)
+    end
+
+    n_axes = length(columns)
+    if n_axes == 0
+        error("No columns specified for parallel coordinates plot")
+    end
+
+    # Extract and normalize data
+    all_data = [[Float64(row[c]) for c in columns] for row in result.rows]
+
+    mins = [minimum(d[j] for d in all_data) for j in 1:n_axes]
+    maxs = [maximum(d[j] for d in all_data) for j in 1:n_axes]
+
+    normalize(data) = [
+        (maxs[j] == mins[j] ? 0.5 : (data[j] - mins[j]) / (maxs[j] - mins[j]))
+        for j in 1:n_axes
+    ]
+
+    fig = Figure(; figure_kwargs...)
+    ax = Axis(
+        fig[1, 1];
+        xticks=(1:n_axes, String.(columns)),
+        ylabel="Normalized Value",
+        title="Exploration Parallel Coordinates",
+        xticklabelrotation=π / 4,
+        axis_kwargs...,
+    )
+
+    # Color by outcome or parameter if specified
+    if !isnothing(color_by) && color_by ∈ keys(first(result.rows))
+        color_vals = [Float64(row[color_by]) for row in result.rows]
+        color_min, color_max = extrema(color_vals)
+        color_range = color_max - color_min
+        if color_range ≈ 0
+            color_range = 1.0
+        end
+        color_norm = (color_vals .- color_min) ./ color_range
+
+        for (i, data) in enumerate(all_data)
+            norm_data = normalize(data)
+            # Use color based on normalized value
+            c = color_norm[i]
+            lines!(ax, 1:n_axes, norm_data; color=(c, c, 1 - c, 0.5), line_kwargs...)
+        end
+    else
+        for data in all_data
+            norm_data = normalize(data)
+            lines!(ax, 1:n_axes, norm_data; color=(:blue, 0.3), line_kwargs...)
+        end
+    end
+
+    return (fig, ax)
+end
+
+"""Scatter plot for exploration results."""
+function SimOptDecisions.plot_exploration_scatter(
+    result::ExplorationResult;
+    x::Symbol,
+    y::Symbol,
+    color_by::Union{Symbol,Nothing}=nothing,
+    figure_kwargs::NamedTuple=NamedTuple(),
+    axis_kwargs::NamedTuple=NamedTuple(),
+    scatter_kwargs::NamedTuple=NamedTuple(),
+)
+    first_row = first(result.rows)
+
+    # Resolve column names (handle prefixed vs unprefixed)
+    x_col = x ∈ keys(first_row) ? x : Symbol(:outcome_, x)
+    y_col = y ∈ keys(first_row) ? y : Symbol(:outcome_, y)
+
+    x_vals = [Float64(row[x_col]) for row in result.rows]
+    y_vals = [Float64(row[y_col]) for row in result.rows]
+
+    fig = Figure(; figure_kwargs...)
+    ax = Axis(
+        fig[1, 1];
+        xlabel=String(x),
+        ylabel=String(y),
+        title="Exploration Scatter",
+        axis_kwargs...,
+    )
+
+    if !isnothing(color_by)
+        color_col = color_by ∈ keys(first_row) ? color_by : Symbol(:outcome_, color_by)
+        if color_col ∈ keys(first_row)
+            color_vals = [Float64(row[color_col]) for row in result.rows]
+            sc = scatter!(ax, x_vals, y_vals; color=color_vals, scatter_kwargs...)
+            Colorbar(fig[1, 2], sc; label=String(color_by))
+        else
+            scatter!(ax, x_vals, y_vals; scatter_kwargs...)
+        end
+    else
+        scatter!(ax, x_vals, y_vals; scatter_kwargs...)
     end
 
     return (fig, ax)

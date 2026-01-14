@@ -8,6 +8,97 @@ abstract type AbstractSOW end
 abstract type AbstractRecorder end
 abstract type AbstractAction end
 
+# ============================================================================
+# Parameter Types for Exploratory Modeling
+# ============================================================================
+
+"""
+    AbstractParameter{T}
+
+Base type for typed parameters used in exploratory modeling.
+Subtypes enable automatic flattening of SOWs, Policies, and Outcomes for analysis.
+
+To use `explore()`, all fields in your types must be `<:AbstractParameter` or `TimeSeriesParameter`.
+"""
+abstract type AbstractParameter{T} end
+
+"""
+    ContinuousParameter{T<:AbstractFloat}
+
+A continuous real-valued parameter with optional bounds.
+
+# Fields
+- `value::T`: The parameter value
+- `bounds::Tuple{T,T}`: (lower, upper) bounds, defaults to (-Inf, Inf)
+
+# Example
+```julia
+ContinuousParameter(0.5)                    # unbounded
+ContinuousParameter(0.5, (0.0, 1.0))        # bounded
+```
+"""
+struct ContinuousParameter{T<:AbstractFloat} <: AbstractParameter{T}
+    value::T
+    bounds::Tuple{T,T}
+end
+ContinuousParameter(value::T) where {T<:AbstractFloat} =
+    ContinuousParameter(value, (T(-Inf), T(Inf)))
+
+"""
+    DiscreteParameter{T<:Integer}
+
+An integer-valued parameter with optional valid values constraint.
+
+# Fields
+- `value::T`: The parameter value
+- `valid_values::Union{Nothing,Vector{T}}`: Allowed values, or nothing for any integer
+
+# Example
+```julia
+DiscreteParameter(5)                        # any integer
+DiscreteParameter(2, [1, 2, 3, 4, 5])       # constrained
+```
+"""
+struct DiscreteParameter{T<:Integer} <: AbstractParameter{T}
+    value::T
+    valid_values::Union{Nothing,Vector{T}}
+end
+DiscreteParameter(value::T) where {T<:Integer} = DiscreteParameter(value, nothing)
+
+"""
+    CategoricalParameter{T}
+
+A categorical parameter with defined levels.
+
+# Fields
+- `value::T`: The current value (must be in levels)
+- `levels::Vector{T}`: All valid categorical values
+
+# Example
+```julia
+CategoricalParameter(:high, [:low, :medium, :high])
+CategoricalParameter("scenario_a", ["scenario_a", "scenario_b"])
+```
+"""
+struct CategoricalParameter{T} <: AbstractParameter{T}
+    value::T
+    levels::Vector{T}
+
+    function CategoricalParameter(value::T, levels::Vector{T}) where {T}
+        value ∈ levels || throw(ArgumentError("Value `$value` not in levels $levels"))
+        new{T}(value, levels)
+    end
+end
+
+"""
+    value(p::AbstractParameter) -> T
+
+Extract the value from a parameter.
+"""
+value(p::AbstractParameter) = p.value
+
+Base.getindex(p::AbstractParameter) = p.value
+
 """
 Throw a helpful error for unimplemented interface methods.
 

@@ -19,6 +19,8 @@ website:
         contents:
           - href: guide/getting-started.qmd
             text: Getting Started
+          - href: guide/exploration.qmd
+            text: Exploratory Modeling
       - section: "Examples"
         contents:
           - href: examples/house_elevation.qmd

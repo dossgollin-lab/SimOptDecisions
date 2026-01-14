@@ -36,3 +36,45 @@ Parallel coordinates plot for comparing policies across objectives.
 Requires `using CairoMakie` or `using GLMakie`.
 """
 function plot_parallel end
+
+# ============================================================================
+# Exploration Plotting Interface
+# ============================================================================
+
+"""
+    plot_exploration(result::ExplorationResult; kwargs...) -> (Figure, Axis)
+
+Create a heatmap of exploration results.
+Requires `using CairoMakie` or `using GLMakie`.
+
+# Keyword Arguments
+- `outcome_field::Symbol`: Which outcome field to visualize
+- `policy_param::Union{Symbol,Nothing}=nothing`: Policy parameter for x-axis labels
+- `sow_param::Union{Symbol,Nothing}=nothing`: SOW parameter for y-axis labels
+"""
+function plot_exploration end
+
+"""
+    plot_exploration_parallel(result::ExplorationResult; kwargs...) -> (Figure, Axis)
+
+Parallel coordinates plot showing policy/SOW parameters and outcomes.
+Requires `using CairoMakie` or `using GLMakie`.
+
+# Keyword Arguments
+- `columns::Vector{Symbol}=Symbol[]`: Columns to include (default: policy + outcome columns)
+- `color_by::Union{Symbol,Nothing}=nothing`: Column to use for line coloring
+"""
+function plot_exploration_parallel end
+
+"""
+    plot_exploration_scatter(result::ExplorationResult; kwargs...) -> (Figure, Axis)
+
+Scatter plot of exploration results.
+Requires `using CairoMakie` or `using GLMakie`.
+
+# Keyword Arguments
+- `x::Symbol`: Column for x-axis
+- `y::Symbol`: Column for y-axis
+- `color_by::Union{Symbol,Nothing}=nothing`: Column to use for point coloring
+"""
+function plot_exploration_scatter end
