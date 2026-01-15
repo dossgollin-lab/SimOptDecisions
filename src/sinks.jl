@@ -153,10 +153,12 @@ explore(config, sows, policies; sink=sink)
 """
 function csv_sink end
 
-csv_sink(filepath::String) = error(
-    "csv_sink requires the CSV package.\n" *
-    "Run `using CSV` to load the SimOptCSVExt extension."
-)
+function csv_sink(filepath::String)
+    error(
+        "csv_sink requires the CSV package.\n" *
+        "Run `using CSV` to load the SimOptCSVExt extension.",
+    )
+end
 
 """
     netcdf_sink(filepath::String; flush_every=100)
@@ -175,7 +177,9 @@ explore(config, sows, policies; sink=sink)
 """
 function netcdf_sink end
 
-netcdf_sink(filepath::String; kwargs...) = error(
-    "netcdf_sink requires the NCDatasets package.\n" *
-    "Run `using NCDatasets` to load the SimOptNetCDFExt extension."
-)
+function netcdf_sink(filepath::String; kwargs...)
+    error(
+        "netcdf_sink requires the NCDatasets package.\n" *
+        "Run `using NCDatasets` to load the SimOptNetCDFExt extension.",
+    )
+end

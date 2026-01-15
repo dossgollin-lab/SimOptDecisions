@@ -272,8 +272,8 @@ function SimOptDecisions.plot_exploration_parallel(
     maxs = [maximum(d[j] for d in all_data) for j in 1:n_axes]
 
     normalize(data) = [
-        (maxs[j] == mins[j] ? 0.5 : (data[j] - mins[j]) / (maxs[j] - mins[j]))
-        for j in 1:n_axes
+        (maxs[j] == mins[j] ? 0.5 : (data[j] - mins[j]) / (maxs[j] - mins[j])) for
+        j in 1:n_axes
     ]
 
     fig = Figure(; figure_kwargs...)

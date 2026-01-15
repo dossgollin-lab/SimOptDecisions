@@ -111,13 +111,16 @@ function _validate_exploratory_interface(::Type{S}, ::Type{P}, ::Type{O}) where 
     _collect_field_errors!(errors, O, "Outcome")
 
     if !isempty(errors)
-        throw(ExploratoryInterfaceError(
-            "Cannot use `explore()` with current types:\n\n" *
-            join(errors, "\n") * "\n\n" *
-            "All fields must be: ContinuousParameter, DiscreteParameter, " *
-            "CategoricalParameter, or TimeSeriesParameter.\n\n" *
-            "Note: `simulate()` and `evaluate_policy()` still work without this."
-        ))
+        throw(
+            ExploratoryInterfaceError(
+                "Cannot use `explore()` with current types:\n\n" *
+                join(errors, "\n") *
+                "\n\n" *
+                "All fields must be: ContinuousParameter, DiscreteParameter, " *
+                "CategoricalParameter, or TimeSeriesParameter.\n\n" *
+                "Note: `simulate()` and `evaluate_policy()` still work without this.",
+            ),
+        )
     end
 end
 
@@ -237,14 +240,14 @@ outcomes_for_sow(r::ExplorationResult, s::Int) = [r[p, s] for p in 1:r.n_policie
 function Base.filter(f, r::ExplorationResult)
     filtered = filter(f, r.rows)
     ExplorationResult(
-        filtered, r.n_policies, r.n_sows,
-        r.policy_columns, r.sow_columns, r.outcome_columns
+        filtered, r.n_policies, r.n_sows, r.policy_columns, r.sow_columns, r.outcome_columns
     )
 end
 
 # Finalize InMemorySink -> ExplorationResult
-finalize(sink::InMemorySink, n_policies::Int, n_sows::Int) =
+function finalize(sink::InMemorySink, n_policies::Int, n_sows::Int)
     ExplorationResult(sink.results, n_policies, n_sows)
+end
 
 # ============================================================================
 # Main explore() Function
@@ -291,7 +294,7 @@ function explore(
     policies::AbstractVector{<:AbstractPolicy};
     sink::AbstractResultSink=InMemorySink(),
     rng::AbstractRNG=Random.default_rng(),
-    progress::Bool=true
+    progress::Bool=true,
 )
     isempty(sows) && throw(ArgumentError("sows cannot be empty"))
     isempty(policies) && throw(ArgumentError("policies cannot be empty"))
@@ -300,11 +303,7 @@ function explore(
     first_outcome = simulate(config, first(sows), first(policies), rng)
 
     # Validate all types have parameter fields
-    _validate_exploratory_interface(
-        eltype(sows),
-        eltype(policies),
-        typeof(first_outcome)
-    )
+    _validate_exploratory_interface(eltype(sows), eltype(policies), typeof(first_outcome))
 
     n_policies = length(policies)
     n_sows = length(sows)
@@ -342,16 +341,14 @@ function explore(
     config::AbstractConfig,
     sows::AbstractVector{<:AbstractSOW},
     policy::AbstractPolicy;
-    kwargs...
+    kwargs...,
 )
     explore(config, sows, [policy]; kwargs...)
 end
 
 # Convenience: from OptimizationProblem
 function explore(
-    prob::OptimizationProblem,
-    policies::AbstractVector{<:AbstractPolicy};
-    kwargs...
+    prob::OptimizationProblem, policies::AbstractVector{<:AbstractPolicy}; kwargs...
 )
     explore(prob.config, prob.sows, policies; kwargs...)
 end

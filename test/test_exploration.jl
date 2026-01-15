@@ -31,30 +31,35 @@ end
 # Implement callbacks
 SimOptDecisions.time_axis(config::ExploreTestConfig, sow::ExploreTestSOW) = 1:config.n_steps
 
-SimOptDecisions.initialize(config::ExploreTestConfig, sow::ExploreTestSOW, rng::AbstractRNG) =
+function SimOptDecisions.initialize(
+    config::ExploreTestConfig, sow::ExploreTestSOW, rng::AbstractRNG
+)
     ExploreTestState(0.0)
+end
 
-SimOptDecisions.get_action(
-    policy::ExploreTestPolicy, state::ExploreTestState,
-    sow::ExploreTestSOW, t::TimeStep
-) = ExploreTestAction()
+function SimOptDecisions.get_action(
+    policy::ExploreTestPolicy, state::ExploreTestState, sow::ExploreTestSOW, t::TimeStep
+)
+    ExploreTestAction()
+end
 
 function SimOptDecisions.run_timestep(
-    state::ExploreTestState, action::ExploreTestAction,
-    sow::ExploreTestSOW, config::ExploreTestConfig,
-    t::TimeStep, rng::AbstractRNG
+    state::ExploreTestState,
+    action::ExploreTestAction,
+    sow::ExploreTestSOW,
+    config::ExploreTestConfig,
+    t::TimeStep,
+    rng::AbstractRNG,
 )
     new_val = state.value + sow.x.value
     return ExploreTestState(new_val), (step_value=new_val,)
 end
 
 function SimOptDecisions.finalize(
-    state::ExploreTestState, step_records,
-    config::ExploreTestConfig, sow::ExploreTestSOW
+    state::ExploreTestState, step_records, config::ExploreTestConfig, sow::ExploreTestSOW
 )
     ExploreTestOutcome(
-        ContinuousParameter(state.value),
-        DiscreteParameter(length(step_records))
+        ContinuousParameter(state.value), DiscreteParameter(length(step_records))
     )
 end
 
@@ -65,8 +70,7 @@ end
 @testset "Exploration" begin
     @testset "Flattening" begin
         sow = ExploreTestSOW(
-            ContinuousParameter(1.5),
-            CategoricalParameter(:high, [:low, :high])
+            ContinuousParameter(1.5), CategoricalParameter(:high, [:low, :high])
         )
 
         nt = SimOptDecisions._flatten_to_namedtuple(sow, :sow)
@@ -110,8 +114,12 @@ end
     @testset "explore() basic" begin
         config = ExploreTestConfig(3)
         sows = [
-            ExploreTestSOW(ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])),
-            ExploreTestSOW(ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])),
+            ExploreTestSOW(
+                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+            ),
+            ExploreTestSOW(
+                ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])
+            ),
         ]
         policies = [
             ExploreTestPolicy(ContinuousParameter(0.5)),
@@ -145,7 +153,11 @@ end
 
     @testset "Tables.jl compatibility" begin
         config = ExploreTestConfig(3)
-        sows = [ExploreTestSOW(ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high]))]
+        sows = [
+            ExploreTestSOW(
+                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+            ),
+        ]
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
         result = explore(config, sows, policies; progress=false)
@@ -165,8 +177,12 @@ end
     @testset "ExplorationResult accessors" begin
         config = ExploreTestConfig(3)
         sows = [
-            ExploreTestSOW(ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])),
-            ExploreTestSOW(ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])),
+            ExploreTestSOW(
+                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+            ),
+            ExploreTestSOW(
+                ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])
+            ),
         ]
         policies = [
             ExploreTestPolicy(ContinuousParameter(0.5)),
@@ -212,7 +228,11 @@ end
 
     @testset "Single policy convenience" begin
         config = ExploreTestConfig(3)
-        sows = [ExploreTestSOW(ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high]))]
+        sows = [
+            ExploreTestSOW(
+                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+            ),
+        ]
         policy = ExploreTestPolicy(ContinuousParameter(0.5))
 
         result = explore(config, sows, policy; progress=false)
@@ -225,12 +245,25 @@ end
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
         @test_throws ArgumentError explore(config, sows, policies; progress=false)
-        @test_throws ArgumentError explore(config, [ExploreTestSOW(ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high]))], AbstractPolicy[]; progress=false)
+        @test_throws ArgumentError explore(
+            config,
+            [
+                ExploreTestSOW(
+                    ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+                ),
+            ],
+            AbstractPolicy[];
+            progress=false,
+        )
     end
 
     @testset "Bounds checking" begin
         config = ExploreTestConfig(3)
-        sows = [ExploreTestSOW(ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high]))]
+        sows = [
+            ExploreTestSOW(
+                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+            ),
+        ]
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
         result = explore(config, sows, policies; progress=false)

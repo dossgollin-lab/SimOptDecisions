@@ -41,8 +41,9 @@ struct ContinuousParameter{T<:AbstractFloat} <: AbstractParameter{T}
     value::T
     bounds::Tuple{T,T}
 end
-ContinuousParameter(value::T) where {T<:AbstractFloat} =
+function ContinuousParameter(value::T) where {T<:AbstractFloat}
     ContinuousParameter(value, (T(-Inf), T(Inf)))
+end
 
 """
     DiscreteParameter{T<:Integer}
