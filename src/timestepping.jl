@@ -6,10 +6,10 @@
 # | Function | Purpose | Returns |
 # |----------|---------|---------|
 # | `initialize(config, scenario, rng)` | Create initial state | `state` |
-# | `get_action(policy, state, scenario, t)` | Map state to action | any value |
-# | `run_timestep(state, action, scenario, config, t, rng)` | Execute one step | `(new_state, step_record)` |
+# | `get_action(policy, state, t, scenario)` | Map state to action | any value |
+# | `run_timestep(state, action, t, config, scenario, rng)` | Execute one step | `(new_state, step_record)` |
 # | `time_axis(config, scenario)` | Define time points | Iterable |
-# | `compute_outcome(final_state, step_records, config, scenario)` | Aggregate results | `Outcome` |
+# | `compute_outcome(step_records, config, scenario)` | Aggregate results | `Outcome` |
 #
 # `simulate()` automatically calls these via `run_simulation`. See docs for examples.
 
@@ -87,24 +87,38 @@ value(t::TimeStep) = t.val
 
 """
     initialize(config::AbstractConfig, scenario::AbstractScenario, rng::AbstractRNG) -> AbstractState
+    initialize(config::AbstractConfig, scenario::AbstractScenario) -> AbstractState
 
 Create initial state for simulation. Required callback.
 Must return `<:AbstractState`. Every simulation should have explicit state.
+
+You can implement either the 3-argument version (with rng) or the 2-argument version
+(without rng) if your initialization doesn't need randomness.
 """
 function initialize end
 
-function initialize(config::AbstractConfig, ::AbstractScenario, ::AbstractRNG)
+# Dummy RNG for deterministic initialization (when user doesn't need randomness)
+struct _DummyRNG <: AbstractRNG end
+
+# Fallback: if user implements 2-arg version, we call it from 3-arg version
+function initialize(config::AbstractConfig, scenario::AbstractScenario, ::AbstractRNG)
+    # Try calling 2-arg version first
+    return initialize(config, scenario)
+end
+
+# Base fallback when neither version is implemented
+function initialize(config::AbstractConfig, ::AbstractScenario)
     interface_not_implemented(
-        :initialize, typeof(config), "scenario::AbstractScenario, rng::AbstractRNG"
+        :initialize, typeof(config), "scenario::AbstractScenario[, rng::AbstractRNG]"
     )
 end
 
 """
-    run_timestep(state::AbstractState, action, scenario::AbstractScenario, config::AbstractConfig, t::TimeStep, rng::AbstractRNG) -> (new_state, step_record)
+    run_timestep(state::AbstractState, action, t::TimeStep, config::AbstractConfig, scenario::AbstractScenario, rng::AbstractRNG) -> (new_state, step_record)
 
 Execute one timestep transition. Required callback.
 
-The framework calls `get_action(policy, state, scenario, t)` before this function
+The framework calls `get_action(policy, state, t, scenario)` before this function
 and passes the resulting action. Implement the transition logic here.
 """
 function run_timestep end
@@ -112,15 +126,15 @@ function run_timestep end
 function run_timestep(
     state::AbstractState,
     action,
-    scenario::AbstractScenario,
-    config::AbstractConfig,
     t::TimeStep,
+    config::AbstractConfig,
+    scenario::AbstractScenario,
     rng::AbstractRNG,
 )
     interface_not_implemented(
         :run_timestep,
         typeof(config),
-        "state::AbstractState, action, scenario::AbstractScenario, t::TimeStep, rng::AbstractRNG",
+        "state::AbstractState, action, t::TimeStep, scenario::AbstractScenario, rng::AbstractRNG",
     )
 end
 
@@ -136,19 +150,20 @@ function time_axis(config::AbstractConfig, scenario::AbstractScenario)
 end
 
 """
-    compute_outcome(final_state::AbstractState, step_records::Vector, config::AbstractConfig, scenario::AbstractScenario) -> Outcome
+    compute_outcome(step_records::Vector, config::AbstractConfig, scenario::AbstractScenario) -> Outcome
 
 Aggregate step records into final outcome. Required callback.
+
+Note: The final state is no longer passed as a separate parameter. If you need it,
+include the state in your step_record (e.g., as a named tuple field).
 """
 function compute_outcome end
 
-function compute_outcome(
-    final_state::AbstractState, step_records, config::AbstractConfig, ::AbstractScenario
-)
+function compute_outcome(step_records, config::AbstractConfig, ::AbstractScenario)
     interface_not_implemented(
         :compute_outcome,
         typeof(config),
-        "final_state::AbstractState, step_records::Vector, scenario::AbstractScenario",
+        "step_records::Vector, scenario::AbstractScenario",
     )
 end
 
@@ -164,9 +179,9 @@ Run time-stepped simulation using callbacks. Called automatically by `simulate()
 The framework calls user-implemented callbacks in sequence:
 1. `initialize(config, scenario, rng)` - create initial state
 2. For each timestep:
-   - `get_action(policy, state, scenario, t)` - get action from policy
-   - `run_timestep(state, action, scenario, config, t, rng)` - execute transition
-3. `compute_outcome(final_state, step_records, config, scenario)` - aggregate results
+   - `get_action(policy, state, t, scenario)` - get action from policy
+   - `run_timestep(state, action, t, config, scenario, rng)` - execute transition
+3. `compute_outcome(step_records, config, scenario)` - aggregate results
 """
 function run_simulation(
     config::AbstractConfig,
@@ -186,21 +201,21 @@ function run_simulation(
     first_ts, rest = Iterators.peel(timesteps)
 
     # Framework calls get_action, then run_timestep
-    first_action = get_action(policy, state, scenario, first_ts)
-    state, first_step_record = run_timestep(state, first_action, scenario, config, first_ts, rng)
+    first_action = get_action(policy, state, first_ts, scenario)
+    state, first_step_record = run_timestep(state, first_action, first_ts, config, scenario, rng)
     record!(recorder, state, first_step_record, first_ts.val, first_action)
 
     step_records = Vector{typeof(first_step_record)}(undef, n)
     step_records[1] = first_step_record
 
     for ts in rest
-        action = get_action(policy, state, scenario, ts)
-        state, step_record = run_timestep(state, action, scenario, config, ts, rng)
+        action = get_action(policy, state, ts, scenario)
+        state, step_record = run_timestep(state, action, ts, config, scenario, rng)
         step_records[ts.t] = step_record
         record!(recorder, state, step_record, ts.val, action)
     end
 
-    return compute_outcome(state, step_records, config, scenario)
+    return compute_outcome(step_records, config, scenario)
 end
 
 # Method overloads for optional arguments (avoiding kwargs for performance)

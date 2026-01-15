@@ -2,7 +2,7 @@
 struct TestState <: AbstractState end
 struct TestPolicy <: AbstractPolicy end
 struct TestConfig <: AbstractConfig end
-struct TestSOW <: AbstractScenario end
+struct TestScenario <: AbstractScenario end
 
 # Test types for "get_action interface" -> "custom get_action (state-dependent)"
 struct InventoryAction <: AbstractAction
@@ -18,12 +18,12 @@ struct InventoryState <: AbstractState
     level::Float64
 end
 
-struct DemandSOW <: AbstractScenario
+struct DemandScenario <: AbstractScenario
     demand::Float64
 end
 
 function SimOptDecisions.get_action(
-    policy::InventoryPolicy, state::InventoryState, scenario::DemandSOW, t::TimeStep
+    policy::InventoryPolicy, state::InventoryState, t::TimeStep, scenario::DemandScenario
 )
     if state.level < policy.reorder_point
         return InventoryAction(policy.order_size)
@@ -43,12 +43,12 @@ struct MinimalStatePolicy <: AbstractPolicy
     multiplier::Float64
 end
 
-struct InfoSOW <: AbstractScenario
+struct InfoScenario <: AbstractScenario
     base_value::Float64
 end
 
 function SimOptDecisions.get_action(
-    policy::MinimalStatePolicy, state::MinimalStateMarker, scenario::InfoSOW, t::TimeStep
+    policy::MinimalStatePolicy, state::MinimalStateMarker, t::TimeStep, scenario::InfoScenario
 )
     return MinimalStateAction(scenario.base_value * policy.multiplier * t.t)
 end
@@ -64,10 +64,10 @@ struct StaticElevationPolicy <: AbstractPolicy
     elevation_ft::Float64
 end
 
-struct FloodSOW <: AbstractScenario end
+struct FloodScenario <: AbstractScenario end
 
 function SimOptDecisions.get_action(
-    policy::StaticElevationPolicy, state::StaticStateMarker, scenario::FloodSOW, t::TimeStep
+    policy::StaticElevationPolicy, state::StaticStateMarker, t::TimeStep, scenario::FloodScenario
 )
     return ElevationAction(policy.elevation_ft)
 end
@@ -77,7 +77,7 @@ struct AnalyticalConfig <: AbstractConfig
     multiplier::Float64
 end
 
-struct AnalyticalSOW <: AbstractScenario
+struct AnalyticalScenario <: AbstractScenario
     value::Float64
 end
 
@@ -87,7 +87,7 @@ end
 
 function SimOptDecisions.simulate(
     config::AnalyticalConfig,
-    scenario::AnalyticalSOW,
+    scenario::AnalyticalScenario,
     policy::AnalyticalPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
@@ -112,11 +112,11 @@ struct CounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct EmptySOW <: AbstractScenario end
+struct EmptyScenario <: AbstractScenario end
 
 function SimOptDecisions.simulate(
     config::CounterConfig,
-    scenario::EmptySOW,
+    scenario::EmptyScenario,
     policy::IncrementPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
@@ -147,11 +147,11 @@ struct SimTSIncrementPolicy <: AbstractPolicy
 end
 
 struct SimTSCounterConfig <: AbstractConfig end
-struct SimTSEmptySOW <: AbstractScenario end
+struct SimTSEmptyScenario <: AbstractScenario end
 
 function SimOptDecisions.simulate(
     config::SimTSCounterConfig,
-    scenario::SimTSEmptySOW,
+    scenario::SimTSEmptyScenario,
     policy::SimTSIncrementPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
@@ -175,11 +175,11 @@ end
 
 struct TermPolicy <: AbstractPolicy end
 struct TermConfig <: AbstractConfig end
-struct TermSOW <: AbstractScenario end
+struct TermScenario <: AbstractScenario end
 
 function SimOptDecisions.simulate(
     config::TermConfig,
-    scenario::TermSOW,
+    scenario::TermScenario,
     policy::TermPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
@@ -202,7 +202,7 @@ end
 @testset "Simulation" begin
     @testset "Interface function errors" begin
         config = TestConfig()
-        scenario =TestSOW()
+        scenario = TestScenario()
         policy = TestPolicy()
         rng = Random.Xoshiro(42)
 
@@ -212,43 +212,43 @@ end
 
         # get_action should throw helpful error if not implemented
         ts = TimeStep(1, 1)
-        @test_throws ArgumentError get_action(policy, TestState(), scenario, ts)
+        @test_throws ArgumentError get_action(policy, TestState(), ts, scenario)
     end
 
     @testset "get_action interface" begin
         @testset "custom get_action (state-dependent)" begin
             policy = InventoryPolicy(10.0, 50.0)
-            scenario =DemandSOW(5.0)
+            scenario = DemandScenario(5.0)
             ts = TimeStep(1, 1)
 
             # Low inventory -> order
             low_state = InventoryState(5.0)
-            action_low = get_action(policy, low_state, scenario, ts)
+            action_low = get_action(policy, low_state, ts, scenario)
             @test action_low isa AbstractAction
             @test action_low.order == 50.0
 
             # High inventory -> no order
             high_state = InventoryState(15.0)
-            action_high = get_action(policy, high_state, scenario, ts)
+            action_high = get_action(policy, high_state, ts, scenario)
             @test action_high.order == 0.0
         end
 
         @testset "get_action with minimal state" begin
             policy = MinimalStatePolicy(2.0)
-            scenario =InfoSOW(10.0)
+            scenario = InfoScenario(10.0)
             ts = TimeStep(3, 3)
 
-            action = get_action(policy, MinimalStateMarker(), scenario, ts)
+            action = get_action(policy, MinimalStateMarker(), ts, scenario)
             @test action isa AbstractAction
             @test action.action_value == 60.0  # 10 * 2 * 3
         end
 
         @testset "get_action for static policy" begin
             policy = StaticElevationPolicy(8.0)
-            scenario =FloodSOW()
+            scenario = FloodScenario()
             ts = TimeStep(1, 1)
 
-            action = get_action(policy, StaticStateMarker(), scenario, ts)
+            action = get_action(policy, StaticStateMarker(), ts, scenario)
             @test action isa AbstractAction
             @test action.elevation == 8.0
         end
@@ -256,7 +256,7 @@ end
 
     @testset "Direct simulate (non-time-stepped)" begin
         config = AnalyticalConfig(2.0)
-        scenario =AnalyticalSOW(3.0)
+        scenario = AnalyticalScenario(3.0)
         policy = AnalyticalPolicy(4.0)
 
         result = simulate(config, scenario, policy, Random.Xoshiro(42))
@@ -266,7 +266,7 @@ end
     @testset "Time-stepped simulation (simple for loop)" begin
         # Run simulation
         config = CounterConfig(10)
-        scenario =EmptySOW()
+        scenario = EmptyScenario()
         policy = IncrementPolicy(5)
 
         result = simulate(config, scenario, policy, Random.Xoshiro(42))
@@ -290,7 +290,7 @@ end
 
     @testset "Type stability" begin
         config = SimTSCounterConfig()
-        scenario =SimTSEmptySOW()
+        scenario = SimTSEmptyScenario()
         policy = SimTSIncrementPolicy(1.0)
         rng = Random.Xoshiro(42)
 
@@ -304,7 +304,7 @@ end
 
     @testset "Early termination" begin
         config = TermConfig()
-        scenario =TermSOW()
+        scenario = TermScenario()
         policy = TermPolicy()
 
         result = simulate(config, scenario, policy, Random.Xoshiro(42))

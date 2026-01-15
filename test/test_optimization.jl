@@ -9,14 +9,14 @@ struct OptCounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct OptEmptySOW <: AbstractScenario end
+struct OptEmptyScenario <: AbstractScenario end
 
-function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptySOW, ::AbstractRNG)
+function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptyScenario, ::AbstractRNG)
     return 0.0  # state is just a Float64 counter
 end
 
 function SimOptDecisions.get_action(
-    ::OptCounterPolicy, ::Float64, ::OptEmptySOW, ::TimeStep
+    ::OptCounterPolicy, ::Float64, ::TimeStep, ::OptEmptyScenario
 )
     return OptCounterAction()
 end
@@ -24,22 +24,23 @@ end
 function SimOptDecisions.run_timestep(
     state::Float64,
     ::OptCounterAction,
-    ::OptEmptySOW,
-    ::OptCounterConfig,
     ::TimeStep,
+    ::OptCounterConfig,
+    ::OptEmptyScenario,
     ::AbstractRNG,
 )
-    return (state + 1.0, state)  # increment state, record old value
+    new_state = state + 1.0
+    return (new_state, new_state)  # increment state, record new value for compute_outcome
 end
 
-function SimOptDecisions.time_axis(config::OptCounterConfig, ::OptEmptySOW)
+function SimOptDecisions.time_axis(config::OptCounterConfig, ::OptEmptyScenario)
     return 1:config.n_steps
 end
 
 function SimOptDecisions.compute_outcome(
-    final_state::Float64, ::Vector, config::OptCounterConfig, ::OptEmptySOW
+    step_records::Vector, config::OptCounterConfig, ::OptEmptyScenario
 )
-    return (final_value=final_state,)
+    return (final_value=step_records[end],)
 end
 
 SimOptDecisions.param_bounds(::Type{OptCounterPolicy}) = [(0.0, 10.0)]
@@ -57,14 +58,14 @@ struct EvalCounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct EvalEmptySOW <: AbstractScenario end
+struct EvalEmptyScenario <: AbstractScenario end
 
-function SimOptDecisions.initialize(::EvalCounterConfig, ::EvalEmptySOW, ::AbstractRNG)
+function SimOptDecisions.initialize(::EvalCounterConfig, ::EvalEmptyScenario, ::AbstractRNG)
     return 0.0
 end
 
 function SimOptDecisions.get_action(
-    policy::EvalCounterPolicy, ::Float64, ::EvalEmptySOW, ::TimeStep
+    policy::EvalCounterPolicy, ::Float64, ::TimeStep, ::EvalEmptyScenario
 )
     return EvalCounterAction()
 end
@@ -72,29 +73,30 @@ end
 function SimOptDecisions.run_timestep(
     state::Float64,
     ::EvalCounterAction,
-    ::EvalEmptySOW,
-    ::EvalCounterConfig,
     ::TimeStep,
+    ::EvalCounterConfig,
+    ::EvalEmptyScenario,
     ::AbstractRNG,
 )
-    return (state + 5.0, state)  # Fixed increment of 5.0 for this test
+    new_state = state + 5.0
+    return (new_state, new_state)  # Fixed increment of 5.0, record new value for compute_outcome
 end
 
-function SimOptDecisions.time_axis(config::EvalCounterConfig, ::EvalEmptySOW)
+function SimOptDecisions.time_axis(config::EvalCounterConfig, ::EvalEmptyScenario)
     return 1:config.n_steps
 end
 
 function SimOptDecisions.compute_outcome(
-    final_state::Float64, ::Vector, config::EvalCounterConfig, ::EvalEmptySOW
+    step_records::Vector, config::EvalCounterConfig, ::EvalEmptyScenario
 )
-    return (final_value=final_state,)
+    return (final_value=step_records[end],)
 end
 
 SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
 EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
 
 # Test types for "Batch selection"
-struct BatchTestSOW <: AbstractScenario
+struct BatchTestScenario <: AbstractScenario
     id::Int
 end
 
@@ -111,7 +113,7 @@ end
     @testset "OptimizationProblem construction" begin
         # Create optimization problem
         config = OptCounterConfig(10)
-        scenarios = [OptEmptySOW() for _ in 1:5]
+        scenarios = [OptEmptyScenario() for _ in 1:5]
 
         function metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
@@ -176,7 +178,7 @@ end
 
     @testset "evaluate_policy" begin
         config = EvalCounterConfig(10)
-        scenarios = [EvalEmptySOW() for _ in 1:5]
+        scenarios = [EvalEmptyScenario() for _ in 1:5]
 
         function eval_metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
@@ -215,7 +217,7 @@ end
     end
 
     @testset "Batch selection" begin
-        scenarios = [BatchTestSOW(i) for i in 1:100]
+        scenarios = [BatchTestScenario(i) for i in 1:100]
         rng = Random.Xoshiro(42)
 
         # FullBatch returns all
@@ -234,7 +236,7 @@ end
         @test all(s -> s in scenarios, frac_batch)
 
         # FractionBatch minimum is 1
-        tiny_scenarios = [BatchTestSOW(1)]
+        tiny_scenarios = [BatchTestScenario(1)]
         tiny_batch = SimOptDecisions._select_batch(tiny_scenarios, FractionBatch(0.1), rng)
         @test length(tiny_batch) >= 1
     end

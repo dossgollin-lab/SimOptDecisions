@@ -29,7 +29,7 @@ function SimOptDecisions.initialize(::TSCounterConfig, ::TSCounterSOW, ::Abstrac
 end
 
 function SimOptDecisions.get_action(
-    policy::TSIncrementPolicy, state::TSCounterState, scenario::TSCounterSOW, t::TimeStep
+    policy::TSIncrementPolicy, state::TSCounterState, t::TimeStep, scenario::TSCounterSOW
 )
     return TSCounterAction(policy.increment)
 end
@@ -37,13 +37,14 @@ end
 function SimOptDecisions.run_timestep(
     state::TSCounterState,
     action::TSCounterAction,
-    scenario::TSCounterSOW,
-    config::TSCounterConfig,
     t::TimeStep,
+    config::TSCounterConfig,
+    scenario::TSCounterSOW,
     ::AbstractRNG,
 )
     new_state = TSCounterState(state.value + action.increment)
-    return (new_state, action.increment)  # step_record is the increment
+    # Include final_value in step_record since compute_outcome no longer gets final_state
+    return (new_state, (increment=action.increment, final_value=new_state.value))
 end
 
 function SimOptDecisions.time_axis(config::TSCounterConfig, ::TSCounterSOW)
@@ -51,12 +52,12 @@ function SimOptDecisions.time_axis(config::TSCounterConfig, ::TSCounterSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    final_state::TSCounterState,
     step_records::Vector,
     config::TSCounterConfig,
     scenario::TSCounterSOW,
 )
-    return (final_value=final_state.value, total_increments=sum(step_records))
+    # Access final state from last step_record
+    return (final_value=step_records[end].final_value, total_increments=sum(r.increment for r in step_records))
 end
 
 # Test types for "Callbacks" -> "Minimal state model"
@@ -84,7 +85,7 @@ function SimOptDecisions.initialize(::TSMinimalConfig, ::TSMinimalSOW, ::Abstrac
 end
 
 function SimOptDecisions.get_action(
-    policy::TSMinimalPolicy, state::TSMinimalState, scenario::TSMinimalSOW, t::TimeStep
+    policy::TSMinimalPolicy, state::TSMinimalState, t::TimeStep, scenario::TSMinimalSOW
 )
     return TSMinimalAction(policy.base * scenario.multiplier * t.t)
 end
@@ -92,9 +93,9 @@ end
 function SimOptDecisions.run_timestep(
     state::TSMinimalState,
     action::TSMinimalAction,
-    scenario::TSMinimalSOW,
-    config::TSMinimalConfig,
     t::TimeStep,
+    config::TSMinimalConfig,
+    scenario::TSMinimalSOW,
     ::AbstractRNG,
 )
     return (state, action.multiplied_value)
@@ -105,7 +106,7 @@ function SimOptDecisions.time_axis(config::TSMinimalConfig, ::TSMinimalSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    ::TSMinimalState, step_records::Vector, config::TSMinimalConfig, scenario::TSMinimalSOW
+    step_records::Vector, config::TSMinimalConfig, scenario::TSMinimalSOW
 )
     return (total=sum(step_records),)
 end
@@ -129,16 +130,16 @@ function SimOptDecisions.initialize(::TSNTConfig, ::TSNTsow, ::AbstractRNG)
     return TSNTState()
 end
 
-function SimOptDecisions.get_action(::TSNTPolicy, ::TSNTState, ::TSNTsow, ::TimeStep)
+function SimOptDecisions.get_action(::TSNTPolicy, ::TSNTState, ::TimeStep, ::TSNTsow)
     return TSNTAction()
 end
 
 function SimOptDecisions.run_timestep(
     state::TSNTState,
     action::TSNTAction,
-    scenario::TSNTsow,
-    config::TSNTConfig,
     t::TimeStep,
+    config::TSNTConfig,
+    scenario::TSNTsow,
     ::AbstractRNG,
 )
     damage = scenario.damage_rate * t.t
@@ -151,7 +152,7 @@ function SimOptDecisions.time_axis(config::TSNTConfig, ::TSNTsow)
 end
 
 function SimOptDecisions.compute_outcome(
-    ::TSNTState, step_records::Vector, config::TSNTConfig, scenario::TSNTsow
+    step_records::Vector, config::TSNTConfig, scenario::TSNTsow
 )
     total_damage = sum(o.damage for o in step_records)
     total_cost = sum(o.cost for o in step_records)
@@ -180,7 +181,7 @@ struct TSActionPolicy <: AbstractPolicy
 end
 
 function SimOptDecisions.get_action(
-    policy::TSActionPolicy, state::TSActionState, scenario::TSActionSOW, t::TimeStep
+    policy::TSActionPolicy, state::TSActionState, t::TimeStep, scenario::TSActionSOW
 )
     return TSActionAction(state.level * policy.invest_fraction)
 end
@@ -192,9 +193,9 @@ end
 function SimOptDecisions.run_timestep(
     state::TSActionState,
     action::TSActionAction,
-    scenario::TSActionSOW,
-    config::TSActionConfig,
     t::TimeStep,
+    config::TSActionConfig,
+    scenario::TSActionSOW,
     ::AbstractRNG,
 )
     # Action is passed by framework, not computed here
@@ -203,7 +204,8 @@ function SimOptDecisions.run_timestep(
     new_level = state.level + growth
     new_state = TSActionState(new_level)
 
-    return (new_state, growth)  # step_record is growth this step
+    # Include final_level in step_record since compute_outcome no longer gets final_state
+    return (new_state, (growth=growth, final_level=new_level))
 end
 
 function SimOptDecisions.time_axis(config::TSActionConfig, ::TSActionSOW)
@@ -211,12 +213,11 @@ function SimOptDecisions.time_axis(config::TSActionConfig, ::TSActionSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    final_state::TSActionState,
     step_records::Vector,
     config::TSActionConfig,
     scenario::TSActionSOW,
 )
-    return (final_level=final_state.level, total_growth=sum(step_records))
+    return (final_level=step_records[end].final_level, total_growth=sum(r.growth for r in step_records))
 end
 
 # Test types for "Callbacks" -> "Recording support"
@@ -238,7 +239,7 @@ function SimOptDecisions.initialize(::TSRecordConfig, ::TSRecordSOW, ::AbstractR
 end
 
 function SimOptDecisions.get_action(
-    ::TSRecordPolicy, ::TSRecordState, ::TSRecordSOW, ::TimeStep
+    ::TSRecordPolicy, ::TSRecordState, ::TimeStep, ::TSRecordSOW
 )
     return TSRecordAction()
 end
@@ -246,13 +247,14 @@ end
 function SimOptDecisions.run_timestep(
     state::TSRecordState,
     action::TSRecordAction,
-    scenario::TSRecordSOW,
-    config::TSRecordConfig,
     t::TimeStep,
+    config::TSRecordConfig,
+    scenario::TSRecordSOW,
     ::AbstractRNG,
 )
     new_state = TSRecordState(state.value + 1.0)
-    return (new_state, state.value)
+    # Include final_value in step_record
+    return (new_state, (prev_value=state.value, final_value=new_state.value))
 end
 
 function SimOptDecisions.time_axis(config::TSRecordConfig, ::TSRecordSOW)
@@ -260,12 +262,11 @@ function SimOptDecisions.time_axis(config::TSRecordConfig, ::TSRecordSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    final_state::TSRecordState,
     step_records::Vector,
     config::TSRecordConfig,
     scenario::TSRecordSOW,
 )
-    return (final_value=final_state.value,)
+    return (final_value=step_records[end].final_value,)
 end
 
 # Test types for "Callbacks" -> "Type stability"
@@ -283,19 +284,20 @@ function SimOptDecisions.initialize(::TSTypeConfig, ::TSTypeSOW, ::AbstractRNG)
     return TSTypeState(0.0)
 end
 
-function SimOptDecisions.get_action(::TSTypePolicy, ::TSTypeState, ::TSTypeSOW, ::TimeStep)
+function SimOptDecisions.get_action(::TSTypePolicy, ::TSTypeState, ::TimeStep, ::TSTypeSOW)
     return TSTypeAction()
 end
 
 function SimOptDecisions.run_timestep(
     state::TSTypeState,
     action::TSTypeAction,
-    scenario::TSTypeSOW,
-    config::TSTypeConfig,
     t::TimeStep,
+    config::TSTypeConfig,
+    scenario::TSTypeSOW,
     ::AbstractRNG,
 )
-    return (TSTypeState(state.value + 1.0), state.value)
+    new_state = TSTypeState(state.value + 1.0)
+    return (new_state, (prev_value=state.value, final_value=new_state.value))
 end
 
 function SimOptDecisions.time_axis(::TSTypeConfig, ::TSTypeSOW)
@@ -303,12 +305,12 @@ function SimOptDecisions.time_axis(::TSTypeConfig, ::TSTypeSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    final_state::TSTypeState, step_records::Vector{Float64}, ::TSTypeConfig, ::TSTypeSOW
+    step_records::Vector, ::TSTypeConfig, ::TSTypeSOW
 )
-    return (final=final_state.value, sum=sum(step_records))
+    return (final=step_records[end].final_value, sum=sum(r.prev_value for r in step_records))
 end
 
-# Test types for "Callbacks" -> "SOW-dependent compute_outcome"
+# Test types for "Callbacks" -> "Scenario-dependent compute_outcome"
 struct TSDiscountAction <: AbstractAction end
 struct TSDiscountState <: AbstractState end
 
@@ -327,7 +329,7 @@ function SimOptDecisions.initialize(::TSDiscountConfig, ::TSDiscountSOW, ::Abstr
 end
 
 function SimOptDecisions.get_action(
-    ::TSDiscountPolicy, ::TSDiscountState, ::TSDiscountSOW, ::TimeStep
+    ::TSDiscountPolicy, ::TSDiscountState, ::TimeStep, ::TSDiscountSOW
 )
     return TSDiscountAction()
 end
@@ -335,9 +337,9 @@ end
 function SimOptDecisions.run_timestep(
     state::TSDiscountState,
     action::TSDiscountAction,
-    scenario::TSDiscountSOW,
-    config::TSDiscountConfig,
     t::TimeStep,
+    config::TSDiscountConfig,
+    scenario::TSDiscountSOW,
     ::AbstractRNG,
 )
     damage = 100.0  # Constant damage each year
@@ -349,9 +351,9 @@ function SimOptDecisions.time_axis(config::TSDiscountConfig, ::TSDiscountSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    ::TSDiscountState, damages::Vector, config::TSDiscountConfig, scenario::TSDiscountSOW
+    damages::Vector, config::TSDiscountConfig, scenario::TSDiscountSOW
 )
-    # Discount using SOW's discount rate
+    # Discount using scenario's discount rate
     npv = sum(
         damages[t] * SimOptDecisions.Utils.discount_factor(scenario.discount_rate, t) for
         t in eachindex(damages)
@@ -378,7 +380,7 @@ function SimOptDecisions.initialize(::TSConnectConfig, ::TSConnectSOW, ::Abstrac
 end
 
 function SimOptDecisions.get_action(
-    ::TSConnectPolicy, ::TSConnectState, ::TSConnectSOW, ::TimeStep
+    ::TSConnectPolicy, ::TSConnectState, ::TimeStep, ::TSConnectSOW
 )
     return TSConnectAction()
 end
@@ -386,12 +388,13 @@ end
 function SimOptDecisions.run_timestep(
     state::TSConnectState,
     action::TSConnectAction,
-    scenario::TSConnectSOW,
-    config::TSConnectConfig,
     t::TimeStep,
+    config::TSConnectConfig,
+    scenario::TSConnectSOW,
     ::AbstractRNG,
 )
-    return (TSConnectState(state.count + 1), state.count)
+    new_state = TSConnectState(state.count + 1)
+    return (new_state, (prev_count=state.count, final_count=new_state.count))
 end
 
 function SimOptDecisions.time_axis(config::TSConnectConfig, ::TSConnectSOW)
@@ -399,12 +402,11 @@ function SimOptDecisions.time_axis(config::TSConnectConfig, ::TSConnectSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    final_state::TSConnectState,
     step_records::Vector,
     config::TSConnectConfig,
     scenario::TSConnectSOW,
 )
-    return (final_count=final_state.count,)
+    return (final_count=step_records[end].final_count,)
 end
 
 # ============================================================================
@@ -423,7 +425,7 @@ end
 
         # run_timestep should throw ArgumentError if not implemented (via interface_not_implemented)
         @test_throws ArgumentError SimOptDecisions.run_timestep(
-            state, action, scenario, config, ts, rng
+            state, action, ts, config, scenario, rng
         )
 
         # time_axis should throw ArgumentError if not implemented (via interface_not_implemented)
@@ -433,7 +435,7 @@ end
         @test_throws ArgumentError SimOptDecisions.initialize(config, scenario, rng)
 
         # compute_outcome should throw ArgumentError if not implemented
-        @test_throws ArgumentError SimOptDecisions.compute_outcome(state, [], config, scenario)
+        @test_throws ArgumentError SimOptDecisions.compute_outcome([], config, scenario)
     end
 
     @testset "Stateful counter model" begin

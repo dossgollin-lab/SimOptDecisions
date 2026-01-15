@@ -8,7 +8,7 @@ struct ExploreTestConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct ExploreTestSOW{T<:AbstractFloat} <: AbstractScenario
+struct ExploreTestScenario{T<:AbstractFloat} <: AbstractScenario
     x::ContinuousParameter{T}
     scenario::CategoricalParameter{Symbol}
 end
@@ -29,16 +29,16 @@ struct ExploreTestOutcome{T<:AbstractFloat}
 end
 
 # Implement callbacks
-SimOptDecisions.time_axis(config::ExploreTestConfig, scenario::ExploreTestSOW) = 1:config.n_steps
+SimOptDecisions.time_axis(config::ExploreTestConfig, scenario::ExploreTestScenario) = 1:config.n_steps
 
 function SimOptDecisions.initialize(
-    config::ExploreTestConfig, scenario::ExploreTestSOW, rng::AbstractRNG
+    config::ExploreTestConfig, scenario::ExploreTestScenario, rng::AbstractRNG
 )
     ExploreTestState(0.0)
 end
 
 function SimOptDecisions.get_action(
-    policy::ExploreTestPolicy, state::ExploreTestState, scenario::ExploreTestSOW, t::TimeStep
+    policy::ExploreTestPolicy, state::ExploreTestState, t::TimeStep, scenario::ExploreTestScenario
 )
     ExploreTestAction()
 end
@@ -46,9 +46,9 @@ end
 function SimOptDecisions.run_timestep(
     state::ExploreTestState,
     action::ExploreTestAction,
-    scenario::ExploreTestSOW,
-    config::ExploreTestConfig,
     t::TimeStep,
+    config::ExploreTestConfig,
+    scenario::ExploreTestScenario,
     rng::AbstractRNG,
 )
     new_val = state.value + scenario.x.value
@@ -56,10 +56,10 @@ function SimOptDecisions.run_timestep(
 end
 
 function SimOptDecisions.compute_outcome(
-    state::ExploreTestState, step_records, config::ExploreTestConfig, scenario::ExploreTestSOW
+    step_records, config::ExploreTestConfig, scenario::ExploreTestScenario
 )
     ExploreTestOutcome(
-        ContinuousParameter(state.value), DiscreteParameter(length(step_records))
+        ContinuousParameter(step_records[end].step_value), DiscreteParameter(length(step_records))
     )
 end
 
@@ -69,7 +69,7 @@ end
 
 @testset "Exploration" begin
     @testset "Flattening" begin
-        scenario = ExploreTestSOW(
+        scenario = ExploreTestScenario(
             ContinuousParameter(1.5), CategoricalParameter(:high, [:low, :high])
         )
 
@@ -114,10 +114,10 @@ end
     @testset "explore() basic" begin
         config = ExploreTestConfig(3)
         scenarios = [
-            ExploreTestSOW(
+            ExploreTestScenario(
                 ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
             ),
-            ExploreTestSOW(
+            ExploreTestScenario(
                 ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])
             ),
         ]
@@ -154,7 +154,7 @@ end
     @testset "Tables.jl compatibility" begin
         config = ExploreTestConfig(3)
         scenarios = [
-            ExploreTestSOW(
+            ExploreTestScenario(
                 ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
             ),
         ]
@@ -177,10 +177,10 @@ end
     @testset "ExplorationResult accessors" begin
         config = ExploreTestConfig(3)
         scenarios = [
-            ExploreTestSOW(
+            ExploreTestScenario(
                 ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
             ),
-            ExploreTestSOW(
+            ExploreTestScenario(
                 ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])
             ),
         ]
@@ -229,7 +229,7 @@ end
     @testset "Single policy convenience" begin
         config = ExploreTestConfig(3)
         scenarios = [
-            ExploreTestSOW(
+            ExploreTestScenario(
                 ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
             ),
         ]
@@ -241,14 +241,14 @@ end
 
     @testset "Empty inputs throw" begin
         config = ExploreTestConfig(3)
-        scenarios = ExploreTestSOW{Float64}[]
+        scenarios = ExploreTestScenario{Float64}[]
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
         @test_throws ArgumentError explore(config, scenarios, policies; progress=false)
         @test_throws ArgumentError explore(
             config,
             [
-                ExploreTestSOW(
+                ExploreTestScenario(
                     ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
                 ),
             ],
@@ -260,7 +260,7 @@ end
     @testset "Bounds checking" begin
         config = ExploreTestConfig(3)
         scenarios = [
-            ExploreTestSOW(
+            ExploreTestScenario(
                 ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
             ),
         ]
