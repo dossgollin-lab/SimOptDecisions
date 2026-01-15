@@ -243,4 +243,4 @@ best_policy = OptimizablePolicy(best_params)
 
 ## Next Steps
 
-→ [House Elevation Example](../examples/house_elevation.qmd) — complete worked example showing multi-objective optimization, uncertainty handling, and visualization
+→ [Tutorial](../tutorial/01-the-problem.qmd) — Learn SimOptDecisions through a complete worked example (house elevation under flood risk)

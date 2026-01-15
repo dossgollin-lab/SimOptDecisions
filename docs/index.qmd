@@ -67,6 +67,6 @@ Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
 
 ## Next Steps
 
-→ [Getting Started](guide/getting-started.qmd) — checklist of what to implement + minimal working example
+→ [Tutorial](tutorial/01-the-problem.qmd) — Learn SimOptDecisions through a complete worked example (house elevation under flood risk)
 
-→ [House Elevation Example](examples/house_elevation.qmd) — complete worked example with flood risk optimization
+→ [Quick Reference](guide/getting-started.qmd) — Checklist of types and callbacks to implement

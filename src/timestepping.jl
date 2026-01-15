@@ -125,7 +125,7 @@ Aggregate step records into final outcome. Required callback.
 function finalize end
 
 function finalize(
-    final_state::AbstractState, step_records::Vector, config::AbstractConfig, ::AbstractSOW
+    final_state::AbstractState, step_records, config::AbstractConfig, ::AbstractSOW
 )
     interface_not_implemented(
         :finalize,

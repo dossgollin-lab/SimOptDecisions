@@ -1,0 +1,361 @@
+---
+title: "6. Policy Search"
+subtitle: "Multi-objective optimization to find the best trade-offs"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+
+Instead of manually searching over elevation levels, we can use optimization to automatically find the best policies.
+When objectives conflict (cost vs. damage), we get a **Pareto front** of optimal trade-offs.
+
+## Setup
+
+```{julia}
+#| output: false
+using SimOptDecisions
+using Distributions
+using Random
+using CairoMakie
+using Statistics
+
+# === All type definitions (self-contained) ===
+
+Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int = 70
+    gauge_height_above_ref::T = 0.0
+    house_height_above_ref::T = 4.0
+    house_area_ft2::T = 1500.0
+    house_value::T = 200_000.0
+end
+
+struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
+    gev_μ::T
+    gev_σ::T
+    gev_ξ::T
+    dd_threshold::T
+    dd_saturation::T
+    discount_rate::T
+end
+
+function sample_sow(rng::AbstractRNG)
+    gev_μ = rand(rng, Normal(2.8, 0.3))
+    gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
+    gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
+    dd_threshold = rand(rng, Normal(0.0, 0.25))
+    dd_saturation = rand(rng, Normal(8.0, 0.5))
+    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
+    return HouseElevationSOW(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
+end
+
+struct SeaLevelState{T<:AbstractFloat} <: AbstractState
+    msl::T
+end
+
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T
+end
+
+struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
+    elevation_ft::T
+end
+
+# Required for optimization
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
+SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
+SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
+
+function SimOptDecisions.get_action(
+    policy::ElevationPolicy, state::SeaLevelState, sow::HouseElevationSOW, t::TimeStep
+)
+    return ElevationAction(policy.elevation_ft)
+end
+
+function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
+    depth <= threshold && return zero(T)
+    depth >= saturation && return one(T)
+    midpoint = (threshold + saturation) / 2
+    steepness = T(6) / (saturation - threshold)
+    return one(T) / (one(T) + exp(-steepness * (depth - midpoint)))
+end
+
+function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
+    Δh <= 0 && return 0.0
+    base_cost = 20_745.0
+    thresholds = [0.0, 5.0, 8.5, 12.0, 14.0]
+    rates = [80.36, 82.5, 86.25, 103.75, 113.75]
+    rate = rates[1]
+    for i in 1:(length(thresholds) - 1)
+        if Δh <= thresholds[i + 1]
+            t = (Δh - thresholds[i]) / (thresholds[i + 1] - thresholds[i])
+            rate = rates[i] + t * (rates[i + 1] - rates[i])
+            break
+        end
+        rate = rates[i + 1]
+    end
+    return (base_cost + area_ft2 * rate) / house_value
+end
+elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
+
+function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG)
+    return SeaLevelState(0.0)
+end
+
+function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
+    return 1:(config.horizon)
+end
+
+function SimOptDecisions.run_timestep(
+    state::SeaLevelState, action::ElevationAction, sow::HouseElevationSOW,
+    config::HouseElevationConfig, t::TimeStep, rng::AbstractRNG
+)
+    construction_cost = SimOptDecisions.Utils.is_first(t) ?
+        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
+
+    surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
+    surge_at_gauge = rand(rng, surge_dist)
+    water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
+    house_floor_level = config.house_height_above_ref + action.elevation_ft
+    flood_depth_at_house = water_level - house_floor_level
+    damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
+
+    return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
+end
+
+function SimOptDecisions.finalize(
+    final_state::SeaLevelState, step_records::Vector,
+    config::HouseElevationConfig, sow::HouseElevationSOW
+)
+    construction_cost = step_records[1].construction_cost
+    npv_damages = sum(
+        step_records[t].damage_fraction * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t)
+        for t in eachindex(step_records)
+    )
+    return (construction_cost=construction_cost, npv_damages=npv_damages)
+end
+```
+
+## Outcomes vs Metrics
+
+Before optimization, understand two key concepts:
+
+- **Outcome**: Result of a *single* simulation (one policy × one SOW)
+- **Metric**: *Aggregated* statistic across many SOWs for a given policy
+
+The optimizer evaluates policies by computing metrics across the SOW ensemble.
+
+```{julia}
+#| output: false
+"""
+Compute metrics from outcomes across many SOWs.
+Returns a NamedTuple that the optimizer can reference.
+"""
+function calculate_metrics(outcomes)
+    damages = [o.npv_damages for o in outcomes]
+    construction = outcomes[1].construction_cost
+
+    return (
+        construction_cost=construction,
+        expected_damage=mean(damages),
+        cvar_95=mean(sort(damages)[(end - max(1, length(damages) ÷ 20)):end]),
+        worst_case=maximum(damages),
+    )
+end
+```
+
+## Setting Up the Problem
+
+```{julia}
+config = HouseElevationConfig()
+n_sows = 1000
+rng = Random.Xoshiro(42)
+sows = [sample_sow(rng) for _ in 1:n_sows]
+
+println("Config: $(config.horizon)-year horizon, \$$(Int(config.house_value)) house")
+println("SOWs: $(n_sows) sampled futures")
+```
+
+### Multi-Objective Problem
+
+We trade off **construction cost** against **expected damage**—conflicting objectives:
+
+```{julia}
+import Metaheuristics  # loads the optimization extension
+
+# Optimize over [3, 14] ft (continuous range)
+# We'll add 0 ft separately to handle the discrete gap
+prob = OptimizationProblem(
+    config,
+    sows,
+    ElevationPolicy,
+    calculate_metrics,
+    [minimize(:construction_cost), minimize(:expected_damage)];
+    bounds=[(3.0, 14.0)],  # custom bounds for smooth optimization
+)
+```
+
+::: {.callout-tip}
+## Handling Discrete Choices
+
+Real elevation choices are discrete: you either don't elevate (0 ft) or elevate to at least 3 ft.
+Rather than encoding this discontinuity in the policy (which confuses the optimizer), we:
+
+1. **Optimize** over the continuous [3, 14] range
+2. **Add** the 0 ft baseline using `merge_into_pareto!`
+
+This gives the optimizer a smooth landscape while including discrete alternatives.
+:::
+
+## Running Optimization
+
+```{julia}
+# NSGA-II is a popular multi-objective evolutionary algorithm
+backend = MetaheuristicsBackend(;
+    algorithm=:NSGA2,
+    max_iterations=100,
+    population_size=30,
+    parallel=true
+)
+```
+
+```{julia}
+opt_result = SimOptDecisions.optimize(prob, backend)
+
+# Add the "no elevation" baseline to the Pareto front
+merge_into_pareto!(opt_result, prob, ElevationPolicy(0.0))
+
+println("Found $(length(opt_result.pareto_params)) Pareto-optimal solutions")
+```
+
+## Understanding the Pareto Front
+
+A solution is **Pareto-optimal** if you can't improve one objective without worsening another.
+The Pareto front shows the efficient frontier of trade-offs.
+
+```{julia}
+#| label: fig-pareto
+#| fig-cap: "Pareto front showing trade-off between construction cost and expected damage"
+#| code-fold: true
+let
+    fig = Figure(; size=(600, 600))
+    ax = Axis(fig[1, 1];
+        xlabel="Construction cost (fraction of house value)",
+        ylabel="Expected NPV damages (fraction of house value)",
+        title="Pareto Front: Cost vs Damage Trade-off",
+        aspect=1)
+
+    pareto_pts = collect(SimOptDecisions.pareto_front(opt_result))
+
+    if !isempty(pareto_pts)
+        construction = [obj[1] for (_, obj) in pareto_pts]
+        expected = [obj[2] for (_, obj) in pareto_pts]
+        elevations = [round(p[1]; digits=1) for (p, _) in pareto_pts]
+
+        # Iso-cost lines (x + y = constant)
+        all_costs = construction .+ expected
+        cost_range = range(minimum(all_costs) * 0.8, maximum(all_costs) * 1.1; length=6)
+        for total_cost in cost_range
+            lines!(ax, [0.0, total_cost], [total_cost, 0.0];
+                color=(:gray, 0.3), linewidth=0.5, linestyle=:dash)
+        end
+
+        scatter!(ax, construction, expected; markersize=12, color=:steelblue)
+
+        # Label selected points
+        labeled = Set{Float64}()
+        for (i, elev) in enumerate(elevations)
+            if all(abs(elev - l) > 1.5 for l in labeled)
+                text!(ax, construction[i], expected[i];
+                    text="$(round(Int, elev)) ft", align=(:left, :bottom), offset=(5, 5))
+                push!(labeled, elev)
+            end
+        end
+    end
+
+    fig
+end
+```
+
+### Interpreting the Results
+
+The diagonal lines show **iso-cost contours** (total cost = construction + damage).
+Moving along the Pareto front:
+
+- **Lower left**: Infeasible—you can't get low cost and low damage
+- **Upper left**: Low construction, high damage (0 ft)
+- **Lower right**: High construction, low damage (14 ft)
+- **The curve**: Efficient trade-offs between extremes
+
+```{julia}
+println("Pareto-optimal solutions:")
+for (params, objectives) in pareto_front(opt_result)
+    elev = round(params[1], digits=1)
+    cost = round(objectives[1], digits=3)
+    damage = round(objectives[2], digits=3)
+    total = round(objectives[1] + objectives[2], digits=3)
+    println("  $(elev) ft → cost=$cost, damage=$damage (total=$total)")
+end
+```
+
+## Selecting from the Pareto Front
+
+The optimizer finds the efficient frontier, but **choosing a point is a decision**, not an optimization.
+Different stakeholders might choose differently:
+
+| Stakeholder | Preference | Likely Choice |
+|-------------|------------|---------------|
+| Risk-averse homeowner | Minimize worst case | Higher elevation |
+| Budget-constrained | Minimize upfront cost | Lower elevation |
+| Expected-value optimizer | Minimize total expected cost | Middle of curve |
+
+```{julia}
+# Find the solution with minimum total expected cost
+pareto_pts = collect(pareto_front(opt_result))
+total_costs = [obj[1] + obj[2] for (_, obj) in pareto_pts]
+best_idx = argmin(total_costs)
+best_params, best_obj = pareto_pts[best_idx]
+
+println("Minimum expected total cost:")
+println("  Elevation: $(round(best_params[1], digits=1)) ft")
+println("  Construction: $(round(best_obj[1], digits=3))")
+println("  Expected damage: $(round(best_obj[2], digits=3))")
+println("  Total: $(round(best_obj[1] + best_obj[2], digits=3))")
+```
+
+## Summary
+
+We've covered the complete SimOptDecisions workflow:
+
+1. **Define the problem** with types (Config, SOW, State, Action, Policy)
+2. **Implement physics** (depth-damage, elevation cost)
+3. **Write callbacks** (initialize, time_axis, get_action, run_timestep, finalize)
+4. **Run simulations** with `simulate()`
+5. **Evaluate policies** across many SOWs
+6. **Explore systematically** with grid search or `explore()`
+7. **Optimize** with multi-objective algorithms to find Pareto-optimal solutions
+
+## Key Takeaways
+
+1. **Structure your uncertainty** in the SOW type
+2. **Separate physics from framework** in standalone functions
+3. **Validate with exploration** before optimizing
+4. **Use multi-objective optimization** when objectives conflict
+5. **The Pareto front shows trade-offs**; choosing a point requires judgment
+
+## Discussion
+
+This model makes simplifying assumptions worth noting:
+
+- **Stationary climate**: Storm distribution doesn't change over time
+- **Constant sea level**: No sea-level rise (though the state structure supports it)
+- **Independent damages**: No cumulative effects year-to-year
+- **Single decision**: Elevation chosen once, not adaptively
+
+For real applications, you'd want to relax these assumptions. The framework supports time-varying SOWs, evolving state, and more complex policies.
+
+## Next Steps
+
+- See [Quick Reference](../guide/getting-started.qmd) for the types and callbacks checklist
+- See [Time Stepping](../reference/timestepping.qmd) for advanced time handling
+- See [Persistence](../reference/persistence.qmd) for saving/loading experiments
+- See [Validation](../reference/validation.qmd) for constraints and validation hooks

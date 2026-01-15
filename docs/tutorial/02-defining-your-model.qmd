@@ -1,0 +1,187 @@
+---
+title: "2. Defining Your Model"
+subtitle: "Types for configuration, uncertainty, state, actions, and policies"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+
+SimOptDecisions.jl uses Julia's type system to structure your model.
+You define five types that together describe your decision problem.
+
+## Setup
+
+```{julia}
+#| output: false
+using SimOptDecisions
+using Distributions
+using Random
+```
+
+## The Five Types
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| **Config** | Fixed parameters shared across all scenarios | House size, planning horizon |
+| **SOW** | Uncertain parameters (State of the World) | Storm intensity, discount rate |
+| **State** | Model state that evolves over time | Sea level |
+| **Action** | Decision at each timestep | Elevation height |
+| **Policy** | Rule that maps state to actions | "Elevate to X feet" |
+
+## Config: Fixed Parameters
+
+The config holds parameters that are **shared across all scenarios and policies**.
+These are fixed characteristics of the problem, not uncertain quantities.
+
+For house elevation, we use values from [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/2022-elevation-robustness): a 1500 ft² house worth \$200,000 with a 70-year planning horizon.
+
+```{julia}
+#| output: false
+Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int = 70                       # planning horizon (years)
+    gauge_height_above_ref::T = 0.0         # gauge zero above reference datum (ft)
+    house_height_above_ref::T = 4.0         # house floor above reference datum (ft)
+    house_area_ft2::T = 1500.0              # floor area in square feet
+    house_value::T = 200_000.0              # house value in dollars (not land)
+end
+```
+
+## SOW: State of the World
+
+Each SOW represents one possible future scenario.
+We model uncertainty in:
+
+1. **Storm surge distribution**: Annual maximum surge heights follow a Generalized Extreme Value (GEV) distribution
+2. **Depth-damage relationship**: How flood depth translates to damage
+3. **Discount rate**: The time value of money
+
+```{julia}
+#| output: false
+struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
+    # GEV parameters for annual max surge at the gauge
+    gev_μ::T  # location (ft)
+    gev_σ::T  # scale (ft)
+    gev_ξ::T  # shape (dimensionless)
+
+    # Depth-damage curve parameters (at the house)
+    dd_threshold::T   # depth below which no damage occurs (ft)
+    dd_saturation::T  # depth at which damage reaches 100% (ft)
+
+    # Economic parameters
+    discount_rate::T
+end
+```
+
+### Sampling SOWs
+
+We generate random SOWs by sampling from prior distributions on each parameter.
+This represents our uncertainty about the true values.
+
+```{julia}
+#| output: false
+function sample_sow(rng::AbstractRNG)
+    # GEV parameters for annual max water level
+    # Values are in feet above MHHW, based on Norfolk, VA data
+    gev_μ = rand(rng, Normal(2.8, 0.3))   # location: typical annual max
+    gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))  # scale
+    gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))  # shape
+
+    # Depth-damage curve parameters
+    dd_threshold = rand(rng, Normal(0.0, 0.25))
+    dd_saturation = rand(rng, Normal(8.0, 0.5))
+
+    # Discount rate: uncertain, ranging from ~1% to 7%
+    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
+
+    return HouseElevationSOW(
+        gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate
+    )
+end
+```
+
+::: {.callout-note}
+## Simplified Uncertainty Model
+
+This is intentionally simplified for pedagogical purposes.
+A real application would consider non-stationary extremes (climate change), spatial correlation, and more sophisticated uncertainty quantification.
+:::
+
+## State: Evolving Conditions
+
+We track **Mean Sea Level (MSL)** as state. While MSL is constant in this example, the state structure allows future extensions where MSL could increase due to sea-level rise.
+
+```{julia}
+#| output: false
+struct SeaLevelState{T<:AbstractFloat} <: AbstractState
+    msl::T  # Mean sea level relative to reference datum (ft)
+end
+```
+
+::: {.callout-note}
+## Why Track MSL?
+
+In this example, MSL is constant over time. However, the state structure allows future extensions—for example, sampling sea-level rise trajectories. This demonstrates the pattern of explicit state even for "nearly stateless" models.
+:::
+
+## Action: What Gets Decided
+
+The action represents the decision variable—how much to elevate:
+
+```{julia}
+#| output: false
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T  # feet above current ground level (0-14)
+end
+```
+
+## Policy: The Decision Rule
+
+The policy has a single parameter: the elevation height in feet.
+For this example, we use a **static policy**: choose an elevation once and stick with it.
+
+```{julia}
+#| output: false
+struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
+    elevation_ft::T  # feet above current ground level
+end
+
+# For optimization, we need to convert between policy and parameter vector
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
+SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
+SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
+```
+
+The last three lines enable optimization (covered in [Part 6](06-policy-search.qmd)).
+
+## Mapping Policy to Action
+
+We need a function that determines what action to take given the current state.
+For a static policy, this just returns the same elevation every time:
+
+```{julia}
+#| output: false
+function SimOptDecisions.get_action(
+    policy::ElevationPolicy,
+    state::SeaLevelState,
+    sow::HouseElevationSOW,
+    t::TimeStep,
+)
+    return ElevationAction(policy.elevation_ft)
+end
+```
+
+## Summary
+
+We've defined five types that structure our decision problem:
+
+| Type | Our Definition | Purpose |
+|------|----------------|---------|
+| `HouseElevationConfig` | Fixed house parameters | Shared across scenarios |
+| `HouseElevationSOW` | Storm/damage/discount uncertainty | Sampled to represent possible futures |
+| `SeaLevelState` | Mean sea level | Tracks state over time |
+| `ElevationAction` | Elevation height | The decision variable |
+| `ElevationPolicy` | Static elevation rule | How to decide |
+
+## Next Steps
+
+In the [next section](03-running-a-simulation.qmd), we'll implement the physics (depth-damage, elevation cost) and the simulation callbacks, then run our first simulation.

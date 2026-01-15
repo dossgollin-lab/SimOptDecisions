@@ -1,0 +1,64 @@
+---
+title: "1. The Problem"
+subtitle: "House elevation under flood risk"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+
+## Overview
+
+This tutorial teaches SimOptDecisions.jl through a realistic example: **deciding how high to elevate a house in a flood-prone area**.
+
+You'll learn:
+
+1. **Defining your model** - Types for config, uncertainty, state, actions, and policies
+2. **Running simulations** - The five-callback pattern for time-stepped models
+3. **Evaluating policies** - Testing a single policy across many uncertain futures
+4. **Exploratory modeling** - Systematically comparing policies across scenarios
+5. **Policy search** - Multi-objective optimization to find Pareto-optimal solutions
+
+Each section builds on the previous, using the same house elevation context throughout.
+
+## The Decision Problem
+
+You own a house in a flood-prone coastal area.
+Each year, storm surges threaten your property.
+You must decide: **how high should you elevate your house?**
+
+Elevating higher costs more upfront, but reduces future flood damages.
+The challenge is that you face deep uncertainty about:
+
+- **Future storm surge intensity** (climate variability)
+- **The relationship between flood depth and damage** (depth-damage curves)
+- **Future economic conditions** (discount rates)
+
+## The Trade-off
+
+This is a classic decision under uncertainty:
+
+- **Low elevation**: Cheap upfront, but expensive flood damages over time
+- **High elevation**: Expensive construction, but minimal future damages
+- **Optimal elevation**: Balances upfront costs against expected long-term damages
+
+But what's "optimal" depends on assumptions about the uncertain future. Different assumptions lead to different recommendations.
+
+## What Makes This Interesting
+
+This problem has features common to many real-world decisions:
+
+1. **Multi-dimensional uncertainty**: Storm intensity, damage relationships, and discount rates are all uncertain
+2. **Irreversible decisions**: Once you elevate, you can't easily undo it
+3. **Long time horizons**: Benefits accrue over decades
+4. **Competing objectives**: Minimize upfront cost vs. minimize expected damages
+
+SimOptDecisions.jl helps you:
+
+- **Structure** the problem clearly (types for each concept)
+- **Simulate** outcomes under different scenarios
+- **Explore** how results vary across uncertainties
+- **Optimize** to find the best trade-offs
+
+## Next Steps
+
+In the [next section](02-defining-your-model.qmd), we'll define the Julia types that represent this problem: configuration, uncertainty, state, actions, and policies.

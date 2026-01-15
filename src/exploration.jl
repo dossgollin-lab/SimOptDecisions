@@ -67,7 +67,7 @@ function _flatten_to_namedtuple(obj, prefix::Symbol)
         end
     end
 
-    return NamedTuple{Tuple(keys(result)...)}(Tuple(values(result)))
+    return NamedTuple{tuple(keys(result)...)}(values(result))
 end
 
 function _format_field_error(T, fname, ftype)

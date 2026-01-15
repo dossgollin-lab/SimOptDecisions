@@ -6,7 +6,7 @@ Manifest.toml
 docs/_site/
 docs/.quarto/
 docs/_freeze/
-docs/examples/.cache/
+docs/**/.cache/
 
 docs/*_files/
 docs/*.html
