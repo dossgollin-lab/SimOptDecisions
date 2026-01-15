@@ -30,7 +30,7 @@ A no-op sink that discards all results. Used as default when results aren't need
 struct NoSink <: AbstractResultSink end
 
 record!(::NoSink, row) = nothing
-finalize(::NoSink, n_policies, n_sows) = nothing
+finalize(::NoSink, n_policies, n_scenarios) = nothing
 
 # ============================================================================
 # InMemorySink - Collect results in memory
@@ -87,7 +87,7 @@ Wraps a file sink with buffered writes. Flushes to disk every `flush_every` rows
 ```julia
 using CSV  # load extension
 sink = StreamingSink(CSVSink("results.csv"); flush_every=100)
-explore(config, sows, policies; sink=sink)
+explore(config, scenarios, policies; sink=sink)
 ```
 """
 mutable struct StreamingSink{F<:AbstractFileSink} <: AbstractResultSink
@@ -126,7 +126,7 @@ function _flush!(sink::StreamingSink)
     end
 end
 
-function finalize(sink::StreamingSink, n_policies, n_sows)
+function finalize(sink::StreamingSink, n_policies, n_scenarios)
     _flush!(sink)
     close!(sink.file_sink)
     return sink.file_sink.filepath
@@ -148,7 +148,7 @@ using SimOptDecisions
 using CSV
 
 sink = StreamingSink(csv_sink("results.csv"); flush_every=100)
-explore(config, sows, policies; sink=sink)
+explore(config, scenarios, policies; sink=sink)
 ```
 """
 function csv_sink end
@@ -172,7 +172,7 @@ using SimOptDecisions
 using NCDatasets
 
 sink = netcdf_sink("results.nc"; flush_every=100)
-explore(config, sows, policies; sink=sink)
+explore(config, scenarios, policies; sink=sink)
 ```
 """
 function netcdf_sink end

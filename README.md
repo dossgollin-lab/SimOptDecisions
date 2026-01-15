@@ -12,15 +12,15 @@ SimOptDecisions helps you find good decision strategies when the future is uncer
 
 You provide a simulation model and a parameterized policy. The framework:
 
-1. **Simulates** your model across many possible futures (States of the World)
+1. **Simulates** your model across many possible futures (Scenarios)
 2. **Optimizes** policy parameters using multi-objective evolutionary algorithms
 3. **Explores** how policies perform across the full uncertainty space
 
 ## Key Features
 
-- **Five-callback simulation interface** — implement `initialize`, `get_action`, `run_timestep`, `time_axis`, and `finalize`
+- **Five-callback simulation interface** — implement `initialize`, `get_action`, `run_timestep`, `time_axis`, and `compute_outcome`
 - **Multi-objective optimization** — find Pareto-optimal policies with Metaheuristics.jl
-- **Exploratory modeling** — analyze policy performance across all SOW combinations
+- **Exploratory modeling** — analyze policy performance across all scenario combinations
 - **Streaming output** — handle large-scale analyses with CSV/NetCDF file sinks
 - **Visualization** — built-in plotting with Makie
 
@@ -29,7 +29,7 @@ You provide a simulation model and a parameterized policy. The framework:
 | Term | What it means |
 |------|---------------|
 | **Config** | Fixed parameters that don't change across scenarios |
-| **SOW** | "State of the World" — one possible future (uncertain parameters) |
+| **Scenario** | One possible future (uncertain parameters) |
 | **Policy** | A decision rule with tunable parameters |
 | **Action** | What the policy decides at each timestep |
 | **State** | Your model's internal state that evolves over time |
@@ -47,7 +47,7 @@ struct MyConfig <: AbstractConfig
     horizon::Int
 end
 
-struct MySOW{T<:AbstractFloat} <: AbstractSOW
+struct MyScenario{T<:AbstractFloat} <: AbstractScenario
     growth_rate::T
 end
 
@@ -60,35 +60,35 @@ struct MyAction <: AbstractAction end
 struct MyPolicy <: AbstractPolicy end
 
 # Implement the five callbacks
-SimOptDecisions.initialize(::MyConfig, ::MySOW, ::AbstractRNG) = MyState(1.0)
-SimOptDecisions.time_axis(c::MyConfig, ::MySOW) = 1:c.horizon
-SimOptDecisions.get_action(::MyPolicy, ::MyState, ::MySOW, ::TimeStep) = MyAction()
+SimOptDecisions.initialize(::MyConfig, ::MyScenario, ::AbstractRNG) = MyState(1.0)
+SimOptDecisions.time_axis(c::MyConfig, ::MyScenario) = 1:c.horizon
+SimOptDecisions.get_action(::MyPolicy, ::MyState, ::TimeStep, ::MyScenario) = MyAction()
 
-function SimOptDecisions.run_timestep(state::MyState, ::MyAction, sow::MySOW, ::MyConfig, ::TimeStep, ::AbstractRNG)
-    new_state = MyState(state.value * (1 + sow.growth_rate))
+function SimOptDecisions.run_timestep(state::MyState, ::MyAction, ::TimeStep, ::MyConfig, scenario::MyScenario, ::AbstractRNG)
+    new_state = MyState(state.value * (1 + scenario.growth_rate))
     return (new_state, (value=state.value,))
 end
 
-function SimOptDecisions.finalize(state::MyState, ::Vector, ::MyConfig, ::MySOW)
-    return (final_value=state.value,)
+function SimOptDecisions.compute_outcome(step_records::Vector, ::MyConfig, ::MyScenario)
+    return (final_value=step_records[end].value,)
 end
 
 # Run a single simulation
-result = simulate(MyConfig(10), MySOW(0.05), MyPolicy())
+result = simulate(MyConfig(10), MyScenario(0.05), MyPolicy())
 ```
 
 ## Exploratory Modeling
 
-For systematic analysis across policies and SOWs, use typed parameters and `explore()`:
+For systematic analysis across policies and scenarios, use typed parameters and `explore()`:
 
 ```julia
 using SimOptDecisions
 using DataFrames
 
 # Define types with parameter fields for exploration
-struct MySOW{T} <: AbstractSOW
+struct MyScenario{T} <: AbstractScenario
     growth_rate::ContinuousParameter{T}
-    scenario::CategoricalParameter{Symbol}
+    climate::CategoricalParameter{Symbol}
 end
 
 struct MyPolicy{T} <: AbstractPolicy
@@ -99,15 +99,15 @@ struct MyOutcome{T}
     final_value::ContinuousParameter{T}
 end
 
-# Create SOWs and policies
-sows = [
-    MySOW(ContinuousParameter(r), CategoricalParameter(s, [:low, :high]))
+# Create scenarios and policies
+scenarios = [
+    MyScenario(ContinuousParameter(r), CategoricalParameter(s, [:low, :high]))
     for r in 0.01:0.01:0.10, s in [:low, :high]
 ]
 policies = [MyPolicy(ContinuousParameter(t)) for t in 0.1:0.1:0.5]
 
 # Run all combinations
-result = explore(config, vec(sows), policies)
+result = explore(config, vec(scenarios), policies)
 
 # Analyze as DataFrame
 df = DataFrame(result)
@@ -119,7 +119,7 @@ For large-scale analyses, stream directly to file:
 using CSV  # or NCDatasets for NetCDF
 
 sink = StreamingSink(csv_sink("results.csv"); flush_every=100)
-explore(config, sows, policies; sink=sink)
+explore(config, scenarios, policies; sink=sink)
 ```
 
 ## Documentation

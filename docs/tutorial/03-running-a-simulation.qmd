@@ -297,7 +297,7 @@ let
     ax = Axis(fig[1, 1];
         xlabel="Year",
         ylabel="Damage (fraction of house value)",
-        title="Annual Damages (5 ft elevation, one SOW)")
+        title="Annual Damages (5 ft elevation, one scenario)")
 
     barplot!(ax, 1:length(outcome.annual_damages), outcome.annual_damages; color=:steelblue)
     fig

@@ -143,11 +143,11 @@ end
         @test :outcome_total in keys(result[1, 1])
 
         # Check outcome values make sense
-        # policy 1 (threshold=0.5), sow 1 (x=1.0): 3 steps → total = 3.0
+        # policy 1 (threshold=0.5), scenario 1 (x=1.0): 3 steps → total = 3.0
         @test result[1, 1].outcome_total == 3.0
         @test result[1, 1].outcome_count == 3
 
-        # policy 1 (threshold=0.5), sow 2 (x=2.0): 3 steps → total = 6.0
+        # policy 1 (threshold=0.5), scenario 2 (x=2.0): 3 steps → total = 6.0
         @test result[1, 2].outcome_total == 6.0
     end
 

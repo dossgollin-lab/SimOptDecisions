@@ -49,7 +49,8 @@ julia = "1.10"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Metaheuristics = "bcdb8e00-2c21-11e9-3065-2b553b22f898"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "CairoMakie", "Metaheuristics", "Test"]
+test = ["Aqua", "CairoMakie", "Metaheuristics", "NCDatasets", "Test"]

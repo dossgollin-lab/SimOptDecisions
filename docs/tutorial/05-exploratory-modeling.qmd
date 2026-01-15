@@ -268,7 +268,7 @@ However, it requires types with **parameter wrappers**.
 
 ### Parameter Types
 
-To use `explore()`, wrap your SOW, Policy, and Outcome fields with parameter types:
+To use `explore()`, wrap your Scenario, Policy, and Outcome fields with parameter types:
 
 | Type | Use Case | Example |
 |------|----------|---------|
@@ -380,9 +380,9 @@ println("Columns: policy_idx, scenario_idx, plus flattened parameters and outcom
 ```{julia}
 # Access specific result
 r = result[1, 1]
-println("Policy 1, SOW 1:")
+println("Policy 1, Scenario 1:")
 println("  Elevation: $(r.policy_elevation_ft) ft")
-println("  Discount rate: $(round(r.sow_discount_rate, digits=3))")
+println("  Discount rate: $(round(r.scenario_discount_rate, digits=3))")
 println("  NPV damages: $(round(r.outcome_npv_damages, digits=3))")
 ```
 

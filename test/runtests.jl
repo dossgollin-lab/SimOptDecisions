@@ -7,6 +7,7 @@ using Dates
 # Load extensions at the start so they're available for all tests
 using Metaheuristics
 using CairoMakie
+using NCDatasets
 
 # Import finalize for sinks (shadows Base.finalize)
 import SimOptDecisions: finalize
@@ -24,12 +25,15 @@ import SimOptDecisions: finalize
     include("test_exploration.jl")
     include("test_aqua.jl")
 
-    # Extension tests (Metaheuristics and CairoMakie are loaded at the top)
+    # Extension tests (Metaheuristics, CairoMakie, NCDatasets loaded at the top)
     @testset "Extensions" begin
         @info "Running Metaheuristics extension tests..."
         include("ext/test_metaheuristics_ext.jl")
 
         @info "Running Makie extension tests..."
         include("ext/test_makie_ext.jl")
+
+        @info "Running NetCDF extension tests..."
+        include("ext/test_netcdf_ext.jl")
     end
 end

@@ -97,12 +97,12 @@ SimOptDecisions.param_bounds(::Type{MyPolicy}) = [(0.0, 1.0), (0.0, 10.0)]
 MyPolicy(x::AbstractVector) = MyPolicy(x[1], x[2])
 ```
 
-### SOW Collection
+### Scenario Collection
 
-SOWs must be:
+Scenarios must be:
 - Non-empty
 - All the same concrete type
-- Subtypes of `AbstractSOW`
+- Subtypes of `AbstractScenario`
 
 ### Objectives
 
@@ -160,8 +160,8 @@ ArgumentError: param_bounds(::Type{MyPolicy})[2] has lower > upper: 10.0 > 5.0
 ```
 
 ```
-ArgumentError: All SOWs must be the same concrete type.
-SOW 1 is ClimateSOW{Float64}, but SOW 42 is ClimateSOW{Float32}
+ArgumentError: All scenarios must be the same concrete type.
+Scenario 1 is ClimateScenario{Float64}, but Scenario 42 is ClimateScenario{Float32}
 ```
 
 These messages tell you exactly what's wrong and how to fix it.

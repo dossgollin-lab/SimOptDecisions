@@ -18,9 +18,9 @@ end
 This design separates the **index** (for array access) from the **value** (for domain logic):
 
 ```julia
-function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
     # Use t.t for array indexing
-    price = sow.prices[t.t]
+    price = scenario.prices[t.t]
 
     # Use t.val for domain logic (e.g., if time_axis returns years)
     discount = 1 / (1 + rate)^t.val
@@ -47,7 +47,7 @@ Utils.is_last(ts, n::Integer) # true if ts.t == n
 Example usage:
 
 ```julia
-function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
     # Use config.horizon directly for efficiency (avoids calling time_axis each timestep)
 
     if Utils.is_first(t)
@@ -73,7 +73,7 @@ end
 The `time_axis` callback defines what time points your simulation iterates over:
 
 ```julia
-function SimOptDecisions.time_axis(config::MyConfig, sow::MySOW)
+function SimOptDecisions.time_axis(config::MyConfig, scenario::MyScenario)
     return 1:config.horizon
 end
 ```
@@ -87,50 +87,50 @@ end
 
 **Integer ranges** (most common):
 ```julia
-time_axis(config, sow) = 1:config.horizon
-time_axis(config, sow) = 1:100
+time_axis(config, scenario) = 1:config.horizon
+time_axis(config, scenario) = 1:100
 ```
 
 **Date ranges**:
 ```julia
 using Dates
-time_axis(config, sow) = Date(2020):Year(1):Date(2100)
-time_axis(config, sow) = Date(2020, 1, 1):Month(1):Date(2025, 12, 1)
+time_axis(config, scenario) = Date(2020):Year(1):Date(2100)
+time_axis(config, scenario) = Date(2020, 1, 1):Month(1):Date(2025, 12, 1)
 ```
 
 **Float ranges**:
 ```julia
-time_axis(config, sow) = 0.0:0.1:10.0
+time_axis(config, scenario) = 0.0:0.1:10.0
 ```
 
 **Vectors**:
 ```julia
-time_axis(config, sow) = [2020, 2025, 2030, 2050, 2100]  # irregular spacing
+time_axis(config, scenario) = [2020, 2025, 2030, 2050, 2100]  # irregular spacing
 ```
 
 ## TimeSeriesParameter
 
-For time-varying data in your SOWs, use `TimeSeriesParameter` instead of plain vectors:
+For time-varying data in your scenarios, use `TimeSeriesParameter` instead of plain vectors:
 
 ```julia
-struct ClimateSOW{T<:AbstractFloat} <: AbstractSOW
+struct ClimateScenario{T<:AbstractFloat} <: AbstractScenario
     temperatures::TimeSeriesParameter{T}  # Not Vector{T}
 end
 
 # Create from a vector
-sow = ClimateSOW(TimeSeriesParameter([20.0, 21.0, 22.0, ...]))
+scenario = ClimateScenario(TimeSeriesParameter([20.0, 21.0, 22.0, ...]))
 ```
 
 `TimeSeriesParameter` provides safe indexing that works with both integers and `TimeStep`:
 
 ```julia
-function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
     # Both work:
-    temp = sow.temperatures[t]     # Index with TimeStep
-    temp = sow.temperatures[t.t]   # Index with integer
+    temp = scenario.temperatures[t]     # Index with TimeStep
+    temp = scenario.temperatures[t.t]   # Index with integer
 
     # Bounds checking with helpful error messages
-    # sow.temperatures[100]  # Throws TimeSeriesParameterBoundsError if out of range
+    # scenario.temperatures[100]  # Throws TimeSeriesParameterBoundsError if out of range
 end
 ```
 
@@ -170,7 +170,7 @@ Utils.discount_factor(rate, t)  # Returns 1 / (1 + rate)^t
 
 Example:
 ```julia
-function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
     cost = compute_cost(state, action)
     discounted_cost = cost * Utils.discount_factor(config.discount_rate, t.t)
     return (new_state, (cost=cost, discounted_cost=discounted_cost))
@@ -182,7 +182,7 @@ end
 ### Conditional Logic by Time
 
 ```julia
-function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
+function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
     # Different behavior in first vs later timesteps
     if Utils.is_first(t)
         # Initial investment/setup
@@ -202,25 +202,25 @@ end
 
 ### Accessing Previous/Future Information
 
-The SOW contains all exogenous information for the entire trajectory:
+The scenario contains all exogenous information for the entire trajectory:
 
 ```julia
-function SimOptDecisions.run_timestep(state, action, sow, config, t::TimeStep, rng)
-    current_demand = sow.demand[t]
+function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
+    current_demand = scenario.demand[t]
 
     # Look ahead (if your policy needs it)
-    if t.t < length(sow.demand)
-        next_demand = sow.demand[t.t + 1]
+    if t.t < length(scenario.demand)
+        next_demand = scenario.demand[t.t + 1]
     end
 end
 ```
 
 ### Variable-Length Simulations
 
-If simulation length depends on the SOW:
+If simulation length depends on the scenario:
 
 ```julia
-function SimOptDecisions.time_axis(config::MyConfig, sow::MySOW)
-    return 1:sow.horizon  # Each SOW can have different length
+function SimOptDecisions.time_axis(config::MyConfig, scenario::MyScenario)
+    return 1:scenario.horizon  # Each scenario can have different length
 end
 ```
