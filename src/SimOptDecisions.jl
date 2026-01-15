@@ -13,6 +13,7 @@ include("validation.jl")
 include("utils.jl")
 include("timestepping.jl")
 include("simulation.jl")
+include("metrics.jl")
 include("optimization.jl")
 include("persistence.jl")
 include("plotting.jl")
@@ -70,6 +71,10 @@ export validate
 
 # Constraints
 export AbstractConstraint, FeasibilityConstraint, PenaltyConstraint
+
+# Declarative Metrics
+export AbstractMetric, ExpectedValue, Probability, Variance, MeanAndVariance, Quantile, CustomMetric
+export compute_metric, compute_metrics
 
 # Persistence
 export SharedParameters, ExperimentConfig

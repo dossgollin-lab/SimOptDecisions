@@ -8,7 +8,7 @@ using Dates
 using Metaheuristics
 using CairoMakie
 
-# Import specific functions to avoid conflicts with Base
+# Import finalize for sinks (shadows Base.finalize)
 import SimOptDecisions: finalize
 
 @testset "SimOptDecisions.jl" begin
@@ -18,6 +18,7 @@ import SimOptDecisions: finalize
     include("test_timestepping.jl")
     include("test_validation.jl")
     include("test_optimization.jl")
+    include("test_metrics.jl")
     include("test_persistence.jl")
     include("test_parameters.jl")
     include("test_exploration.jl")

@@ -260,4 +260,51 @@ end
         # Construct policy from params in the front
         @test ResultPolicy(front[1][1][1]).x == 0.3
     end
+
+    @testset "Auto-derive param_bounds and params" begin
+        # Test policy with ContinuousParameter fields
+        struct AutoDerivePolicy <: AbstractPolicy
+            threshold::ContinuousParameter{Float64}
+            rate::ContinuousParameter{Float64}
+        end
+
+        policy = AutoDerivePolicy(
+            ContinuousParameter(0.5, (0.0, 1.0)),
+            ContinuousParameter(0.02, (0.0, 0.1))
+        )
+
+        # param_bounds should auto-derive from instance
+        bounds = param_bounds(policy)
+        @test bounds == [(0.0, 1.0), (0.0, 0.1)]
+
+        # params should auto-derive from instance
+        p = params(policy)
+        @test p == [0.5, 0.02]
+
+        # Test policy with DiscreteParameter should error
+        struct DiscretePolicy <: AbstractPolicy
+            n::DiscreteParameter{Int}
+        end
+
+        discrete_policy = DiscretePolicy(DiscreteParameter(5))
+        @test_throws ArgumentError param_bounds(discrete_policy)
+
+        # Test policy with CategoricalParameter should error
+        struct CategoricalPolicy <: AbstractPolicy
+            mode::CategoricalParameter{Symbol}
+        end
+
+        cat_policy = CategoricalPolicy(CategoricalParameter(:high, [:low, :high]))
+        @test_throws ArgumentError param_bounds(cat_policy)
+
+        # Test policy with no ContinuousParameter fields falls back to type method
+        struct PlainPolicy <: AbstractPolicy
+            x::Float64
+        end
+
+        # Should fall back to param_bounds(::Type{PlainPolicy}) which throws
+        plain_policy = PlainPolicy(1.0)
+        @test_throws ArgumentError param_bounds(plain_policy)
+        @test_throws ArgumentError params(plain_policy)
+    end
 end
