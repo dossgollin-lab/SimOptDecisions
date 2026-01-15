@@ -3,21 +3,14 @@ module SimOptNetCDFExt
 using SimOptDecisions
 using NCDatasets
 
-import SimOptDecisions: AbstractResultSink, record!, finalize
+import SimOptDecisions: AbstractResultSink, record!, finalize, netcdf_sink
 
 """
-    NetCDFSink(filepath::String; flush_every=100)
+    NetCDFSink
 
 File sink that writes exploration results to NetCDF format.
 Stores data with dimensions (policy, sow) for efficient multidimensional access.
-
-# Example
-```julia
-using NCDatasets  # triggers extension loading
-sink = NetCDFSink("results.nc"; flush_every=100)
-result = explore(config, sows, policies; sink=sink)
-# Returns filepath to the NetCDF file
-```
+Create via `netcdf_sink(filepath)` after loading NCDatasets.jl.
 """
 mutable struct NetCDFSink <: AbstractResultSink
     filepath::String
@@ -31,7 +24,21 @@ mutable struct NetCDFSink <: AbstractResultSink
     column_names::Vector{Symbol}
 end
 
-function NetCDFSink(filepath::String; flush_every::Int=100)
+"""
+    netcdf_sink(filepath::String; flush_every=100) -> NetCDFSink
+
+Create a NetCDF file sink for streaming exploration results.
+
+# Example
+```julia
+using SimOptDecisions
+using NCDatasets
+
+sink = netcdf_sink("results.nc"; flush_every=100)
+explore(config, sows, policies; sink=sink)
+```
+"""
+function SimOptDecisions.netcdf_sink(filepath::String; flush_every::Int=100)
     NetCDFSink(filepath, flush_every, NamedTuple[], 0, nothing, 0, 0, false, Symbol[])
 end
 
@@ -76,12 +83,6 @@ function _initialize_netcdf!(sink::NetCDFSink)
     first_row = first(sink.buffer)
     sink.column_names = collect(keys(first_row))
 
-    # Find max indices from buffer to estimate dimensions
-    # (will be updated in finalize with actual counts)
-    max_p = maximum(r.policy_idx for r in sink.buffer)
-    max_s = maximum(r.sow_idx for r in sink.buffer)
-
-    # Use Inf as placeholder - we'll resize later if needed
     sink.ds = NCDataset(sink.filepath, "c")
 
     # Define dimensions with unlimited size
@@ -140,8 +141,5 @@ function SimOptDecisions.finalize(sink::NetCDFSink, n_policies::Int, n_sows::Int
 
     return sink.filepath
 end
-
-# Export the sink type
-export NetCDFSink
 
 end # module SimOptNetCDFExt

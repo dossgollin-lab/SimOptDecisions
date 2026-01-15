@@ -91,6 +91,7 @@ export value
 export AbstractResultSink, NoSink, InMemorySink
 export AbstractFileSink, StreamingSink
 export write_header!, write_rows!, close!
+export csv_sink, netcdf_sink  # Factory functions (require extensions)
 
 # Exploration
 export ExplorationResult, explore

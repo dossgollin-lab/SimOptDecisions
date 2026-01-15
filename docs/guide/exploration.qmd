@@ -3,7 +3,8 @@ title: "Exploratory Modeling"
 ---
 
 SimOptDecisions supports exploratory modeling to systematically analyze how policies
-perform across different states of the world (SOWs).
+perform across different states of the world (SOWs). This enables sensitivity analysis,
+scenario exploration, and robust decision-making under uncertainty.
 
 ## Quick Start
 
@@ -12,31 +13,15 @@ perform across different states of the world (SOWs).
 using SimOptDecisions
 using DataFrames
 
-# Define your types with parameter fields
-struct MySOW{T} <: AbstractSOW
-    discount_rate::ContinuousParameter{T}
-    scenario::CategoricalParameter{Symbol}
-end
-
-struct MyPolicy{T} <: AbstractPolicy
-    threshold::ContinuousParameter{T}
-end
-
-struct MyOutcome{T}
-    npv::ContinuousParameter{T}
-    failures::DiscreteParameter{Int}
-end
-
-# Run exploration
-config = MyConfig()
-sows = [MySOW(ContinuousParameter(r), CategoricalParameter(s, [:low, :high]))
-        for r in 0.03:0.01:0.07, s in [:low, :high]]
-policies = [MyPolicy(ContinuousParameter(t)) for t in 0.1:0.1:0.5]
-
-result = explore(config, vec(sows), policies)
+# Run exploration across all policy-SOW combinations
+result = explore(config, sows, policies)
 
 # Convert to DataFrame for analysis
 df = DataFrame(result)
+
+# Access specific results
+result[1, 2]  # policy 1, sow 2
+outcomes_for_policy(result, 1)  # all SOWs for policy 1
 ```
 
 ## Parameter Types
@@ -51,9 +36,31 @@ parameter types. This enables automatic flattening to tabular format.
 | `CategoricalParameter{T}` | Categorical values | `CategoricalParameter(:high, [:low, :high])` |
 | `TimeSeriesParameter{T}` | Time series data | `TimeSeriesParameter([1.0, 2.0, 3.0])` |
 
+### Defining Types for Exploration
+
+```{julia}
+#| eval: false
+struct MySOW{T<:AbstractFloat} <: AbstractSOW
+    discount_rate::ContinuousParameter{T}
+    scenario::CategoricalParameter{Symbol}
+    demand::TimeSeriesParameter{T}
+end
+
+struct MyPolicy{T<:AbstractFloat} <: AbstractPolicy
+    threshold::ContinuousParameter{T}
+    buffer_size::DiscreteParameter{Int}
+end
+
+# Outcomes must also use parameter types
+struct MyOutcome{T<:AbstractFloat}
+    npv::ContinuousParameter{T}
+    failures::DiscreteParameter{Int}
+end
+```
+
 ### Bounds and Constraints
 
-Parameters can include bounds for optimization:
+Parameters can include bounds (useful for optimization):
 
 ```{julia}
 #| eval: false
@@ -69,7 +76,7 @@ CategoricalParameter(:medium, [:low, :medium, :high])
 
 ### Time Series Flattening
 
-Time series parameters are expanded to multiple columns:
+Time series parameters are expanded to multiple columns in the output:
 
 ```{julia}
 #| eval: false
@@ -78,23 +85,49 @@ struct MySOW <: AbstractSOW
 end
 
 sow = MySOW(TimeSeriesParameter([10.0, 20.0, 30.0]))
-# Flattens to: sow_demand[1]=10.0, sow_demand[2]=20.0, sow_demand[3]=30.0
+# In results: sow_demand[1]=10.0, sow_demand[2]=20.0, sow_demand[3]=30.0
+```
+
+## Running Explorations
+
+The `explore()` function runs simulations for all combinations of policies and SOWs:
+
+```{julia}
+#| eval: false
+result = explore(
+    config,           # Your AbstractConfig
+    sows,             # Vector of SOWs
+    policies;         # Vector of policies (or single policy)
+    progress=true,    # Show progress bar
+    rng=Random.default_rng()
+)
 ```
 
 ## ExplorationResult
 
-The `explore()` function returns an `ExplorationResult` with:
+The result is an `ExplorationResult` with several access patterns:
 
 ### Indexing
 
 ```{julia}
 #| eval: false
-result[1, 2]              # Policy 1, SOW 2
-outcomes_for_policy(result, 1)  # All SOWs for policy 1
-outcomes_for_sow(result, 2)     # All policies for SOW 2
+# Get specific result
+result[policy_idx, sow_idx]
+
+# Get all results for one policy
+outcomes_for_policy(result, 1)
+
+# Get all results for one SOW
+outcomes_for_sow(result, 2)
+
+# Size information
+size(result)  # (n_policies, n_sows)
+length(result)  # total rows
 ```
 
 ### Tables.jl Integration
+
+`ExplorationResult` implements the Tables.jl interface:
 
 ```{julia}
 #| eval: false
@@ -106,60 +139,85 @@ using CSV
 CSV.write("results.csv", result)
 ```
 
+### Column Structure
+
+Each row contains:
+
+- `policy_idx`, `sow_idx` — indices into the input vectors
+- `policy_*` — flattened policy parameters
+- `sow_*` — flattened SOW parameters
+- `outcome_*` — flattened outcome fields
+
 ### Filtering
 
 ```{julia}
 #| eval: false
+# Filter to specific subset
 high_perf = filter(r -> r.outcome_npv > 1000, result)
+
+# Access column categories
+result.policy_columns   # Vector{Symbol}
+result.sow_columns      # Vector{Symbol}
+result.outcome_columns  # Vector{Symbol}
 ```
 
 ## Streaming to File
 
-For large explorations, stream results directly to file:
+For large explorations that don't fit in memory, stream results directly to file.
 
-### CSV
-
-```{julia}
-#| eval: false
-using CSV
-sink = StreamingSink(CSVSink("results.csv"); flush_every=100)
-explore(config, sows, policies; sink=sink)
-# Returns filepath, not ExplorationResult
-```
-
-### NetCDF
+### CSV Output
 
 ```{julia}
 #| eval: false
-using NCDatasets
-sink = NetCDFSink("results.nc"; flush_every=100)
-explore(config, sows, policies; sink=sink)
+using SimOptDecisions
+using CSV  # Loads the CSV extension
+
+# Create streaming sink
+sink = StreamingSink(csv_sink("results.csv"); flush_every=100)
+
+# Run exploration (returns filepath, not ExplorationResult)
+filepath = explore(config, sows, policies; sink=sink)
 ```
 
-NetCDF stores data with (policy, sow) dimensions for efficient multidimensional access.
+### NetCDF Output
+
+```{julia}
+#| eval: false
+using SimOptDecisions
+using NCDatasets  # Loads the NetCDF extension
+
+# NetCDF sink has built-in buffering
+sink = netcdf_sink("results.nc"; flush_every=100)
+
+filepath = explore(config, sows, policies; sink=sink)
+```
+
+NetCDF stores data with (policy, sow) dimensions for efficient multidimensional access
+and is ideal for large-scale exploratory analyses.
 
 ## Visualization
 
-With Makie loaded:
+With Makie loaded, several plotting functions are available:
 
 ```{julia}
 #| eval: false
 using CairoMakie
 
-# Heatmap of outcomes
-plot_exploration(result;
+# Heatmap of outcomes across policy-SOW space
+fig, ax = plot_exploration(result;
     outcome_field=:npv,
     policy_param=:threshold,
     sow_param=:discount_rate
 )
 
-# Parallel coordinates
-plot_exploration_parallel(result;
+# Parallel coordinates showing parameter-outcome relationships
+fig, ax = plot_exploration_parallel(result;
+    columns=[:policy_threshold, :sow_discount_rate, :outcome_npv],
     color_by=:outcome_npv
 )
 
-# Scatter plot
-plot_exploration_scatter(result;
+# Scatter plot of any two columns
+fig, ax = plot_exploration_scatter(result;
     x=:policy_threshold,
     y=:outcome_npv,
     color_by=:sow_scenario
@@ -168,38 +226,67 @@ plot_exploration_scatter(result;
 
 ## SOW Database Pattern
 
-For large time series, use an index reference pattern:
+For large time series that would create too many columns, use an index reference pattern:
 
 ```{julia}
 #| eval: false
-# Load SOW database once
+# Load SOW database once at module load
 const SOW_DATABASE = load("sows.jld2", "sows")
 
-# Lightweight indexed SOW
+# Lightweight indexed SOW for exploration
 struct IndexedSOW <: AbstractSOW
     sow_id::DiscreteParameter{Int}
 end
 
-# Look up full SOW in callbacks
+# Look up full SOW data in callbacks
 function initialize(config, indexed_sow::IndexedSOW, rng)
     full_sow = SOW_DATABASE[indexed_sow.sow_id.value]
-    # ... use full_sow
+    # ... use full_sow data
 end
 ```
 
-This keeps exploration tables small while allowing full SOW data access.
+This keeps exploration result tables small while allowing full SOW data access
+during simulation.
 
 ## Error Messages
 
-If your types don't meet requirements, you'll get helpful errors:
+If your types don't meet the parameter type requirements, you'll get a helpful error:
 
 ```
 Cannot use `explore()` with current types:
 
   - SOW.x :: Float64
+  - Policy.threshold :: Float64
 
 All fields must be: ContinuousParameter, DiscreteParameter,
 CategoricalParameter, or TimeSeriesParameter.
 
 Note: `simulate()` and `evaluate_policy()` still work without this.
+```
+
+This error clearly identifies which fields need to be updated and reminds you
+that the standard simulation functions work without parameter types.
+
+## Integration with Optimization
+
+After finding optimal policies via `optimize()`, use `explore()` to understand
+their robustness:
+
+```{julia}
+#| eval: false
+# Optimize to find good policies
+opt_result = optimize(prob, backend)
+
+# Extract Pareto-optimal policies
+optimal_policies = [
+    MyPolicy(ContinuousParameter(p[1]), DiscreteParameter(Int(p[2])))
+    for p in opt_result.pareto_params
+]
+
+# Explore how they perform across all SOWs
+exploration = explore(prob.config, prob.sows, optimal_policies)
+
+# Analyze robustness
+df = DataFrame(exploration)
+# ... compute statistics, create visualizations
 ```

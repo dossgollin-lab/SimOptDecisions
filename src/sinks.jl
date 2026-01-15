@@ -131,3 +131,51 @@ function finalize(sink::StreamingSink, n_policies, n_sows)
     close!(sink.file_sink)
     return sink.file_sink.filepath
 end
+
+# ============================================================================
+# Extension Sink Factory Functions
+# ============================================================================
+
+"""
+    csv_sink(filepath::String)
+
+Create a CSV file sink for streaming exploration results.
+Requires `using CSV` to load the extension.
+
+# Example
+```julia
+using SimOptDecisions
+using CSV
+
+sink = StreamingSink(csv_sink("results.csv"); flush_every=100)
+explore(config, sows, policies; sink=sink)
+```
+"""
+function csv_sink end
+
+csv_sink(filepath::String) = error(
+    "csv_sink requires the CSV package.\n" *
+    "Run `using CSV` to load the SimOptCSVExt extension."
+)
+
+"""
+    netcdf_sink(filepath::String; flush_every=100)
+
+Create a NetCDF file sink for streaming exploration results.
+Requires `using NCDatasets` to load the extension.
+
+# Example
+```julia
+using SimOptDecisions
+using NCDatasets
+
+sink = netcdf_sink("results.nc"; flush_every=100)
+explore(config, sows, policies; sink=sink)
+```
+"""
+function netcdf_sink end
+
+netcdf_sink(filepath::String; kwargs...) = error(
+    "netcdf_sink requires the NCDatasets package.\n" *
+    "Run `using NCDatasets` to load the SimOptNetCDFExt extension."
+)
