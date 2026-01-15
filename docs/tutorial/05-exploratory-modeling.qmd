@@ -1,0 +1,423 @@
+---
+title: "5. Exploratory Modeling"
+subtitle: "Systematically comparing policies across scenarios"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+
+In the previous section, we manually looped over policies and SOWs.
+Now we'll use a more systematic approach with the `explore()` function.
+
+## Setup
+
+```{julia}
+#| output: false
+using SimOptDecisions
+using Distributions
+using Random
+using CairoMakie
+using Statistics
+
+# === All type definitions (self-contained) ===
+
+Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int = 70
+    gauge_height_above_ref::T = 0.0
+    house_height_above_ref::T = 4.0
+    house_area_ft2::T = 1500.0
+    house_value::T = 200_000.0
+end
+
+struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
+    gev_μ::T
+    gev_σ::T
+    gev_ξ::T
+    dd_threshold::T
+    dd_saturation::T
+    discount_rate::T
+end
+
+function sample_sow(rng::AbstractRNG)
+    gev_μ = rand(rng, Normal(2.8, 0.3))
+    gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
+    gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
+    dd_threshold = rand(rng, Normal(0.0, 0.25))
+    dd_saturation = rand(rng, Normal(8.0, 0.5))
+    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
+    return HouseElevationSOW(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
+end
+
+struct SeaLevelState{T<:AbstractFloat} <: AbstractState
+    msl::T
+end
+
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T
+end
+
+struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
+    elevation_ft::T
+end
+
+function SimOptDecisions.get_action(
+    policy::ElevationPolicy, state::SeaLevelState, sow::HouseElevationSOW, t::TimeStep
+)
+    return ElevationAction(policy.elevation_ft)
+end
+
+function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
+    depth <= threshold && return zero(T)
+    depth >= saturation && return one(T)
+    midpoint = (threshold + saturation) / 2
+    steepness = T(6) / (saturation - threshold)
+    return one(T) / (one(T) + exp(-steepness * (depth - midpoint)))
+end
+
+function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
+    Δh <= 0 && return 0.0
+    base_cost = 20_745.0
+    thresholds = [0.0, 5.0, 8.5, 12.0, 14.0]
+    rates = [80.36, 82.5, 86.25, 103.75, 113.75]
+    rate = rates[1]
+    for i in 1:(length(thresholds) - 1)
+        if Δh <= thresholds[i + 1]
+            t = (Δh - thresholds[i]) / (thresholds[i + 1] - thresholds[i])
+            rate = rates[i] + t * (rates[i + 1] - rates[i])
+            break
+        end
+        rate = rates[i + 1]
+    end
+    return (base_cost + area_ft2 * rate) / house_value
+end
+elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
+
+function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG)
+    return SeaLevelState(0.0)
+end
+
+function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
+    return 1:(config.horizon)
+end
+
+function SimOptDecisions.run_timestep(
+    state::SeaLevelState, action::ElevationAction, sow::HouseElevationSOW,
+    config::HouseElevationConfig, t::TimeStep, rng::AbstractRNG
+)
+    construction_cost = SimOptDecisions.Utils.is_first(t) ?
+        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
+
+    surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
+    surge_at_gauge = rand(rng, surge_dist)
+    water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
+    house_floor_level = config.house_height_above_ref + action.elevation_ft
+    flood_depth_at_house = water_level - house_floor_level
+    damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
+
+    return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
+end
+
+function SimOptDecisions.finalize(
+    final_state::SeaLevelState, step_records::Vector,
+    config::HouseElevationConfig, sow::HouseElevationSOW
+)
+    construction_cost = step_records[1].construction_cost
+    npv_damages = sum(
+        step_records[t].damage_fraction * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t)
+        for t in eachindex(step_records)
+    )
+    return (construction_cost=construction_cost, npv_damages=npv_damages)
+end
+```
+
+## Grid Search: Manual Exploration
+
+Let's start with a systematic grid search over elevation levels.
+We'll evaluate each elevation across many SOWs:
+
+```{julia}
+config = HouseElevationConfig()
+n_sows = 1000
+rng = Random.Xoshiro(42)
+sows = [sample_sow(rng) for _ in 1:n_sows]
+
+elevations = 0:14
+results = Dict{Int,Vector{Float64}}()
+
+for elev in elevations
+    policy = ElevationPolicy(Float64(elev))
+    outcomes = [simulate(config, sow, policy).npv_damages for sow in sows]
+    results[elev] = outcomes
+end
+
+println("Evaluated $(length(elevations)) elevations × $(n_sows) SOWs = $(length(elevations) * n_sows) simulations")
+```
+
+### Trade-off Curve
+
+The key insight is the trade-off between upfront cost and expected damages:
+
+```{julia}
+#| label: fig-tradeoff
+#| fig-cap: "Trade-off between construction cost and expected NPV damages"
+#| code-fold: true
+let
+    construction_costs = [elevation_cost(e) for e in elevations]
+    expected_damages = [mean(results[e]) for e in elevations]
+
+    fig = Figure(; size=(700, 500))
+    ax = Axis(fig[1, 1];
+        xlabel="Construction cost (fraction of house value)",
+        ylabel="Expected NPV damages (fraction of house value)",
+        title="Cost-Damage Trade-off by Elevation Level")
+
+    scatter!(ax, construction_costs, expected_damages; markersize=15)
+
+    for (i, elev) in enumerate(elevations)
+        text!(ax, construction_costs[i], expected_damages[i];
+            text=string(elev), align=(:left, :bottom), offset=(5, 5))
+    end
+
+    fig
+end
+```
+
+### Total Cost
+
+Which elevation minimizes total expected cost?
+
+```{julia}
+#| label: fig-total-cost
+#| fig-cap: "Total expected cost (construction + NPV damages) by elevation"
+#| code-fold: true
+let
+    construction_costs = [elevation_cost(e) for e in elevations]
+    expected_damages = [mean(results[e]) for e in elevations]
+    total_costs = construction_costs .+ expected_damages
+
+    fig = Figure(; size=(700, 500))
+    ax = Axis(fig[1, 1];
+        xlabel="Elevation (ft)",
+        ylabel="Total expected cost (fraction of house value)",
+        title="Total Cost by Elevation Level")
+
+    barplot!(ax, collect(elevations), total_costs; color=:steelblue)
+
+    min_idx = argmin(total_costs)
+    scatter!(ax, [elevations[min_idx]], [total_costs[min_idx]];
+        color=:red, markersize=20, marker=:star5)
+
+    fig
+end
+```
+
+### Sensitivity to Discount Rate
+
+How does the optimal elevation depend on economic assumptions?
+
+```{julia}
+#| label: fig-sensitivity
+#| fig-cap: "Optimal elevation varies with discount rate assumption"
+#| code-fold: true
+let
+    rate_bins = [0.015, 0.025, 0.035, 0.045, 0.055, 0.065]
+    optimal_by_rate = Float64[]
+
+    for rate in rate_bins
+        filtered_sows = filter(s -> abs(s.discount_rate - rate) < 0.005, sows)
+        if length(filtered_sows) < 10
+            push!(optimal_by_rate, NaN)
+            continue
+        end
+
+        best_elev = 0
+        best_cost = Inf
+        for elev in elevations
+            policy = ElevationPolicy(Float64(elev))
+            outcomes = [simulate(config, sow, policy).npv_damages for sow in filtered_sows]
+            total = elevation_cost(elev) + mean(outcomes)
+            if total < best_cost
+                best_cost = total
+                best_elev = elev
+            end
+        end
+        push!(optimal_by_rate, best_elev)
+    end
+
+    fig = Figure(; size=(600, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Discount rate",
+        ylabel="Optimal elevation (ft)",
+        title="Sensitivity to Discount Rate")
+
+    scatterlines!(ax, rate_bins, optimal_by_rate; markersize=12)
+    fig
+end
+```
+
+::: {.callout-tip}
+## Key Insight
+
+Lower discount rates favor higher elevation because future damages are weighted more heavily. This sensitivity to assumptions is exactly why exploratory modeling matters—different stakeholders with different assumptions will reach different conclusions.
+:::
+
+## The `explore()` Function
+
+For more systematic exploration with automatic tabular output, SimOptDecisions provides the `explore()` function.
+However, it requires types with **parameter wrappers**.
+
+### Parameter Types
+
+To use `explore()`, wrap your SOW, Policy, and Outcome fields with parameter types:
+
+| Type | Use Case | Example |
+|------|----------|---------|
+| `ContinuousParameter{T}` | Real values | `ContinuousParameter(0.5)` |
+| `DiscreteParameter{T}` | Integers | `DiscreteParameter(10)` |
+| `CategoricalParameter{T}` | Categories | `CategoricalParameter(:high, [:low, :high])` |
+| `TimeSeriesParameter{T}` | Time series | `TimeSeriesParameter([1.0, 2.0, 3.0])` |
+
+### Wrapped Types for Exploration
+
+```{julia}
+#| output: false
+# SOW with parameter wrappers
+struct ExploreSOW{T<:AbstractFloat} <: AbstractSOW
+    gev_μ::ContinuousParameter{T}
+    gev_σ::ContinuousParameter{T}
+    discount_rate::ContinuousParameter{T}
+    # Simplified: fewer parameters for cleaner output
+end
+
+# Policy with parameter wrapper
+struct ExplorePolicy{T<:AbstractFloat} <: AbstractPolicy
+    elevation_ft::ContinuousParameter{T}
+end
+
+# State (unchanged)
+struct ExploreState{T<:AbstractFloat} <: AbstractState
+    msl::T
+end
+
+# Action (unchanged)
+struct ExploreAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T
+end
+
+# Callbacks for the wrapped types
+function SimOptDecisions.get_action(
+    policy::ExplorePolicy, state::ExploreState, sow::ExploreSOW, t::TimeStep
+)
+    return ExploreAction(value(policy.elevation_ft))
+end
+
+function SimOptDecisions.initialize(::HouseElevationConfig, ::ExploreSOW, ::AbstractRNG)
+    return ExploreState(0.0)
+end
+
+function SimOptDecisions.time_axis(config::HouseElevationConfig, ::ExploreSOW)
+    return 1:(config.horizon)
+end
+
+function SimOptDecisions.run_timestep(
+    state::ExploreState, action::ExploreAction, sow::ExploreSOW,
+    config::HouseElevationConfig, t::TimeStep, rng::AbstractRNG
+)
+    construction_cost = SimOptDecisions.Utils.is_first(t) ?
+        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
+
+    surge_dist = GeneralizedExtremeValue(value(sow.gev_μ), value(sow.gev_σ), 0.15)
+    surge_at_gauge = rand(rng, surge_dist)
+    water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
+    house_floor_level = config.house_height_above_ref + action.elevation_ft
+    flood_depth_at_house = water_level - house_floor_level
+    damage_fraction = depth_damage(flood_depth_at_house, 0.0, 8.0)
+
+    return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
+end
+
+# Outcome with parameter wrappers (required for explore)
+function SimOptDecisions.finalize(
+    final_state::ExploreState, step_records::Vector,
+    config::HouseElevationConfig, sow::ExploreSOW
+)
+    construction_cost = step_records[1].construction_cost
+    npv_damages = sum(
+        step_records[t].damage_fraction *
+        SimOptDecisions.Utils.discount_factor(value(sow.discount_rate), t)
+        for t in eachindex(step_records)
+    )
+    return (
+        construction_cost=ContinuousParameter(construction_cost),
+        npv_damages=ContinuousParameter(npv_damages)
+    )
+end
+```
+
+### Running Exploration
+
+```{julia}
+# Create wrapped SOWs and policies
+explore_sows = [
+    ExploreSOW(
+        ContinuousParameter(rand(rng, Normal(2.8, 0.3))),
+        ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))),
+        ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)))
+    )
+    for _ in 1:100
+]
+
+explore_policies = [ExplorePolicy(ContinuousParameter(Float64(e))) for e in 0:2:10]
+
+result = explore(config, explore_sows, explore_policies; progress=false)
+
+println("Exploration result: $(size(result))")
+println("Columns: policy_idx, sow_idx, plus flattened parameters and outcomes")
+```
+
+### Accessing Results
+
+```{julia}
+# Access specific result
+r = result[1, 1]
+println("Policy 1, SOW 1:")
+println("  Elevation: $(r.policy_elevation_ft) ft")
+println("  Discount rate: $(round(r.sow_discount_rate, digits=3))")
+println("  NPV damages: $(round(r.outcome_npv_damages, digits=3))")
+```
+
+```{julia}
+# All outcomes for one policy
+pol1_outcomes = outcomes_for_policy(result, 1)
+damages = [r.outcome_npv_damages for r in pol1_outcomes]
+println("\nPolicy 1 (0 ft elevation):")
+println("  Mean damage: $(round(mean(damages), digits=3))")
+println("  Max damage: $(round(maximum(damages), digits=3))")
+```
+
+## When to Use Each Approach
+
+| Approach | Best For |
+|----------|----------|
+| **Manual loops** | Quick exploration, custom analysis, non-wrapped types |
+| **`explore()`** | Systematic analysis, tabular export, large experiments |
+
+The manual approach (like we used for the grid search) is often simpler and sufficient.
+Use `explore()` when you need:
+
+- Automatic tabular output for analysis tools
+- Streaming to CSV/NetCDF for large experiments
+- Standardized structure for reproducibility
+
+## Summary
+
+We've learned:
+
+1. **Grid search** systematically evaluates all elevation levels
+2. **Trade-off curves** visualize cost vs damage relationships
+3. **Sensitivity analysis** shows how results depend on assumptions
+4. **`explore()`** provides structured tabular output (requires parameter types)
+
+## Next Steps
+
+In the [final section](06-policy-search.qmd), we'll use multi-objective optimization to automatically find the best trade-offs.

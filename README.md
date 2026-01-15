@@ -10,14 +10,26 @@ A Julia framework for simulation-based decision analysis under uncertainty.
 
 SimOptDecisions helps you find good decision strategies when the future is uncertain.
 
-You provide a simulation model and a parameterized policy. The framework runs your model across many possible futures, aggregates the results, and searches for policy parameters that perform well.
+You provide a simulation model and a parameterized policy. The framework:
+
+1. **Simulates** your model across many possible futures (States of the World)
+2. **Optimizes** policy parameters using multi-objective evolutionary algorithms
+3. **Explores** how policies perform across the full uncertainty space
+
+## Key Features
+
+- **Five-callback simulation interface** — implement `initialize`, `get_action`, `run_timestep`, `time_axis`, and `finalize`
+- **Multi-objective optimization** — find Pareto-optimal policies with Metaheuristics.jl
+- **Exploratory modeling** — analyze policy performance across all SOW combinations
+- **Streaming output** — handle large-scale analyses with CSV/NetCDF file sinks
+- **Visualization** — built-in plotting with Makie
 
 ## Key Vocabulary
 
 | Term | What it means |
 |------|---------------|
 | **Config** | Fixed parameters that don't change across scenarios |
-| **SOW** | "State of the World" — one possible future (your uncertain parameters) |
+| **SOW** | "State of the World" — one possible future (uncertain parameters) |
 | **Policy** | A decision rule with tunable parameters |
 | **Action** | What the policy decides at each timestep |
 | **State** | Your model's internal state that evolves over time |
@@ -61,8 +73,53 @@ function SimOptDecisions.finalize(state::MyState, ::Vector, ::MyConfig, ::MySOW)
     return (final_value=state.value,)
 end
 
-# Run
+# Run a single simulation
 result = simulate(MyConfig(10), MySOW(0.05), MyPolicy())
+```
+
+## Exploratory Modeling
+
+For systematic analysis across policies and SOWs, use typed parameters and `explore()`:
+
+```julia
+using SimOptDecisions
+using DataFrames
+
+# Define types with parameter fields for exploration
+struct MySOW{T} <: AbstractSOW
+    growth_rate::ContinuousParameter{T}
+    scenario::CategoricalParameter{Symbol}
+end
+
+struct MyPolicy{T} <: AbstractPolicy
+    threshold::ContinuousParameter{T}
+end
+
+struct MyOutcome{T}
+    final_value::ContinuousParameter{T}
+end
+
+# Create SOWs and policies
+sows = [
+    MySOW(ContinuousParameter(r), CategoricalParameter(s, [:low, :high]))
+    for r in 0.01:0.01:0.10, s in [:low, :high]
+]
+policies = [MyPolicy(ContinuousParameter(t)) for t in 0.1:0.1:0.5]
+
+# Run all combinations
+result = explore(config, vec(sows), policies)
+
+# Analyze as DataFrame
+df = DataFrame(result)
+```
+
+For large-scale analyses, stream directly to file:
+
+```julia
+using CSV  # or NCDatasets for NetCDF
+
+sink = StreamingSink(csv_sink("results.csv"); flush_every=100)
+explore(config, sows, policies; sink=sink)
 ```
 
 ## Documentation
@@ -70,6 +127,7 @@ result = simulate(MyConfig(10), MySOW(0.05), MyPolicy())
 See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions/) for:
 
 - [Getting Started](https://dossgollin-lab.github.io/SimOptDecisions/guide/getting-started.html) — checklist + minimal working example
+- [Exploratory Modeling](https://dossgollin-lab.github.io/SimOptDecisions/guide/exploration.html) — parameter types, streaming output, visualization
 - [House Elevation Example](https://dossgollin-lab.github.io/SimOptDecisions/examples/house_elevation.html) — complete tutorial with multi-objective optimization
 
 ## Installation
@@ -78,3 +136,14 @@ See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions/) 
 using Pkg
 Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions")
 ```
+
+## Optional Dependencies
+
+Load these packages to enable additional features:
+
+| Package | Feature |
+|---------|---------|
+| `Metaheuristics` | Multi-objective optimization |
+| `CairoMakie` / `GLMakie` | Visualization |
+| `CSV` | CSV file streaming |
+| `NCDatasets` | NetCDF file streaming |

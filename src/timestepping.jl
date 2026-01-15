@@ -56,6 +56,13 @@ Base.length(ts::TimeSeriesParameter) = length(ts.data)
 Base.iterate(ts::TimeSeriesParameter) = iterate(ts.data)
 Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.data, state)
 
+"""
+    value(ts::TimeSeriesParameter) -> Vector{T}
+
+Extract the underlying data vector from a TimeSeriesParameter.
+"""
+value(ts::TimeSeriesParameter) = ts.data
+
 # ============================================================================
 # User-Implemented Callback Functions
 # ============================================================================
@@ -118,7 +125,7 @@ Aggregate step records into final outcome. Required callback.
 function finalize end
 
 function finalize(
-    final_state::AbstractState, step_records::Vector, config::AbstractConfig, ::AbstractSOW
+    final_state::AbstractState, step_records, config::AbstractConfig, ::AbstractSOW
 )
     interface_not_implemented(
         :finalize,

@@ -15,21 +15,29 @@ website:
     contents:
       - href: index.qmd
         text: Home
-      - section: "Guide"
+      - section: "Tutorial"
         contents:
-          - href: guide/getting-started.qmd
-            text: Getting Started
-      - section: "Examples"
-        contents:
-          - href: examples/house_elevation.qmd
-            text: House Elevation
+          - href: tutorial/01-the-problem.qmd
+            text: "1. The Problem"
+          - href: tutorial/02-defining-your-model.qmd
+            text: "2. Defining Your Model"
+          - href: tutorial/03-running-a-simulation.qmd
+            text: "3. Running a Simulation"
+          - href: tutorial/04-evaluating-a-policy.qmd
+            text: "4. Evaluating a Policy"
+          - href: tutorial/05-exploratory-modeling.qmd
+            text: "5. Exploratory Modeling"
+          - href: tutorial/06-policy-search.qmd
+            text: "6. Policy Search"
       - section: "Reference"
         contents:
-          - href: details/timestepping.qmd
+          - href: guide/getting-started.qmd
+            text: Quick Reference
+          - href: reference/timestepping.qmd
             text: Time Stepping
-          - href: details/persistence.qmd
+          - href: reference/persistence.qmd
             text: Persistence
-          - href: details/validation.qmd
+          - href: reference/validation.qmd
             text: Validation
   page-footer:
     left: "SimOptDecisions.jl - Dossgollin Lab"
@@ -39,8 +47,6 @@ website:
 
 format:
   html:
-    #theme: _assets/theme/theme-rice.scss
-    #css: styles.css
     theme: [sandstone, _assets/theme/theme-rice.scss]
     toc: true
     anchor-sections: true
