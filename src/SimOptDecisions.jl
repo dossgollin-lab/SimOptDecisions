@@ -102,7 +102,7 @@ export csv_sink, netcdf_sink  # Factory functions (require extensions)
 # Exploration
 export ExplorationResult, explore
 export outcomes_for_policy, outcomes_for_scenario, outcomes_for_sow
-export ExploratoryInterfaceError
+export ExploratoryInterfaceError, ParameterTypeError
 
 # Exploration plotting (requires Makie extension)
 export plot_exploration, plot_exploration_parallel, plot_exploration_scatter

@@ -28,23 +28,23 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
     house_value::T = 200_000.0
 end
 
-# Scenario
+# Scenario (using ContinuousParameter for exploratory analysis)
 struct HouseElevationScenario{T<:AbstractFloat} <: AbstractScenario
-    gev_μ::T
-    gev_σ::T
-    gev_ξ::T
-    dd_threshold::T
-    dd_saturation::T
-    discount_rate::T
+    gev_μ::ContinuousParameter{T}
+    gev_σ::ContinuousParameter{T}
+    gev_ξ::ContinuousParameter{T}
+    dd_threshold::ContinuousParameter{T}
+    dd_saturation::ContinuousParameter{T}
+    discount_rate::ContinuousParameter{T}
 end
 
 function sample_scenario(rng::AbstractRNG)
-    gev_μ = rand(rng, Normal(2.8, 0.3))
-    gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
-    gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
-    dd_threshold = rand(rng, Normal(0.0, 0.25))
-    dd_saturation = rand(rng, Normal(8.0, 0.5))
-    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
+    gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3)))
+    gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3)))
+    gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5)))
+    dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25)))
+    dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5)))
+    discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)))
     return HouseElevationScenario(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
 end
 
@@ -58,13 +58,15 @@ struct ElevationAction{T<:AbstractFloat} <: AbstractAction
 end
 
 struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::T
+    elevation_ft::ContinuousParameter{T}
 end
+
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(ContinuousParameter(params[1], (0.0, 14.0)))
 
 function SimOptDecisions.get_action(
     policy::ElevationPolicy, state::SeaLevelState, t::TimeStep, scenario::HouseElevationScenario
 )
-    return ElevationAction(policy.elevation_ft)
+    return ElevationAction(value(policy.elevation_ft))
 end
 ```
 
@@ -217,8 +219,8 @@ function SimOptDecisions.run_timestep(
         0.0
     end
 
-    # Sample annual maximum surge
-    surge_dist = GeneralizedExtremeValue(scenario.gev_μ, scenario.gev_σ, scenario.gev_ξ)
+    # Sample annual maximum surge (use value() to extract from ContinuousParameter)
+    surge_dist = GeneralizedExtremeValue(value(scenario.gev_μ), value(scenario.gev_σ), value(scenario.gev_ξ))
     surge_at_gauge = rand(rng, surge_dist)
 
     # Convert to water level relative to reference datum
@@ -231,7 +233,7 @@ function SimOptDecisions.run_timestep(
     flood_depth_at_house = water_level - house_floor_level
 
     # Compute damage
-    damage_fraction = depth_damage(flood_depth_at_house, scenario.dd_threshold, scenario.dd_saturation)
+    damage_fraction = depth_damage(flood_depth_at_house, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
     step_record = (construction_cost=construction_cost, damage_fraction=damage_fraction)
     return (state, step_record)
@@ -252,7 +254,7 @@ function SimOptDecisions.compute_outcome(
     construction_cost = step_records[1].construction_cost
 
     npv_damages = sum(
-        step_records[t].damage_fraction * discount_factor(scenario.discount_rate, t)
+        step_records[t].damage_fraction * discount_factor(value(scenario.discount_rate), t)
         for t in eachindex(step_records)
     )
 
@@ -273,7 +275,7 @@ Now we can run a simulation! Let's try one policy with one scenario:
 config = HouseElevationConfig()
 rng = Random.Xoshiro(42)
 scenario = sample_scenario(rng)
-policy = ElevationPolicy(5.0)  # Elevate 5 feet
+policy = ElevationPolicy(ContinuousParameter(5.0, (0.0, 14.0)))  # Elevate 5 feet
 
 # Run simulation
 outcome = simulate(config, scenario, policy)
@@ -317,7 +319,7 @@ let
     total_costs = Float64[]
 
     for elev in elevations
-        policy = ElevationPolicy(Float64(elev))
+        policy = ElevationPolicy(ContinuousParameter(Float64(elev), (0.0, 14.0)))
         # Use same RNG seed for each to make comparison fair
         outcome = simulate(config, scenario, policy, Random.Xoshiro(42))
         push!(total_costs, outcome.construction_cost + outcome.npv_damages)

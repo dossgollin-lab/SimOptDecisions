@@ -551,32 +551,45 @@ end
     end
 
     @testset "TimeSeriesParameter" begin
-        # Construction
-        ts = TimeSeriesParameter([1.0, 2.0, 3.0])
+        # Construction with explicit time_axis
+        ts = TimeSeriesParameter(2020:2022, [1.0, 2.0, 3.0])
         @test length(ts) == 3
+        @test time_axis(ts) == [2020, 2021, 2022]
+        @test value(ts) == [1.0, 2.0, 3.0]
 
-        # Integer indexing
+        # Integer indexing (by position)
         @test ts[1] == 1.0
         @test ts[2] == 2.0
         @test ts[3] == 3.0
 
-        # TimeStep indexing
+        # TimeStep indexing (looks up t.val in time_axis)
         @test ts[TimeStep(1, 2020)] == 1.0
         @test ts[TimeStep(2, 2021)] == 2.0
         @test ts[TimeStep(3, 2022)] == 3.0
 
         # Bounds errors
-        @test_throws TimeSeriesParameterBoundsError ts[0]
-        @test_throws TimeSeriesParameterBoundsError ts[4]
+        @test_throws BoundsError ts[0]
+        @test_throws BoundsError ts[4]
+        @test_throws TimeSeriesParameterBoundsError ts[TimeStep(1, 2025)]  # 2025 not in time_axis
 
         # Iteration
         @test collect(ts) == [1.0, 2.0, 3.0]
 
         # Empty not allowed
-        @test_throws ArgumentError TimeSeriesParameter(Float64[])
+        @test_throws ArgumentError TimeSeriesParameter(1:0, Float64[])
 
-        # Construction from range
-        ts2 = TimeSeriesParameter(1.0:3.0)
+        # Mismatched lengths not allowed
+        @test_throws ArgumentError TimeSeriesParameter(1:3, [1.0, 2.0])
+
+        # Legacy constructor (integer-indexed 1:n)
+        ts_legacy = TimeSeriesParameter([10.0, 20.0, 30.0])
+        @test length(ts_legacy) == 3
+        @test time_axis(ts_legacy) == [1, 2, 3]
+        @test ts_legacy[TimeStep(1, 1)] == 10.0
+        @test ts_legacy[TimeStep(2, 2)] == 20.0
+
+        # Construction from range values
+        ts2 = TimeSeriesParameter(1:3, 1.0:3.0)
         @test length(ts2) == 3
         @test ts2[2] == 2.0
     end

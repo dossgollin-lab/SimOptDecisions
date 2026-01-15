@@ -19,49 +19,106 @@ using Random: AbstractRNG, default_rng
 # TimeSeriesParameter - Time-indexed data for Scenarios
 # ============================================================================
 
-"""Error thrown when accessing TimeSeriesParameter beyond its length."""
+"""Error thrown when accessing TimeSeriesParameter with invalid time value."""
 struct TimeSeriesParameterBoundsError <: Exception
-    index::Int
-    length::Int
+    requested::Any
+    available::Vector
 end
 
 function Base.showerror(io::IO, e::TimeSeriesParameterBoundsError)
-    print(
-        io,
-        "TimeSeriesParameterBoundsError: index $(e.index) exceeds data length $(e.length). ",
-    )
-    print(io, "Extend your time series data or shorten the simulation horizon.")
-end
-
-"""Wrapper for time-indexed data in Scenarios. Index via `ts[t]` using TimeStep or integer."""
-struct TimeSeriesParameter{T<:AbstractFloat}
-    data::Vector{T}
-    function TimeSeriesParameter(data::Vector{T}) where {T<:AbstractFloat}
-        isempty(data) && throw(ArgumentError("TimeSeriesParameter cannot be empty"))
-        new{T}(data)
+    print(io, "TimeSeriesParameterBoundsError: time value $(e.requested) not in time_axis. ")
+    if length(e.available) <= 10
+        print(io, "Available: $(e.available)")
+    else
+        print(io, "Available range: $(first(e.available)) to $(last(e.available))")
     end
 end
 
-TimeSeriesParameter(data) = TimeSeriesParameter(collect(Float64, data))
+"""
+    TimeSeriesParameter{T,I}
 
-Base.getindex(ts::TimeSeriesParameter, t::TimeStep) = ts[t.t]
+Time-indexed data for Scenarios. Stores values with their associated time indices,
+enabling reuse across different simulation horizons.
 
-function Base.getindex(ts::TimeSeriesParameter{T}, i::Integer) where {T}
-    (i < 1 || i > length(ts.data)) &&
-        throw(TimeSeriesParameterBoundsError(i, length(ts.data)))
-    ts.data[i]
+Index via `ts[t]` using TimeStep (matches `t.val` to time_axis) or integer position.
+
+# Fields
+- `time_axis::Vector{I}`: Time indices (e.g., years, dates)
+- `values::Vector{T}`: Data values corresponding to each time index
+
+# Example
+```julia
+# Sea level rise trajectory for years 2020-2100
+slr = TimeSeriesParameter(2020:2100, [0.0, 0.01, 0.02, ...])
+
+# Access by TimeStep (looks up t.val in time_axis)
+slr[TimeStep(5, 2025)]  # Returns value for year 2025
+
+# Can reuse with different simulation horizons
+# 50-year sim starting 2020: uses years 2020-2069
+# 80-year sim starting 2020: uses years 2020-2099
+```
+"""
+struct TimeSeriesParameter{T<:AbstractFloat,I}
+    time_axis::Vector{I}
+    values::Vector{T}
+
+    function TimeSeriesParameter(time_axis::Vector{I}, values::Vector{T}) where {T<:AbstractFloat,I}
+        isempty(values) && throw(ArgumentError("TimeSeriesParameter cannot be empty"))
+        length(time_axis) != length(values) && throw(
+            ArgumentError("time_axis length ($(length(time_axis))) must match values length ($(length(values)))")
+        )
+        new{T,I}(time_axis, values)
+    end
 end
 
-Base.length(ts::TimeSeriesParameter) = length(ts.data)
-Base.iterate(ts::TimeSeriesParameter) = iterate(ts.data)
-Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.data, state)
+# Convenience constructors
+function TimeSeriesParameter(time_axis, values::Vector{T}) where {T<:AbstractFloat}
+    TimeSeriesParameter(collect(time_axis), values)
+end
+
+function TimeSeriesParameter(time_axis, values)
+    TimeSeriesParameter(collect(time_axis), collect(Float64, values))
+end
+
+# Legacy constructor: integer-indexed (1:n)
+function TimeSeriesParameter(values::Vector{T}) where {T<:AbstractFloat}
+    TimeSeriesParameter(collect(1:length(values)), values)
+end
+
+TimeSeriesParameter(values) = TimeSeriesParameter(collect(Float64, values))
+
+# Indexing by TimeStep: lookup t.val in time_axis
+function Base.getindex(ts::TimeSeriesParameter{T,I}, t::TimeStep) where {T,I}
+    idx = findfirst(==(t.val), ts.time_axis)
+    isnothing(idx) && throw(TimeSeriesParameterBoundsError(t.val, ts.time_axis))
+    ts.values[idx]
+end
+
+# Indexing by integer position (1-based)
+function Base.getindex(ts::TimeSeriesParameter{T,I}, i::Integer) where {T,I}
+    (i < 1 || i > length(ts.values)) &&
+        throw(BoundsError(ts, i))
+    ts.values[i]
+end
+
+Base.length(ts::TimeSeriesParameter) = length(ts.values)
+Base.iterate(ts::TimeSeriesParameter) = iterate(ts.values)
+Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.values, state)
 
 """
     value(ts::TimeSeriesParameter) -> Vector{T}
 
-Extract the underlying data vector from a TimeSeriesParameter.
+Extract the underlying values vector from a TimeSeriesParameter.
 """
-@inline value(ts::TimeSeriesParameter) = ts.data
+@inline value(ts::TimeSeriesParameter) = ts.values
+
+"""
+    time_axis(ts::TimeSeriesParameter) -> Vector{I}
+
+Extract the time axis from a TimeSeriesParameter.
+"""
+@inline time_axis(ts::TimeSeriesParameter) = ts.time_axis
 
 # ============================================================================
 # TimeStep Accessors

@@ -47,9 +47,11 @@
         @test p2.levels == ["a", "b", "c"]
     end
 
-    @testset "TimeSeriesParameter value()" begin
-        ts = TimeSeriesParameter([1.0, 2.0, 3.0])
+    @testset "TimeSeriesParameter value() and time_axis()" begin
+        ts = TimeSeriesParameter(2020:2022, [1.0, 2.0, 3.0])
         @test value(ts) == [1.0, 2.0, 3.0]
-        @test value(ts) === ts.data  # same reference
+        @test value(ts) === ts.values  # same reference
+        @test time_axis(ts) == [2020, 2021, 2022]
+        @test time_axis(ts) === ts.time_axis  # same reference
     end
 end

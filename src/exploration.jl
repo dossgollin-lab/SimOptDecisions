@@ -37,11 +37,11 @@ function _flatten_parameter(name::Symbol, p::CategoricalParameter, prefix::Symbo
     OrderedDict{Symbol,Any}(Symbol(prefix, :_, name) => p.value)
 end
 
-# Time series -> multiple columns with [i] notation
+# Time series -> multiple columns with [time_val] notation
 function _flatten_parameter(name::Symbol, p::TimeSeriesParameter, prefix::Symbol)
     result = OrderedDict{Symbol,Any}()
-    for (i, val) in enumerate(p.data)
-        result[Symbol(prefix, :_, name, "[", i, "]")] = val
+    for (t, val) in zip(p.time_axis, p.values)
+        result[Symbol(prefix, :_, name, "[", t, "]")] = val
     end
     return result
 end

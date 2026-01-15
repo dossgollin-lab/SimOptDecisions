@@ -80,15 +80,16 @@ end
 
     @testset "TimeSeriesParameter flattening" begin
         struct TSScenario <: AbstractScenario
-            demand::TimeSeriesParameter{Float64}
+            demand::TimeSeriesParameter{Float64,Int}
         end
 
-        scenario = TSScenario(TimeSeriesParameter([1.0, 2.0, 3.0]))
+        # With explicit time_axis, column names use the time values
+        scenario = TSScenario(TimeSeriesParameter(2020:2022, [1.0, 2.0, 3.0]))
         nt = SimOptDecisions._flatten_to_namedtuple(scenario, :scenario)
 
-        @test nt[Symbol("scenario_demand[1]")] == 1.0
-        @test nt[Symbol("scenario_demand[2]")] == 2.0
-        @test nt[Symbol("scenario_demand[3]")] == 3.0
+        @test nt[Symbol("scenario_demand[2020]")] == 1.0
+        @test nt[Symbol("scenario_demand[2021]")] == 2.0
+        @test nt[Symbol("scenario_demand[2022]")] == 3.0
     end
 
     @testset "Validation errors" begin
