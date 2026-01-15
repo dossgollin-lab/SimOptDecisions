@@ -313,9 +313,31 @@ end
     end
 end
 
+@testset "simulate_traced" begin
+    config = CounterConfig(10)
+    scenario = EmptyScenario()
+    policy = IncrementPolicy(5)
+
+    # With rng
+    outcome, trace = simulate_traced(config, scenario, policy, Random.Xoshiro(42))
+    @test outcome.final_value == 50
+    @test trace isa SimulationTrace
+    @test length(trace.states) == 10
+    @test trace.states[end].value == 50
+
+    # Without rng (uses default_rng)
+    outcome2, trace2 = simulate_traced(config, scenario, policy)
+    @test outcome2.final_value == 50
+    @test trace2 isa SimulationTrace
+end
+
 @testset "Utils" begin
     @testset "discount_factor" begin
-        # Basic functionality
+        # Direct export (new in Section 4)
+        @test discount_factor(0.0, 1) == 1.0
+        @test discount_factor(0.10, 1) ≈ 1 / 1.10
+
+        # Utils submodule (backward compatibility)
         @test SimOptDecisions.Utils.discount_factor(0.0, 1) == 1.0
         @test SimOptDecisions.Utils.discount_factor(0.0, 10) == 1.0
 
@@ -329,6 +351,11 @@ end
     end
 
     @testset "timeindex" begin
+        # Direct export (new in Section 4)
+        times_direct = collect(timeindex(1:3))
+        @test length(times_direct) == 3
+        @test times_direct[1] == TimeStep(1, 1)
+
         # Integer range
         times = collect(SimOptDecisions.Utils.timeindex(1:5))
         @test length(times) == 5
@@ -336,7 +363,12 @@ end
         @test times[5] == TimeStep(5, 5)
         @test all(ts -> ts.t == ts.val, times)
 
-        # Check is_first and is_last helper methods
+        # Check is_first and is_last helper methods (direct export)
+        @test is_first(times[1])
+        @test all(ts -> !is_last(ts, 5), times[1:4])
+        @test is_last(times[5], 5)
+
+        # Utils submodule (backward compatibility)
         @test SimOptDecisions.Utils.is_first(times[1])
         @test all(ts -> !SimOptDecisions.Utils.is_last(ts, 5), times[1:4])
         @test SimOptDecisions.Utils.is_last(times[5], 5)

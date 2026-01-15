@@ -61,7 +61,7 @@ Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.data, state)
 
 Extract the underlying data vector from a TimeSeriesParameter.
 """
-value(ts::TimeSeriesParameter) = ts.data
+@inline value(ts::TimeSeriesParameter) = ts.data
 
 # ============================================================================
 # TimeStep Accessors
@@ -72,14 +72,14 @@ value(ts::TimeSeriesParameter) = ts.data
 
 Return the 1-based index of the timestep.
 """
-index(t::TimeStep) = t.t
+@inline index(t::TimeStep) = t.t
 
 """
     value(t::TimeStep) -> V
 
 Return the value (e.g., year, date) of the timestep.
 """
-value(t::TimeStep) = t.val
+@inline value(t::TimeStep) = t.val
 
 # ============================================================================
 # User-Implemented Callback Functions
@@ -197,7 +197,7 @@ function run_simulation(
     state = initialize(config, scenario, rng)
     record!(recorder, state, nothing, nothing, nothing)
 
-    timesteps = Utils.timeindex(times)
+    timesteps = timeindex(times)
     first_ts, rest = Iterators.peel(timesteps)
 
     # Framework calls get_action, then run_timestep

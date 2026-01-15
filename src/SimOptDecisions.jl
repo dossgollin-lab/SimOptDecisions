@@ -32,13 +32,14 @@ export AbstractState,
 export TimeStep, index
 
 # Core simulation
-export simulate, get_action
+export simulate, simulate_traced, get_action
 
 # Callbacks (users implement these)
 export initialize, run_timestep, time_axis, compute_outcome
 
-# Utils helper submodule
-export Utils
+# Utility functions (direct exports)
+export discount_factor, is_first, is_last, timeindex
+export Utils  # Keep submodule for backward compatibility
 
 # TimeSeriesParameter
 export TimeSeriesParameter, TimeSeriesParameterBoundsError

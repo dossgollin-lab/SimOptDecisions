@@ -96,7 +96,7 @@ end
 
 Extract the value from a parameter.
 """
-value(p::AbstractParameter) = p.value
+@inline value(p::AbstractParameter) = p.value
 
 Base.getindex(p::AbstractParameter) = p.value
 

@@ -60,3 +60,38 @@ end
 function simulate(config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy)
     return simulate(config, scenario, policy, NoRecorder(), default_rng())
 end
+
+# ============================================================================
+# Convenience Functions
+# ============================================================================
+
+"""
+    simulate_traced(config, scenario, policy[, rng]) -> (outcome, trace)
+
+Run a simulation and return both the outcome and a typed SimulationTrace.
+This is a convenience wrapper around simulate() with TraceRecorderBuilder.
+
+# Example
+```julia
+outcome, trace = simulate_traced(config, scenario, policy, rng)
+# trace.states, trace.actions, etc. are now available
+```
+"""
+function simulate_traced(
+    config::AbstractConfig,
+    scenario::AbstractScenario,
+    policy::AbstractPolicy,
+    rng::AbstractRNG,
+)
+    builder = TraceRecorderBuilder()
+    outcome = simulate(config, scenario, policy, builder, rng)
+    trace = build_trace(builder)
+    return (outcome, trace)
+end
+
+# Overload without rng
+function simulate_traced(
+    config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy
+)
+    return simulate_traced(config, scenario, policy, default_rng())
+end
