@@ -5,14 +5,14 @@
 using Random: default_rng
 
 """
-    simulate(config, sow, policy[, recorder][, rng]) -> outcome
+    simulate(config, scenario, policy[, recorder][, rng]) -> outcome
 
 Run a simulation. Calls `run_simulation` which uses five callbacks:
-`initialize`, `get_action`, `run_timestep`, `time_axis`, `finalize`.
+`initialize`, `get_action`, `run_timestep`, `time_axis`, `compute_outcome`.
 
 # Arguments
 - `config::AbstractConfig`: Fixed simulation parameters
-- `sow::AbstractSOW`: State of the World (exogenous uncertainty)
+- `scenario::AbstractScenario`: Scenario (exogenous uncertainty)
 - `policy::AbstractPolicy`: Decision strategy
 - `recorder::AbstractRecorder`: Optional, defaults to `NoRecorder()`
 - `rng::AbstractRNG`: Optional, defaults to `Random.default_rng()`
@@ -20,10 +20,10 @@ Run a simulation. Calls `run_simulation` which uses five callbacks:
 # Examples
 ```julia
 # All valid calling conventions:
-simulate(config, sow, policy)                      # minimal
-simulate(config, sow, policy, rng)                 # with RNG
-simulate(config, sow, policy, recorder)            # with recorder
-simulate(config, sow, policy, recorder, rng)       # full
+simulate(config, scenario, policy)                      # minimal
+simulate(config, scenario, policy, rng)                 # with RNG
+simulate(config, scenario, policy, recorder)            # with recorder
+simulate(config, scenario, policy, recorder, rng)       # full
 ```
 """
 function simulate end
@@ -31,32 +31,32 @@ function simulate end
 # Full signature (all arguments)
 function simulate(
     config::AbstractConfig,
-    sow::AbstractSOW,
+    scenario::AbstractScenario,
     policy::AbstractPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
 )
-    return run_simulation(config, sow, policy, recorder, rng)
+    return run_simulation(config, scenario, policy, recorder, rng)
 end
 
 # Without recorder (rng only)
 function simulate(
-    config::AbstractConfig, sow::AbstractSOW, policy::AbstractPolicy, rng::AbstractRNG
+    config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy, rng::AbstractRNG
 )
-    return simulate(config, sow, policy, NoRecorder(), rng)
+    return simulate(config, scenario, policy, NoRecorder(), rng)
 end
 
 # Without rng (recorder only)
 function simulate(
     config::AbstractConfig,
-    sow::AbstractSOW,
+    scenario::AbstractScenario,
     policy::AbstractPolicy,
     recorder::AbstractRecorder,
 )
-    return simulate(config, sow, policy, recorder, default_rng())
+    return simulate(config, scenario, policy, recorder, default_rng())
 end
 
 # Minimal (no recorder, no rng)
-function simulate(config::AbstractConfig, sow::AbstractSOW, policy::AbstractPolicy)
-    return simulate(config, sow, policy, NoRecorder(), default_rng())
+function simulate(config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy)
+    return simulate(config, scenario, policy, NoRecorder(), default_rng())
 end

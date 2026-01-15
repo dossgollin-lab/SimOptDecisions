@@ -25,16 +25,16 @@ include("exploration.jl")
 
 # Abstract types (users subtype these)
 export AbstractState,
-    AbstractPolicy, AbstractConfig, AbstractSOW, AbstractRecorder, AbstractAction
+    AbstractPolicy, AbstractConfig, AbstractScenario, AbstractRecorder, AbstractAction
 
-# TimeStep struct
-export TimeStep
+# TimeStep struct and accessors
+export TimeStep, index
 
 # Core simulation
 export simulate, get_action
 
 # Callbacks (users implement these)
-export initialize, run_timestep, time_axis, finalize
+export initialize, run_timestep, time_axis, compute_outcome
 
 # Utils helper submodule
 export Utils
@@ -95,7 +95,7 @@ export csv_sink, netcdf_sink  # Factory functions (require extensions)
 
 # Exploration
 export ExplorationResult, explore
-export outcomes_for_policy, outcomes_for_sow
+export outcomes_for_policy, outcomes_for_scenario, outcomes_for_sow
 export ExploratoryInterfaceError
 
 # Exploration plotting (requires Makie extension)

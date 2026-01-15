@@ -81,9 +81,9 @@ end
 # ============================================================================
 
 """Defines a simulation-optimization problem. See examples for usage."""
-struct OptimizationProblem{C<:AbstractConfig,S<:AbstractSOW,P<:AbstractPolicy,F}
+struct OptimizationProblem{C<:AbstractConfig,S<:AbstractScenario,P<:AbstractPolicy,F}
     config::C
-    sows::Vector{S}
+    scenarios::Vector{S}
     policy_type::Type{P}
     metric_calculator::F
     objectives::Vector{Objective}
@@ -109,7 +109,7 @@ end
 # Primary constructor with validation
 function OptimizationProblem(
     config::AbstractConfig,
-    sows::AbstractVector{<:AbstractSOW},
+    scenarios::AbstractVector{<:AbstractScenario},
     policy_type::Type{P},
     metric_calculator::F,
     objectives::AbstractVector{<:Objective};
@@ -118,12 +118,12 @@ function OptimizationProblem(
     bounds::Union{Nothing,AbstractVector{<:Tuple}}=nothing,
 ) where {P<:AbstractPolicy,F}
     # Validate inputs
-    _validate_sows(sows)
+    _validate_scenarios(scenarios)
     _validate_policy_interface(policy_type)
     _validate_objectives(objectives)
 
     # Convert to concrete vector types
-    sows_vec = collect(sows)
+    scenarios_vec = collect(scenarios)
     obj_vec = collect(objectives)
     const_vec = collect(constraints)
     bounds_vec =
@@ -131,7 +131,7 @@ function OptimizationProblem(
 
     return OptimizationProblem(
         config,
-        sows_vec,
+        scenarios_vec,
         policy_type,
         metric_calculator,
         obj_vec,
@@ -146,23 +146,23 @@ end
 # ============================================================================
 
 """
-Select SOWs for a batch evaluation.
+Select scenarios for a batch evaluation.
 """
-function _select_batch(sows::Vector{S}, batch_size::FullBatch, rng::AbstractRNG) where {S}
-    return sows
+function _select_batch(scenarios::Vector{S}, batch_size::FullBatch, rng::AbstractRNG) where {S}
+    return scenarios
 end
 
-function _select_batch(sows::Vector{S}, batch_size::FixedBatch, rng::AbstractRNG) where {S}
-    indices = randperm(rng, length(sows))[1:(batch_size.n)]
-    return sows[indices]
+function _select_batch(scenarios::Vector{S}, batch_size::FixedBatch, rng::AbstractRNG) where {S}
+    indices = randperm(rng, length(scenarios))[1:(batch_size.n)]
+    return scenarios[indices]
 end
 
 function _select_batch(
-    sows::Vector{S}, batch_size::FractionBatch, rng::AbstractRNG
+    scenarios::Vector{S}, batch_size::FractionBatch, rng::AbstractRNG
 ) where {S}
-    n = max(1, round(Int, length(sows) * batch_size.fraction))
-    indices = randperm(rng, length(sows))[1:n]
-    return sows[indices]
+    n = max(1, round(Int, length(scenarios) * batch_size.fraction))
+    indices = randperm(rng, length(scenarios))[1:n]
+    return scenarios[indices]
 end
 
 # ============================================================================
@@ -172,17 +172,17 @@ end
 """
     evaluate_policy(prob::OptimizationProblem, policy, rng::AbstractRNG)
 
-Evaluate a policy across all (or a batch of) SOWs and return aggregated metrics.
+Evaluate a policy across all (or a batch of) scenarios and return aggregated metrics.
 """
 function evaluate_policy(
     prob::OptimizationProblem, policy::AbstractPolicy, rng::AbstractRNG
 )
-    # Select SOWs for this evaluation
-    batch_sows = _select_batch(prob.sows, prob.batch_size, rng)
+    # Select scenarios for this evaluation
+    batch_scenarios = _select_batch(prob.scenarios, prob.batch_size, rng)
 
     # Run simulations
-    outcomes = map(batch_sows) do sow
-        simulate(prob.config, sow, policy, rng)
+    outcomes = map(batch_scenarios) do scenario
+        simulate(prob.config, scenario, policy, rng)
     end
 
     # Aggregate to metrics
@@ -225,7 +225,7 @@ end
     merge_into_pareto!(result::OptimizationResult, prob::OptimizationProblem, policy::AbstractPolicy; seed=42)
 
 Evaluate a policy and merge it into the optimization result's Pareto front.
-The policy is evaluated using the problem's config, SOWs, and metric calculator.
+The policy is evaluated using the problem's config, scenarios, and metric calculator.
 Dominance is checked: the policy is added only if not dominated, and any
 existing solutions dominated by it are removed.
 

@@ -19,11 +19,11 @@ struct MHCounterParams <: AbstractConfig
     n_steps::Int
 end
 
-struct MHEmptySOW <: AbstractSOW end
+struct MHEmptySOW <: AbstractScenario end
 
 # Simple for-loop implementation
 function SimOptDecisions.simulate(
-    params::MHCounterParams, sow::MHEmptySOW, policy::MHCounterPolicy, rng::AbstractRNG
+    params::MHCounterParams, scenario::MHEmptySOW, policy::MHCounterPolicy, rng::AbstractRNG
 )
     value = 0.0
     for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
@@ -47,7 +47,7 @@ SimOptDecisions.param_bounds(::Type{MHMultiPolicy}) = [(0.0, 10.0), (0.0, 10.0)]
 MHMultiPolicy(x::AbstractVector) = MHMultiPolicy(x[1], x[2])
 
 function SimOptDecisions.simulate(
-    params::MHCounterParams, sow::MHEmptySOW, policy::MHMultiPolicy, rng::AbstractRNG
+    params::MHCounterParams, scenario::MHEmptySOW, policy::MHMultiPolicy, rng::AbstractRNG
 )
     value = 0.0
     for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
@@ -63,14 +63,14 @@ end
 @testset "MetaheuristicsExt" begin
     @testset "Single-objective optimization with ECA" begin
         params = MHCounterParams(10)
-        sows = [MHEmptySOW() for _ in 1:5]
+        scenarios = [MHEmptySOW() for _ in 1:5]
 
         function metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            params, sows, MHCounterPolicy, metric_calculator, [minimize(:mean_value)]
+            params, scenarios, MHCounterPolicy, metric_calculator, [minimize(:mean_value)]
         )
 
         # Run optimization with limited iterations for speed
@@ -105,7 +105,7 @@ end
 
     @testset "Multi-objective optimization with NSGA2" begin
         params = MHCounterParams(5)
-        sows = [MHEmptySOW() for _ in 1:3]
+        scenarios = [MHEmptySOW() for _ in 1:3]
 
         function multi_metric_calculator(outcomes)
             values = [o.final_value for o in outcomes]
@@ -118,7 +118,7 @@ end
 
         prob = OptimizationProblem(
             params,
-            sows,
+            scenarios,
             MHMultiPolicy,
             multi_metric_calculator,
             [minimize(:mean_value), minimize(:variance)],
@@ -147,7 +147,7 @@ end
 
     @testset "Maximization objective handling" begin
         params = MHCounterParams(5)
-        sows = [MHEmptySOW() for _ in 1:3]
+        scenarios = [MHEmptySOW() for _ in 1:3]
 
         function max_metric_calculator(outcomes)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
@@ -155,7 +155,7 @@ end
 
         prob = OptimizationProblem(
             params,
-            sows,
+            scenarios,
             MHCounterPolicy,
             max_metric_calculator,
             [maximize(:value)],  # Maximize instead of minimize
@@ -175,7 +175,7 @@ end
 
     @testset "Constraint handling - FeasibilityConstraint" begin
         params = MHCounterParams(5)
-        sows = [MHEmptySOW() for _ in 1:3]
+        scenarios = [MHEmptySOW() for _ in 1:3]
 
         function fc_metric_calculator(outcomes)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
@@ -186,7 +186,7 @@ end
 
         prob = OptimizationProblem(
             params,
-            sows,
+            scenarios,
             MHCounterPolicy,
             fc_metric_calculator,
             [minimize(:value)];
@@ -207,7 +207,7 @@ end
 
     @testset "Constraint handling - PenaltyConstraint" begin
         params = MHCounterParams(5)
-        sows = [MHEmptySOW() for _ in 1:3]
+        scenarios = [MHEmptySOW() for _ in 1:3]
 
         function pc_metric_calculator(outcomes)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
@@ -222,7 +222,7 @@ end
 
         prob = OptimizationProblem(
             params,
-            sows,
+            scenarios,
             MHCounterPolicy,
             pc_metric_calculator,
             [minimize(:value)];

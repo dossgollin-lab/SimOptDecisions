@@ -4,7 +4,7 @@
 abstract type AbstractState end
 abstract type AbstractPolicy end
 abstract type AbstractConfig end
-abstract type AbstractSOW end
+abstract type AbstractScenario end
 abstract type AbstractRecorder end
 abstract type AbstractAction end
 
@@ -133,15 +133,15 @@ end
 # ============================================================================
 
 """
-    get_action(policy::AbstractPolicy, state::AbstractState, sow::AbstractSOW, t::TimeStep) -> AbstractAction
+    get_action(policy::AbstractPolicy, state::AbstractState, scenario::AbstractScenario, t::TimeStep) -> AbstractAction
 
-Map state + SOW to action. Called by the framework before each `run_timestep`.
+Map state + scenario to action. Called by the framework before each `run_timestep`.
 
-Must be implemented for each policy type. Return value must be `<:AbstractAction`.
+Must be implemented for each policy type. Return value can be any type (AbstractAction optional).
 """
-function get_action(p::AbstractPolicy, state::AbstractState, sow::AbstractSOW, t::TimeStep)
+function get_action(p::AbstractPolicy, state::AbstractState, scenario::AbstractScenario, t::TimeStep)
     interface_not_implemented(
-        :get_action, typeof(p), "state::AbstractState, sow::AbstractSOW, t::TimeStep"
+        :get_action, typeof(p), "state::AbstractState, scenario::AbstractScenario, t::TimeStep"
     )
 end
 

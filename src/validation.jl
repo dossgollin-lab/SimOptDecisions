@@ -83,30 +83,30 @@ function _validate_policy_interface(::Type{P}) where {P<:AbstractPolicy}
 end
 
 # ============================================================================
-# SOW Validation
+# Scenario Validation
 # ============================================================================
 
 """
-Validate that SOWs are a homogeneous collection of AbstractSOW.
+Validate that scenarios are a homogeneous collection of AbstractScenario.
 """
-function _validate_sows(sows)
-    if isempty(sows)
-        throw(ArgumentError("SOWs collection cannot be empty"))
+function _validate_scenarios(scenarios)
+    if isempty(scenarios)
+        throw(ArgumentError("Scenarios collection cannot be empty"))
     end
 
-    # Check all are AbstractSOW
-    first_type = typeof(first(sows))
-    if !(first(sows) isa AbstractSOW)
-        throw(ArgumentError("SOWs must be subtypes of AbstractSOW, got $(first_type)"))
+    # Check all are AbstractScenario
+    first_type = typeof(first(scenarios))
+    if !(first(scenarios) isa AbstractScenario)
+        throw(ArgumentError("Scenarios must be subtypes of AbstractScenario, got $(first_type)"))
     end
 
     # Check homogeneity
-    for (i, sow) in enumerate(sows)
-        if typeof(sow) !== first_type
+    for (i, scenario) in enumerate(scenarios)
+        if typeof(scenario) !== first_type
             throw(
                 ArgumentError(
-                    "All SOWs must be the same concrete type. " *
-                    "SOW 1 is $(first_type), but SOW $i is $(typeof(sow))",
+                    "All scenarios must be the same concrete type. " *
+                    "Scenario 1 is $(first_type), but scenario $i is $(typeof(scenario))",
                 ),
             )
         end
@@ -206,7 +206,7 @@ Called automatically by `optimize()`.
 """
 function _validate_problem(prob)
     # Re-validate components (in case user modified after construction)
-    _validate_sows(prob.sows)
+    _validate_scenarios(prob.scenarios)
     _validate_policy_interface(prob.policy_type)
     _validate_objectives(prob.objectives)
 
@@ -215,11 +215,11 @@ function _validate_problem(prob)
         throw(ArgumentError("Config validation failed"))
     end
 
-    # Validate batch size against SOW count
-    n_sows = length(prob.sows)
+    # Validate batch size against scenario count
+    n_scenarios = length(prob.scenarios)
     batch = prob.batch_size
-    if batch isa FixedBatch && batch.n > n_sows
-        throw(ArgumentError("FixedBatch size $(batch.n) exceeds number of SOWs ($n_sows)"))
+    if batch isa FixedBatch && batch.n > n_scenarios
+        throw(ArgumentError("FixedBatch size $(batch.n) exceeds number of scenarios ($n_scenarios)"))
     end
 
     return nothing

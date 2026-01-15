@@ -9,7 +9,7 @@ struct OptCounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct OptEmptySOW <: AbstractSOW end
+struct OptEmptySOW <: AbstractScenario end
 
 function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptySOW, ::AbstractRNG)
     return 0.0  # state is just a Float64 counter
@@ -36,7 +36,7 @@ function SimOptDecisions.time_axis(config::OptCounterConfig, ::OptEmptySOW)
     return 1:config.n_steps
 end
 
-function SimOptDecisions.finalize(
+function SimOptDecisions.compute_outcome(
     final_state::Float64, ::Vector, config::OptCounterConfig, ::OptEmptySOW
 )
     return (final_value=final_state,)
@@ -57,7 +57,7 @@ struct EvalCounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct EvalEmptySOW <: AbstractSOW end
+struct EvalEmptySOW <: AbstractScenario end
 
 function SimOptDecisions.initialize(::EvalCounterConfig, ::EvalEmptySOW, ::AbstractRNG)
     return 0.0
@@ -84,7 +84,7 @@ function SimOptDecisions.time_axis(config::EvalCounterConfig, ::EvalEmptySOW)
     return 1:config.n_steps
 end
 
-function SimOptDecisions.finalize(
+function SimOptDecisions.compute_outcome(
     final_state::Float64, ::Vector, config::EvalCounterConfig, ::EvalEmptySOW
 )
     return (final_value=final_state,)
@@ -94,7 +94,7 @@ SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
 EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
 
 # Test types for "Batch selection"
-struct BatchTestSOW <: AbstractSOW
+struct BatchTestSOW <: AbstractScenario
     id::Int
 end
 
@@ -111,18 +111,18 @@ end
     @testset "OptimizationProblem construction" begin
         # Create optimization problem
         config = OptCounterConfig(10)
-        sows = [OptEmptySOW() for _ in 1:5]
+        scenarios = [OptEmptySOW() for _ in 1:5]
 
         function metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            config, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
+            config, scenarios, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
         )
 
         @test prob.config === config
-        @test length(prob.sows) == 5
+        @test length(prob.scenarios) == 5
         @test prob.policy_type === OptCounterPolicy
         @test length(prob.objectives) == 1
         @test prob.batch_size isa FullBatch
@@ -131,7 +131,7 @@ end
         # Test with options
         prob2 = OptimizationProblem(
             config,
-            sows,
+            scenarios,
             OptCounterPolicy,
             metric_calculator,
             [minimize(:mean_value)];
@@ -143,7 +143,7 @@ end
         # Test with custom bounds
         prob3 = OptimizationProblem(
             config,
-            sows,
+            scenarios,
             OptCounterPolicy,
             metric_calculator,
             [minimize(:mean_value)];
@@ -176,14 +176,14 @@ end
 
     @testset "evaluate_policy" begin
         config = EvalCounterConfig(10)
-        sows = [EvalEmptySOW() for _ in 1:5]
+        scenarios = [EvalEmptySOW() for _ in 1:5]
 
         function eval_metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            config, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
+            config, scenarios, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
         )
 
         policy = EvalCounterPolicy(5.0)
@@ -215,27 +215,27 @@ end
     end
 
     @testset "Batch selection" begin
-        sows = [BatchTestSOW(i) for i in 1:100]
+        scenarios = [BatchTestSOW(i) for i in 1:100]
         rng = Random.Xoshiro(42)
 
         # FullBatch returns all
-        full_batch = SimOptDecisions._select_batch(sows, FullBatch(), rng)
+        full_batch = SimOptDecisions._select_batch(scenarios, FullBatch(), rng)
         @test length(full_batch) == 100
-        @test full_batch === sows
+        @test full_batch === scenarios
 
         # FixedBatch returns n
-        fixed_batch = SimOptDecisions._select_batch(sows, FixedBatch(10), rng)
+        fixed_batch = SimOptDecisions._select_batch(scenarios, FixedBatch(10), rng)
         @test length(fixed_batch) == 10
-        @test all(s -> s in sows, fixed_batch)
+        @test all(s -> s in scenarios, fixed_batch)
 
         # FractionBatch returns fraction
-        frac_batch = SimOptDecisions._select_batch(sows, FractionBatch(0.2), rng)
+        frac_batch = SimOptDecisions._select_batch(scenarios, FractionBatch(0.2), rng)
         @test length(frac_batch) == 20
-        @test all(s -> s in sows, frac_batch)
+        @test all(s -> s in scenarios, frac_batch)
 
         # FractionBatch minimum is 1
-        tiny_sows = [BatchTestSOW(1)]
-        tiny_batch = SimOptDecisions._select_batch(tiny_sows, FractionBatch(0.1), rng)
+        tiny_scenarios = [BatchTestSOW(1)]
+        tiny_batch = SimOptDecisions._select_batch(tiny_scenarios, FractionBatch(0.1), rng)
         @test length(tiny_batch) >= 1
     end
 

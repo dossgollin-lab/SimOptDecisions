@@ -1,6 +1,6 @@
 # Test types for "Callbacks" -> "Interface function errors"
 struct TSTestConfig <: AbstractConfig end
-struct TSTestSOW <: AbstractSOW end
+struct TSTestSOW <: AbstractScenario end
 struct TSTestPolicy <: AbstractPolicy end
 struct TSTestAction <: AbstractAction end
 struct TSTestState <: AbstractState end
@@ -18,7 +18,7 @@ struct TSCounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct TSCounterSOW <: AbstractSOW end
+struct TSCounterSOW <: AbstractScenario end
 
 struct TSIncrementPolicy <: AbstractPolicy
     increment::Int
@@ -29,7 +29,7 @@ function SimOptDecisions.initialize(::TSCounterConfig, ::TSCounterSOW, ::Abstrac
 end
 
 function SimOptDecisions.get_action(
-    policy::TSIncrementPolicy, state::TSCounterState, sow::TSCounterSOW, t::TimeStep
+    policy::TSIncrementPolicy, state::TSCounterState, scenario::TSCounterSOW, t::TimeStep
 )
     return TSCounterAction(policy.increment)
 end
@@ -37,7 +37,7 @@ end
 function SimOptDecisions.run_timestep(
     state::TSCounterState,
     action::TSCounterAction,
-    sow::TSCounterSOW,
+    scenario::TSCounterSOW,
     config::TSCounterConfig,
     t::TimeStep,
     ::AbstractRNG,
@@ -50,11 +50,11 @@ function SimOptDecisions.time_axis(config::TSCounterConfig, ::TSCounterSOW)
     return 1:config.n_steps
 end
 
-function SimOptDecisions.finalize(
+function SimOptDecisions.compute_outcome(
     final_state::TSCounterState,
     step_records::Vector,
     config::TSCounterConfig,
-    sow::TSCounterSOW,
+    scenario::TSCounterSOW,
 )
     return (final_value=final_state.value, total_increments=sum(step_records))
 end
@@ -71,7 +71,7 @@ struct TSMinimalConfig <: AbstractConfig
     horizon::Int
 end
 
-struct TSMinimalSOW <: AbstractSOW
+struct TSMinimalSOW <: AbstractScenario
     multiplier::Float64
 end
 
@@ -84,15 +84,15 @@ function SimOptDecisions.initialize(::TSMinimalConfig, ::TSMinimalSOW, ::Abstrac
 end
 
 function SimOptDecisions.get_action(
-    policy::TSMinimalPolicy, state::TSMinimalState, sow::TSMinimalSOW, t::TimeStep
+    policy::TSMinimalPolicy, state::TSMinimalState, scenario::TSMinimalSOW, t::TimeStep
 )
-    return TSMinimalAction(policy.base * sow.multiplier * t.t)
+    return TSMinimalAction(policy.base * scenario.multiplier * t.t)
 end
 
 function SimOptDecisions.run_timestep(
     state::TSMinimalState,
     action::TSMinimalAction,
-    sow::TSMinimalSOW,
+    scenario::TSMinimalSOW,
     config::TSMinimalConfig,
     t::TimeStep,
     ::AbstractRNG,
@@ -104,8 +104,8 @@ function SimOptDecisions.time_axis(config::TSMinimalConfig, ::TSMinimalSOW)
     return 1:config.horizon
 end
 
-function SimOptDecisions.finalize(
-    ::TSMinimalState, step_records::Vector, config::TSMinimalConfig, sow::TSMinimalSOW
+function SimOptDecisions.compute_outcome(
+    ::TSMinimalState, step_records::Vector, config::TSMinimalConfig, scenario::TSMinimalSOW
 )
     return (total=sum(step_records),)
 end
@@ -118,7 +118,7 @@ struct TSNTConfig <: AbstractConfig
     horizon::Int
 end
 
-struct TSNTsow <: AbstractSOW
+struct TSNTsow <: AbstractScenario
     damage_rate::Float64
     cost_rate::Float64
 end
@@ -136,13 +136,13 @@ end
 function SimOptDecisions.run_timestep(
     state::TSNTState,
     action::TSNTAction,
-    sow::TSNTsow,
+    scenario::TSNTsow,
     config::TSNTConfig,
     t::TimeStep,
     ::AbstractRNG,
 )
-    damage = sow.damage_rate * t.t
-    cost = sow.cost_rate * t.t
+    damage = scenario.damage_rate * t.t
+    cost = scenario.cost_rate * t.t
     return (state, (damage=damage, cost=cost))
 end
 
@@ -150,8 +150,8 @@ function SimOptDecisions.time_axis(config::TSNTConfig, ::TSNTsow)
     return 1:config.horizon
 end
 
-function SimOptDecisions.finalize(
-    ::TSNTState, step_records::Vector, config::TSNTConfig, sow::TSNTsow
+function SimOptDecisions.compute_outcome(
+    ::TSNTState, step_records::Vector, config::TSNTConfig, scenario::TSNTsow
 )
     total_damage = sum(o.damage for o in step_records)
     total_cost = sum(o.cost for o in step_records)
@@ -171,7 +171,7 @@ struct TSActionConfig <: AbstractConfig
     horizon::Int
 end
 
-struct TSActionSOW <: AbstractSOW
+struct TSActionSOW <: AbstractScenario
     growth_rate::Float64
 end
 
@@ -180,7 +180,7 @@ struct TSActionPolicy <: AbstractPolicy
 end
 
 function SimOptDecisions.get_action(
-    policy::TSActionPolicy, state::TSActionState, sow::TSActionSOW, t::TimeStep
+    policy::TSActionPolicy, state::TSActionState, scenario::TSActionSOW, t::TimeStep
 )
     return TSActionAction(state.level * policy.invest_fraction)
 end
@@ -192,14 +192,14 @@ end
 function SimOptDecisions.run_timestep(
     state::TSActionState,
     action::TSActionAction,
-    sow::TSActionSOW,
+    scenario::TSActionSOW,
     config::TSActionConfig,
     t::TimeStep,
     ::AbstractRNG,
 )
     # Action is passed by framework, not computed here
     # Transition: growth from rate + investment
-    growth = state.level * sow.growth_rate + action.invest
+    growth = state.level * scenario.growth_rate + action.invest
     new_level = state.level + growth
     new_state = TSActionState(new_level)
 
@@ -210,11 +210,11 @@ function SimOptDecisions.time_axis(config::TSActionConfig, ::TSActionSOW)
     return 1:config.horizon
 end
 
-function SimOptDecisions.finalize(
+function SimOptDecisions.compute_outcome(
     final_state::TSActionState,
     step_records::Vector,
     config::TSActionConfig,
-    sow::TSActionSOW,
+    scenario::TSActionSOW,
 )
     return (final_level=final_state.level, total_growth=sum(step_records))
 end
@@ -230,7 +230,7 @@ struct TSRecordConfig <: AbstractConfig
     horizon::Int
 end
 
-struct TSRecordSOW <: AbstractSOW end
+struct TSRecordSOW <: AbstractScenario end
 struct TSRecordPolicy <: AbstractPolicy end
 
 function SimOptDecisions.initialize(::TSRecordConfig, ::TSRecordSOW, ::AbstractRNG)
@@ -246,7 +246,7 @@ end
 function SimOptDecisions.run_timestep(
     state::TSRecordState,
     action::TSRecordAction,
-    sow::TSRecordSOW,
+    scenario::TSRecordSOW,
     config::TSRecordConfig,
     t::TimeStep,
     ::AbstractRNG,
@@ -259,11 +259,11 @@ function SimOptDecisions.time_axis(config::TSRecordConfig, ::TSRecordSOW)
     return 1:config.horizon
 end
 
-function SimOptDecisions.finalize(
+function SimOptDecisions.compute_outcome(
     final_state::TSRecordState,
     step_records::Vector,
     config::TSRecordConfig,
-    sow::TSRecordSOW,
+    scenario::TSRecordSOW,
 )
     return (final_value=final_state.value,)
 end
@@ -276,7 +276,7 @@ struct TSTypeState{T<:AbstractFloat} <: AbstractState
 end
 
 struct TSTypeConfig <: AbstractConfig end
-struct TSTypeSOW <: AbstractSOW end
+struct TSTypeSOW <: AbstractScenario end
 struct TSTypePolicy <: AbstractPolicy end
 
 function SimOptDecisions.initialize(::TSTypeConfig, ::TSTypeSOW, ::AbstractRNG)
@@ -290,7 +290,7 @@ end
 function SimOptDecisions.run_timestep(
     state::TSTypeState,
     action::TSTypeAction,
-    sow::TSTypeSOW,
+    scenario::TSTypeSOW,
     config::TSTypeConfig,
     t::TimeStep,
     ::AbstractRNG,
@@ -302,13 +302,13 @@ function SimOptDecisions.time_axis(::TSTypeConfig, ::TSTypeSOW)
     return 1:5
 end
 
-function SimOptDecisions.finalize(
+function SimOptDecisions.compute_outcome(
     final_state::TSTypeState, step_records::Vector{Float64}, ::TSTypeConfig, ::TSTypeSOW
 )
     return (final=final_state.value, sum=sum(step_records))
 end
 
-# Test types for "Callbacks" -> "SOW-dependent finalize"
+# Test types for "Callbacks" -> "SOW-dependent compute_outcome"
 struct TSDiscountAction <: AbstractAction end
 struct TSDiscountState <: AbstractState end
 
@@ -316,7 +316,7 @@ struct TSDiscountConfig <: AbstractConfig
     horizon::Int
 end
 
-struct TSDiscountSOW <: AbstractSOW
+struct TSDiscountSOW <: AbstractScenario
     discount_rate::Float64
 end
 
@@ -335,7 +335,7 @@ end
 function SimOptDecisions.run_timestep(
     state::TSDiscountState,
     action::TSDiscountAction,
-    sow::TSDiscountSOW,
+    scenario::TSDiscountSOW,
     config::TSDiscountConfig,
     t::TimeStep,
     ::AbstractRNG,
@@ -348,12 +348,12 @@ function SimOptDecisions.time_axis(config::TSDiscountConfig, ::TSDiscountSOW)
     return 1:config.horizon
 end
 
-function SimOptDecisions.finalize(
-    ::TSDiscountState, damages::Vector, config::TSDiscountConfig, sow::TSDiscountSOW
+function SimOptDecisions.compute_outcome(
+    ::TSDiscountState, damages::Vector, config::TSDiscountConfig, scenario::TSDiscountSOW
 )
     # Discount using SOW's discount rate
     npv = sum(
-        damages[t] * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t) for
+        damages[t] * SimOptDecisions.Utils.discount_factor(scenario.discount_rate, t) for
         t in eachindex(damages)
     )
     return (npv_damages=npv, annual_damages=damages)
@@ -370,7 +370,7 @@ struct TSConnectConfig <: AbstractConfig
     steps::Int
 end
 
-struct TSConnectSOW <: AbstractSOW end
+struct TSConnectSOW <: AbstractScenario end
 struct TSConnectPolicy <: AbstractPolicy end
 
 function SimOptDecisions.initialize(::TSConnectConfig, ::TSConnectSOW, ::AbstractRNG)
@@ -386,7 +386,7 @@ end
 function SimOptDecisions.run_timestep(
     state::TSConnectState,
     action::TSConnectAction,
-    sow::TSConnectSOW,
+    scenario::TSConnectSOW,
     config::TSConnectConfig,
     t::TimeStep,
     ::AbstractRNG,
@@ -398,11 +398,11 @@ function SimOptDecisions.time_axis(config::TSConnectConfig, ::TSConnectSOW)
     return 1:config.steps
 end
 
-function SimOptDecisions.finalize(
+function SimOptDecisions.compute_outcome(
     final_state::TSConnectState,
     step_records::Vector,
     config::TSConnectConfig,
-    sow::TSConnectSOW,
+    scenario::TSConnectSOW,
 )
     return (final_count=final_state.count,)
 end
@@ -414,7 +414,7 @@ end
 @testset "Callbacks" begin
     @testset "Interface function errors" begin
         config = TSTestConfig()
-        sow = TSTestSOW()
+        scenario = TSTestSOW()
         policy = TSTestPolicy()
         rng = Random.Xoshiro(42)
         ts = TimeStep(1, 1)
@@ -423,26 +423,26 @@ end
 
         # run_timestep should throw ArgumentError if not implemented (via interface_not_implemented)
         @test_throws ArgumentError SimOptDecisions.run_timestep(
-            state, action, sow, config, ts, rng
+            state, action, scenario, config, ts, rng
         )
 
         # time_axis should throw ArgumentError if not implemented (via interface_not_implemented)
-        @test_throws ArgumentError SimOptDecisions.time_axis(config, sow)
+        @test_throws ArgumentError SimOptDecisions.time_axis(config, scenario)
 
         # initialize should throw ArgumentError if not implemented
-        @test_throws ArgumentError SimOptDecisions.initialize(config, sow, rng)
+        @test_throws ArgumentError SimOptDecisions.initialize(config, scenario, rng)
 
-        # finalize should throw ArgumentError if not implemented
-        @test_throws ArgumentError SimOptDecisions.finalize(state, [], config, sow)
+        # compute_outcome should throw ArgumentError if not implemented
+        @test_throws ArgumentError SimOptDecisions.compute_outcome(state, [], config, scenario)
     end
 
     @testset "Stateful counter model" begin
         config = TSCounterConfig(10)
-        sow = TSCounterSOW()
+        scenario = TSCounterSOW()
         policy = TSIncrementPolicy(5)
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.run_simulation(config, sow, policy, rng)
+        result = SimOptDecisions.run_simulation(config, scenario, policy, rng)
 
         @test result.final_value == 50  # 10 steps * 5 increment
         @test result.total_increments == 50
@@ -450,11 +450,11 @@ end
 
     @testset "Minimal state model" begin
         config = TSMinimalConfig(5)
-        sow = TSMinimalSOW(2.0)
+        scenario = TSMinimalSOW(2.0)
         policy = TSMinimalPolicy(10.0)
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.run_simulation(config, sow, policy, rng)
+        result = SimOptDecisions.run_simulation(config, scenario, policy, rng)
 
         # 10 * 2 * (1+2+3+4+5) = 20 * 15 = 300
         @test result.total == 300.0
@@ -462,11 +462,11 @@ end
 
     @testset "NamedTuple step record" begin
         config = TSNTConfig(4)
-        sow = TSNTsow(10.0, 2.0)
+        scenario = TSNTsow(10.0, 2.0)
         policy = TSNTPolicy()
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.run_simulation(config, sow, policy, rng)
+        result = SimOptDecisions.run_simulation(config, scenario, policy, rng)
 
         # damage: 10*(1+2+3+4) = 100, cost: 2*(1+2+3+4) = 20
         @test result.total_damage == 100.0
@@ -475,11 +475,11 @@ end
 
     @testset "Framework calls get_action" begin
         config = TSActionConfig(3)
-        sow = TSActionSOW(0.05)  # 5% growth rate
+        scenario = TSActionSOW(0.05)  # 5% growth rate
         policy = TSActionPolicy(0.10)  # 10% investment
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.run_simulation(config, sow, policy, rng)
+        result = SimOptDecisions.run_simulation(config, scenario, policy, rng)
 
         # Starting at 100, each step: growth = level * 0.05 + level * 0.10 = level * 0.15
         # Step 1: level=100, growth=15, new_level=115
@@ -491,13 +491,13 @@ end
 
     @testset "Recording support" begin
         config = TSRecordConfig(5)
-        sow = TSRecordSOW()
+        scenario = TSRecordSOW()
         policy = TSRecordPolicy()
         rng = Random.Xoshiro(42)
 
         # Test with TraceRecorderBuilder (using method overload, not kwargs)
         builder = TraceRecorderBuilder()
-        result = SimOptDecisions.run_simulation(config, sow, policy, builder, rng)
+        result = SimOptDecisions.run_simulation(config, scenario, policy, builder, rng)
 
         # Should have recorded 5 timesteps (excluding initial state)
         trace = build_trace(builder)
@@ -507,29 +507,29 @@ end
         @test all(a -> a isa TSRecordAction, trace.actions)
 
         # Test with NoRecorder (should work without error)
-        result2 = SimOptDecisions.run_simulation(config, sow, policy, rng)
+        result2 = SimOptDecisions.run_simulation(config, scenario, policy, rng)
         @test result2 == result  # Same result with or without recorder
     end
 
     @testset "Type stability" begin
         config = TSTypeConfig()
-        sow = TSTypeSOW()
+        scenario = TSTypeSOW()
         policy = TSTypePolicy()
         rng = Random.Xoshiro(42)
 
         # Test type inference
-        result = @inferred SimOptDecisions.run_simulation(config, sow, policy, rng)
+        result = @inferred SimOptDecisions.run_simulation(config, scenario, policy, rng)
         @test result.final == 5.0
         @test result.sum == 10.0  # 0+1+2+3+4
     end
 
-    @testset "SOW-dependent finalize (discounting)" begin
+    @testset "Scenario-dependent compute_outcome (discounting)" begin
         config = TSDiscountConfig(3)
-        sow = TSDiscountSOW(0.10)  # 10% discount rate
+        scenario = TSDiscountSOW(0.10)  # 10% discount rate
         policy = TSDiscountPolicy()
         rng = Random.Xoshiro(42)
 
-        result = SimOptDecisions.run_simulation(config, sow, policy, rng)
+        result = SimOptDecisions.run_simulation(config, scenario, policy, rng)
 
         # NPV = 100/1.10 + 100/1.10^2 + 100/1.10^3
         expected_npv = 100 / 1.10 + 100 / 1.10^2 + 100 / 1.10^3
@@ -541,10 +541,10 @@ end
         # No need to implement simulate() - it auto-calls run_simulation!
         # Just test via the main simulate interface
         config = TSConnectConfig(7)
-        sow = TSConnectSOW()
+        scenario = TSConnectSOW()
         policy = TSConnectPolicy()
 
-        result = simulate(config, sow, policy, Random.Xoshiro(42))
+        result = simulate(config, scenario, policy, Random.Xoshiro(42))
         @test result.final_count == 7
     end
 
