@@ -23,7 +23,7 @@ using Random
 | Type | Purpose | Example |
 |------|---------|---------|
 | **Config** | Fixed parameters shared across all scenarios | House size, planning horizon |
-| **SOW** | Uncertain parameters (State of the World) | Storm intensity, discount rate |
+| **Scenario** | Uncertain parameters (one possible future) | Storm intensity, discount rate |
 | **State** | Model state that evolves over time | Sea level |
 | **Action** | Decision at each timestep | Elevation height |
 | **Policy** | Rule that maps state to actions | "Elevate to X feet" |
@@ -46,9 +46,9 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
 end
 ```
 
-## SOW: State of the World
+## Scenario: Uncertain Parameters
 
-Each SOW represents one possible future scenario.
+Each Scenario represents one possible future.
 We model uncertainty in:
 
 1. **Storm surge distribution**: Annual maximum surge heights follow a Generalized Extreme Value (GEV) distribution
@@ -57,7 +57,7 @@ We model uncertainty in:
 
 ```{julia}
 #| output: false
-struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
+struct HouseElevationScenario{T<:AbstractFloat} <: AbstractScenario
     # GEV parameters for annual max surge at the gauge
     gev_μ::T  # location (ft)
     gev_σ::T  # scale (ft)
@@ -72,14 +72,14 @@ struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
 end
 ```
 
-### Sampling SOWs
+### Sampling Scenarios
 
-We generate random SOWs by sampling from prior distributions on each parameter.
+We generate random Scenarios by sampling from prior distributions on each parameter.
 This represents our uncertainty about the true values.
 
 ```{julia}
 #| output: false
-function sample_sow(rng::AbstractRNG)
+function sample_scenario(rng::AbstractRNG)
     # GEV parameters for annual max water level
     # Values are in feet above MHHW, based on Norfolk, VA data
     gev_μ = rand(rng, Normal(2.8, 0.3))   # location: typical annual max
@@ -93,7 +93,7 @@ function sample_sow(rng::AbstractRNG)
     # Discount rate: uncertain, ranging from ~1% to 7%
     discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
 
-    return HouseElevationSOW(
+    return HouseElevationScenario(
         gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate
     )
 end
@@ -163,8 +163,8 @@ For a static policy, this just returns the same elevation every time:
 function SimOptDecisions.get_action(
     policy::ElevationPolicy,
     state::SeaLevelState,
-    sow::HouseElevationSOW,
     t::TimeStep,
+    scenario::HouseElevationScenario,
 )
     return ElevationAction(policy.elevation_ft)
 end
@@ -177,7 +177,7 @@ We've defined five types that structure our decision problem:
 | Type | Our Definition | Purpose |
 |------|----------------|---------|
 | `HouseElevationConfig` | Fixed house parameters | Shared across scenarios |
-| `HouseElevationSOW` | Storm/damage/discount uncertainty | Sampled to represent possible futures |
+| `HouseElevationScenario` | Storm/damage/discount uncertainty | Sampled to represent possible futures |
 | `SeaLevelState` | Mean sea level | Tracks state over time |
 | `ElevationAction` | Elevation height | The decision variable |
 | `ElevationPolicy` | Static elevation rule | How to decide |

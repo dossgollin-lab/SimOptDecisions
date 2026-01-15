@@ -23,7 +23,7 @@ It's useful when you can simulate outcomes but can't solve for optimal decisions
 | Term | What it means |
 |------|---------------|
 | **Config** | Fixed parameters that don't change across scenarios |
-| **SOW** | "State of the World" — one possible future (your uncertain parameters) |
+| **Scenario** | One possible future (your uncertain parameters) |
 | **Policy** | A decision rule with tunable parameters |
 | **Action** | What the policy decides at each timestep |
 | **State** | Your model's internal state that evolves over time |
@@ -36,24 +36,76 @@ It's useful when you can simulate outcomes but can't solve for optimal decisions
 ┌──────────────────────────────────────────────────────────────┐
 │                        You define                            │
 ├──────────────────────────────────────────────────────────────┤
-│  Types: Config, SOW, State, Action, Policy                   │
+│  Types: Config, Scenario, State, Action, Policy              │
 │  Callbacks: initialize, get_action, run_timestep,            │
-│             time_axis, finalize                              │
+│             time_axis, compute_outcome                       │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                   Framework handles                          │
 ├──────────────────────────────────────────────────────────────┤
-│  simulate(config, sow, policy)     → run one scenario        │
-│  evaluate_policy(prob, policy)     → run across many SOWs    │
-│  optimize(prob, backend)           → search for best params  │
+│  simulate(config, scenario, policy) → run one scenario       │
+│  evaluate_policy(prob, policy)      → run across scenarios   │
+│  optimize(prob, backend)            → search for best params │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼
                      ┌────────────────┐
                      │  Pareto Front  │
                      └────────────────┘
+```
+
+## Callback Flow
+
+When you call `simulate(config, scenario, policy, rng)`, here's what happens:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    simulate(config, scenario, policy, rng)                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+                        ┌───────────────────────────────┐
+                        │  times = time_axis(config,    │
+                        │                    scenario)  │
+                        └───────────────────────────────┘
+                                        │
+                                        ▼
+                        ┌───────────────────────────────┐
+                        │  state = initialize(config,   │
+                        │              scenario, rng)   │
+                        └───────────────────────────────┘
+                                        │
+                                        ▼
+                        ┌───────────────────────────────┐
+                        │     for t in times:           │
+                        │  ┌─────────────────────────┐  │
+                        │  │ action = get_action(    │  │
+                        │  │   policy, state, t,     │  │
+                        │  │   scenario)             │  │
+                        │  └───────────┬─────────────┘  │
+                        │              │                │
+                        │              ▼                │
+                        │  ┌─────────────────────────┐  │
+                        │  │ state, record =         │  │
+                        │  │   run_timestep(state,   │  │
+                        │  │   action, t, config,    │  │
+                        │  │   scenario, rng)        │  │
+                        │  └─────────────────────────┘  │
+                        └───────────────────────────────┘
+                                        │
+                                        ▼
+                        ┌───────────────────────────────┐
+                        │  outcome = compute_outcome(   │
+                        │    step_records, config,      │
+                        │    scenario)                  │
+                        └───────────────────────────────┘
+                                        │
+                                        ▼
+                                ┌───────────────┐
+                                │    outcome    │
+                                └───────────────┘
 ```
 
 ## Installation

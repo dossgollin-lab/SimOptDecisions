@@ -29,7 +29,7 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
     house_value::T = 200_000.0
 end
 
-struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
+struct HouseElevationScenario{T<:AbstractFloat} <: AbstractScenario
     gev_μ::T
     gev_σ::T
     gev_ξ::T
@@ -38,14 +38,14 @@ struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
     discount_rate::T
 end
 
-function sample_sow(rng::AbstractRNG)
+function sample_scenario(rng::AbstractRNG)
     gev_μ = rand(rng, Normal(2.8, 0.3))
     gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
     gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
     dd_threshold = rand(rng, Normal(0.0, 0.25))
     dd_saturation = rand(rng, Normal(8.0, 0.5))
     discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
-    return HouseElevationSOW(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
+    return HouseElevationScenario(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
 end
 
 struct SeaLevelState{T<:AbstractFloat} <: AbstractState
@@ -61,7 +61,7 @@ struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
 end
 
 function SimOptDecisions.get_action(
-    policy::ElevationPolicy, state::SeaLevelState, sow::HouseElevationSOW, t::TimeStep
+    policy::ElevationPolicy, state::SeaLevelState, t::TimeStep, scenario::HouseElevationScenario
 )
     return ElevationAction(policy.elevation_ft)
 end
@@ -94,67 +94,67 @@ end
 elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
 
 # Callbacks
-function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG)
+function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationScenario, ::AbstractRNG)
     return SeaLevelState(0.0)
 end
 
-function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
+function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationScenario)
     return 1:(config.horizon)
 end
 
 function SimOptDecisions.run_timestep(
-    state::SeaLevelState, action::ElevationAction, sow::HouseElevationSOW,
-    config::HouseElevationConfig, t::TimeStep, rng::AbstractRNG
+    state::SeaLevelState, action::ElevationAction, t::TimeStep,
+    config::HouseElevationConfig, scenario::HouseElevationScenario, rng::AbstractRNG
 )
-    construction_cost = SimOptDecisions.Utils.is_first(t) ?
+    construction_cost = is_first(t) ?
         elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
 
-    surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
+    surge_dist = GeneralizedExtremeValue(scenario.gev_μ, scenario.gev_σ, scenario.gev_ξ)
     surge_at_gauge = rand(rng, surge_dist)
     water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
     house_floor_level = config.house_height_above_ref + action.elevation_ft
     flood_depth_at_house = water_level - house_floor_level
-    damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
+    damage_fraction = depth_damage(flood_depth_at_house, scenario.dd_threshold, scenario.dd_saturation)
 
     return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
 end
 
-function SimOptDecisions.finalize(
-    final_state::SeaLevelState, step_records::Vector,
-    config::HouseElevationConfig, sow::HouseElevationSOW
+function SimOptDecisions.compute_outcome(
+    step_records::Vector,
+    config::HouseElevationConfig, scenario::HouseElevationScenario
 )
     construction_cost = step_records[1].construction_cost
     npv_damages = sum(
-        step_records[t].damage_fraction * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t)
+        step_records[t].damage_fraction * discount_factor(scenario.discount_rate, t)
         for t in eachindex(step_records)
     )
     return (construction_cost=construction_cost, npv_damages=npv_damages)
 end
 ```
 
-## Generate Many SOWs
+## Generate Many Scenarios
 
 First, we sample an ensemble of possible futures:
 
 ```{julia}
-n_sows = 1000
+n_scenarios = 1000
 rng = Random.Xoshiro(42)
-sows = [sample_sow(rng) for _ in 1:n_sows]
+scenarios = [sample_scenario(rng) for _ in 1:n_scenarios]
 
-println("Generated $(n_sows) SOWs")
-println("Discount rate range: $(round(minimum(s.discount_rate for s in sows), digits=3)) - $(round(maximum(s.discount_rate for s in sows), digits=3))")
+println("Generated $(n_scenarios) scenarios")
+println("Discount rate range: $(round(minimum(s.discount_rate for s in scenarios), digits=3)) - $(round(maximum(s.discount_rate for s in scenarios), digits=3))")
 ```
 
 ## Evaluate One Policy
 
-Let's evaluate a 5-foot elevation policy across all SOWs:
+Let's evaluate a 5-foot elevation policy across all scenarios:
 
 ```{julia}
 config = HouseElevationConfig()
 policy = ElevationPolicy(5.0)
 
-# Run simulation for each SOW
-outcomes = [simulate(config, sow, policy) for sow in sows]
+# Run simulation for each scenario
+outcomes = [simulate(config, scenario, policy) for scenario in scenarios]
 
 # Extract NPV damages
 damages = [o.npv_damages for o in outcomes]
@@ -196,7 +196,7 @@ The distribution of outcomes shows how much uncertainty remains:
 
 ```{julia}
 #| label: fig-damage-distribution
-#| fig-cap: "Distribution of NPV damages across 1000 SOWs for 5-foot elevation"
+#| fig-cap: "Distribution of NPV damages across 1000 scenarios for 5-foot elevation"
 #| code-fold: true
 let
     fig = Figure(; size=(700, 400))
@@ -230,7 +230,7 @@ results = Dict{Int,NamedTuple}()
 
 for elev in elevations
     policy = ElevationPolicy(Float64(elev))
-    outcomes = [simulate(config, sow, policy) for sow in sows]
+    outcomes = [simulate(config, scenario, policy) for scenario in scenarios]
     damages = [o.npv_damages for o in outcomes]
 
     results[elev] = (
@@ -340,8 +340,8 @@ end
 
 We've learned to:
 
-1. **Generate SOW ensembles** representing uncertain futures
-2. **Evaluate a policy** across many SOWs using `simulate`
+1. **Generate scenario ensembles** representing uncertain futures
+2. **Evaluate a policy** across many scenarios using `simulate`
 3. **Compute metrics** that summarize performance (expected value, CVaR, worst case)
 4. **Compare policies** to understand trade-offs
 
@@ -349,4 +349,4 @@ This manual loop works well, but for systematic exploration we want a more struc
 
 ## Next Steps
 
-In the [next section](05-exploratory-modeling.qmd), we'll use the `explore()` function to systematically evaluate **all combinations** of policies and SOWs.
+In the [next section](05-exploratory-modeling.qmd), we'll use the `explore()` function to systematically evaluate **all combinations** of policies and scenarios.

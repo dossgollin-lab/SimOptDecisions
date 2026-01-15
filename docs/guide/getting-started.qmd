@@ -11,20 +11,20 @@ This guide shows you exactly what to implement to use SimOptDecisions.
 | Type | Purpose | Subtype of |
 |------|---------|------------|
 | Config | Fixed parameters (shared across scenarios) | `AbstractConfig` |
-| SOW | Uncertain parameters (one possible future) | `AbstractSOW` |
+| Scenario | Uncertain parameters (one possible future) | `AbstractScenario` |
 | State | Your model's internal state | `AbstractState` |
-| Action | What gets decided at each timestep | `AbstractAction` |
+| Action | What gets decided at each timestep | `AbstractAction` (optional) |
 | Policy | Decision rule with tunable parameters | `AbstractPolicy` |
 
 ### Callbacks (5 required)
 
 | Callback | Signature | Returns |
 |----------|-----------|---------|
-| `initialize` | `(config, sow, rng)` | `State` |
-| `get_action` | `(policy, state, sow, t)` | `Action` |
-| `run_timestep` | `(state, action, sow, config, t, rng)` | `(new_state, step_record)` |
-| `time_axis` | `(config, sow)` | Iterable with `length()` |
-| `finalize` | `(final_state, step_records, config, sow)` | `Outcome` |
+| `initialize` | `(config, scenario, rng)` | `State` |
+| `get_action` | `(policy, state, t, scenario)` | `Action` (any type) |
+| `run_timestep` | `(state, action, t, config, scenario, rng)` | `(new_state, step_record)` |
+| `time_axis` | `(config, scenario)` | Iterable with `length()` |
+| `compute_outcome` | `(step_records, config, scenario)` | `Outcome` |
 
 ### For Optimization (2 additional)
 
@@ -51,7 +51,7 @@ struct MyConfig <: AbstractConfig
     horizon::Int
 end
 
-struct MySOW{T<:AbstractFloat} <: AbstractSOW
+struct MyScenario{T<:AbstractFloat} <: AbstractScenario
     growth_rate::T
 end
 
@@ -67,38 +67,37 @@ struct MyPolicy <: AbstractPolicy end
 # CALLBACKS
 # =============================================================================
 
-function SimOptDecisions.initialize(config::MyConfig, sow::MySOW, rng::AbstractRNG)
+function SimOptDecisions.initialize(config::MyConfig, scenario::MyScenario, rng::AbstractRNG)
     return MyState(1.0)
 end
 
-function SimOptDecisions.get_action(policy::MyPolicy, state::MyState, sow::MySOW, t::TimeStep)
+function SimOptDecisions.get_action(policy::MyPolicy, state::MyState, t::TimeStep, scenario::MyScenario)
     return MyAction()
 end
 
 function SimOptDecisions.run_timestep(
     state::MyState,
     action::MyAction,
-    sow::MySOW,
-    config::MyConfig,
     t::TimeStep,
+    config::MyConfig,
+    scenario::MyScenario,
     rng::AbstractRNG,
 )
-    new_value = state.value * (1 + sow.growth_rate)
+    new_value = state.value * (1 + scenario.growth_rate)
     step_record = (value=state.value,)
     return (MyState(new_value), step_record)
 end
 
-function SimOptDecisions.time_axis(config::MyConfig, sow::MySOW)
+function SimOptDecisions.time_axis(config::MyConfig, scenario::MyScenario)
     return 1:(config.horizon)
 end
 
-function SimOptDecisions.finalize(
-    final_state::MyState,
+function SimOptDecisions.compute_outcome(
     step_records::Vector,
     config::MyConfig,
-    sow::MySOW,
+    scenario::MyScenario,
 )
-    return (final_value=final_state.value,)
+    return (final_value=step_records[end].value,)
 end
 
 # =============================================================================
@@ -106,10 +105,10 @@ end
 # =============================================================================
 
 config = MyConfig(10)
-sow = MySOW(0.05)
+scenario = MyScenario(0.05)
 policy = MyPolicy()
 
-result = simulate(config, sow, policy)
+result = simulate(config, scenario, policy)
 println("Final value: ", result.final_value)
 ```
 
@@ -125,10 +124,10 @@ struct MyConfig <: AbstractConfig
 end
 ```
 
-**SOW** (State of the World) holds uncertain parameters. Each SOW represents one possible future:
+**Scenario** holds uncertain parameters. Each Scenario represents one possible future:
 
 ```julia
-struct MySOW{T<:AbstractFloat} <: AbstractSOW
+struct MyScenario{T<:AbstractFloat} <: AbstractScenario
     growth_rate::T      # uncertain: could be 3%, 5%, 7%...
 end
 ```
@@ -141,10 +140,11 @@ struct MyState{T<:AbstractFloat} <: AbstractState
 end
 ```
 
-**Action** represents what gets decided at each timestep:
+**Action** represents what gets decided at each timestep. Can be any type (AbstractAction is optional):
 
 ```julia
 struct MyAction <: AbstractAction end  # can be empty for simple models
+# Or just return a number/tuple: get_action(...) = 0.5
 ```
 
 **Policy** defines how decisions are made. For optimization, include tunable parameters:
@@ -158,20 +158,20 @@ struct MyPolicy <: AbstractPolicy end  # no parameters in this simple example
 **initialize**: Create the starting state.
 
 ```julia
-SimOptDecisions.initialize(config::MyConfig, sow::MySOW, rng::AbstractRNG) = MyState(1.0)
+SimOptDecisions.initialize(config::MyConfig, scenario::MyScenario, rng::AbstractRNG) = MyState(1.0)
 ```
 
 **get_action**: Given the current state, decide what to do.
 
 ```julia
-SimOptDecisions.get_action(policy::MyPolicy, state::MyState, sow::MySOW, t::TimeStep) = MyAction()
+SimOptDecisions.get_action(policy::MyPolicy, state::MyState, t::TimeStep, scenario::MyScenario) = MyAction()
 ```
 
 **run_timestep**: Apply the action and advance the model. Returns `(new_state, step_record)`.
 
 ```julia
-function SimOptDecisions.run_timestep(state::MyState, action::MyAction, sow::MySOW, config::MyConfig, t::TimeStep, rng::AbstractRNG)
-    new_value = state.value * (1 + sow.growth_rate)
+function SimOptDecisions.run_timestep(state::MyState, action::MyAction, t::TimeStep, config::MyConfig, scenario::MyScenario, rng::AbstractRNG)
+    new_value = state.value * (1 + scenario.growth_rate)
     return (MyState(new_value), (value=state.value,))
 end
 ```
@@ -179,14 +179,14 @@ end
 **time_axis**: Define when timesteps occur.
 
 ```julia
-SimOptDecisions.time_axis(config::MyConfig, sow::MySOW) = 1:config.horizon
+SimOptDecisions.time_axis(config::MyConfig, scenario::MyScenario) = 1:config.horizon
 ```
 
-**finalize**: Summarize the simulation into an outcome.
+**compute_outcome**: Summarize the simulation into an outcome.
 
 ```julia
-function SimOptDecisions.finalize(final_state::MyState, step_records::Vector, config::MyConfig, sow::MySOW)
-    return (final_value=final_state.value,)
+function SimOptDecisions.compute_outcome(step_records::Vector, config::MyConfig, scenario::MyScenario)
+    return (final_value=step_records[end].value,)
 end
 ```
 
@@ -215,19 +215,19 @@ Then set up and run optimization:
 ```julia
 using Metaheuristics
 
-# Aggregate outcomes across SOWs into metrics
+# Aggregate outcomes across scenarios into metrics
 function calculate_metrics(outcomes)
     values = [o.final_value for o in outcomes]
     return (expected_value=mean(values), worst_case=minimum(values))
 end
 
 # Sample many possible futures
-sows = [MySOW(rand() * 0.1) for _ in 1:100]
+scenarios = [MyScenario(rand() * 0.1) for _ in 1:100]
 
 # Set up the problem
 prob = OptimizationProblem(
     config,
-    sows,
+    scenarios,
     OptimizablePolicy,
     calculate_metrics,
     [maximize(:expected_value)],
