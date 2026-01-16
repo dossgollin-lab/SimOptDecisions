@@ -18,12 +18,30 @@ using Distributions
 using Random
 ```
 
+## Why Parameter Types?
+
+SimOptDecisions requires that Scenario, Policy, and Outcome types use **parameter types** instead of plain `Float64` or `Int` fields. This enables:
+
+- **Automatic bounds** for optimization (no manual `param_bounds` implementation)
+- **Automatic flattening** for exploratory modeling and visualization
+- **Consistent value extraction** via `value(p)` everywhere
+- **Type safety** and clear intent
+
+The four parameter types are:
+
+| Type | Use Case | Example |
+|------|----------|---------|
+| `ContinuousParameter{T}` | Real values with bounds | `ContinuousParameter(0.5, (0.0, 1.0))` |
+| `DiscreteParameter{T}` | Integer values | `DiscreteParameter(5, [1, 2, 3, 4, 5])` |
+| `CategoricalParameter{T}` | Categorical/enum | `CategoricalParameter(:high, [:low, :high])` |
+| `TimeSeriesParameter{T,I}` | Time-indexed data | `TimeSeriesParameter(2020:2100, values)` |
+
 ## The Five Types
 
 | Type | Purpose | Example |
 |------|---------|---------|
 | **Config** | Fixed parameters shared across all scenarios | House size, planning horizon |
-| **SOW** | Uncertain parameters (State of the World) | Storm intensity, discount rate |
+| **Scenario** | Uncertain parameters (one possible future) | Storm intensity, discount rate |
 | **State** | Model state that evolves over time | Sea level |
 | **Action** | Decision at each timestep | Elevation height |
 | **Policy** | Rule that maps state to actions | "Elevate to X feet" |
@@ -32,6 +50,12 @@ using Random
 
 The config holds parameters that are **shared across all scenarios and policies**.
 These are fixed characteristics of the problem, not uncertain quantities.
+
+::: {.callout-note}
+## Config Can Use Plain Types
+
+Unlike Scenario and Policy, the Config type can use plain `Float64` and `Int` fields because it's not part of exploratory analysis or optimization. It's truly fixed.
+:::
 
 For house elevation, we use values from [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/2022-elevation-robustness): a 1500 ft² house worth \$200,000 with a 70-year planning horizon.
 
@@ -46,54 +70,62 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
 end
 ```
 
-## SOW: State of the World
+## Scenario: Uncertain Parameters
 
-Each SOW represents one possible future scenario.
+Each Scenario represents one possible future.
 We model uncertainty in:
 
 1. **Storm surge distribution**: Annual maximum surge heights follow a Generalized Extreme Value (GEV) distribution
 2. **Depth-damage relationship**: How flood depth translates to damage
 3. **Discount rate**: The time value of money
 
+All fields use `ContinuousParameter` so the framework can automatically flatten scenarios for analysis:
+
 ```{julia}
 #| output: false
-struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
+struct HouseElevationScenario{T<:AbstractFloat} <: AbstractScenario
     # GEV parameters for annual max surge at the gauge
-    gev_μ::T  # location (ft)
-    gev_σ::T  # scale (ft)
-    gev_ξ::T  # shape (dimensionless)
+    gev_μ::ContinuousParameter{T}  # location (ft)
+    gev_σ::ContinuousParameter{T}  # scale (ft)
+    gev_ξ::ContinuousParameter{T}  # shape (dimensionless)
 
     # Depth-damage curve parameters (at the house)
-    dd_threshold::T   # depth below which no damage occurs (ft)
-    dd_saturation::T  # depth at which damage reaches 100% (ft)
+    dd_threshold::ContinuousParameter{T}   # depth below which no damage occurs (ft)
+    dd_saturation::ContinuousParameter{T}  # depth at which damage reaches 100% (ft)
 
     # Economic parameters
-    discount_rate::T
+    discount_rate::ContinuousParameter{T}
 end
 ```
 
-### Sampling SOWs
+::: {.callout-tip}
+## Accessing Parameter Values
 
-We generate random SOWs by sampling from prior distributions on each parameter.
+Use `value(p)` to extract the underlying value from any parameter type. For example, `value(scenario.gev_μ)` returns the Float64 location parameter.
+:::
+
+### Sampling Scenarios
+
+We generate random Scenarios by sampling from prior distributions on each parameter.
 This represents our uncertainty about the true values.
 
 ```{julia}
 #| output: false
-function sample_sow(rng::AbstractRNG)
+function sample_scenario(rng::AbstractRNG)
     # GEV parameters for annual max water level
     # Values are in feet above MHHW, based on Norfolk, VA data
-    gev_μ = rand(rng, Normal(2.8, 0.3))   # location: typical annual max
-    gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))  # scale
-    gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))  # shape
+    gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3)))
+    gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3)))
+    gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5)))
 
     # Depth-damage curve parameters
-    dd_threshold = rand(rng, Normal(0.0, 0.25))
-    dd_saturation = rand(rng, Normal(8.0, 0.5))
+    dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25)))
+    dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5)))
 
     # Discount rate: uncertain, ranging from ~1% to 7%
-    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
+    discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)))
 
-    return HouseElevationSOW(
+    return HouseElevationScenario(
         gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate
     )
 end
@@ -139,34 +171,42 @@ end
 The policy has a single parameter: the elevation height in feet.
 For this example, we use a **static policy**: choose an elevation once and stick with it.
 
+Using `ContinuousParameter` with bounds means the framework can **automatically derive** `param_bounds` for optimization:
+
 ```{julia}
 #| output: false
 struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::T  # feet above current ground level
+    elevation_ft::ContinuousParameter{T}  # feet above current ground level (0-14)
 end
 
-# For optimization, we need to convert between policy and parameter vector
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
-SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
-SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
+# Constructor from parameter vector (for optimization)
+function ElevationPolicy(params::AbstractVector)
+    ElevationPolicy(ContinuousParameter(params[1], (0.0, 14.0)))
+end
 ```
 
-The last three lines enable optimization (covered in [Part 6](06-policy-search.qmd)).
+::: {.callout-note}
+## Automatic Bounds Derivation
+
+Because we use `ContinuousParameter` with bounds, the framework automatically derives `param_bounds` and `params` for optimization. No need to implement them manually!
+:::
 
 ## Mapping Policy to Action
 
 We need a function that determines what action to take given the current state.
-For a static policy, this just returns the same elevation every time:
+For a static policy, this just returns the same elevation every time.
+
+Note: use `value()` to extract the underlying Float64 from the parameter:
 
 ```{julia}
 #| output: false
 function SimOptDecisions.get_action(
     policy::ElevationPolicy,
     state::SeaLevelState,
-    sow::HouseElevationSOW,
     t::TimeStep,
+    scenario::HouseElevationScenario,
 )
-    return ElevationAction(policy.elevation_ft)
+    return ElevationAction(value(policy.elevation_ft))
 end
 ```
 
@@ -177,7 +217,7 @@ We've defined five types that structure our decision problem:
 | Type | Our Definition | Purpose |
 |------|----------------|---------|
 | `HouseElevationConfig` | Fixed house parameters | Shared across scenarios |
-| `HouseElevationSOW` | Storm/damage/discount uncertainty | Sampled to represent possible futures |
+| `HouseElevationScenario` | Storm/damage/discount uncertainty | Sampled to represent possible futures |
 | `SeaLevelState` | Mean sea level | Tracks state over time |
 | `ElevationAction` | Elevation height | The decision variable |
 | `ElevationPolicy` | Static elevation rule | How to decide |

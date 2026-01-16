@@ -13,6 +13,8 @@ When objectives conflict (cost vs. damage), we get a **Pareto front** of optimal
 
 ```{julia}
 #| output: false
+#| code-fold: true
+#| code-summary: "Type definitions (click to expand)"
 using SimOptDecisions
 using Distributions
 using Random
@@ -29,23 +31,23 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
     house_value::T = 200_000.0
 end
 
-struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
-    gev_μ::T
-    gev_σ::T
-    gev_ξ::T
-    dd_threshold::T
-    dd_saturation::T
-    discount_rate::T
+struct HouseElevationScenario{T<:AbstractFloat} <: AbstractScenario
+    gev_μ::ContinuousParameter{T}
+    gev_σ::ContinuousParameter{T}
+    gev_ξ::ContinuousParameter{T}
+    dd_threshold::ContinuousParameter{T}
+    dd_saturation::ContinuousParameter{T}
+    discount_rate::ContinuousParameter{T}
 end
 
-function sample_sow(rng::AbstractRNG)
-    gev_μ = rand(rng, Normal(2.8, 0.3))
-    gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
-    gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
-    dd_threshold = rand(rng, Normal(0.0, 0.25))
-    dd_saturation = rand(rng, Normal(8.0, 0.5))
-    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
-    return HouseElevationSOW(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
+function sample_scenario(rng::AbstractRNG)
+    gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3)))
+    gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3)))
+    gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5)))
+    dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25)))
+    dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5)))
+    discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)))
+    return HouseElevationScenario(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
 end
 
 struct SeaLevelState{T<:AbstractFloat} <: AbstractState
@@ -57,18 +59,18 @@ struct ElevationAction{T<:AbstractFloat} <: AbstractAction
 end
 
 struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::T
+    elevation_ft::ContinuousParameter{T}
 end
 
 # Required for optimization
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(params[1])
-SimOptDecisions.params(p::ElevationPolicy) = [p.elevation_ft]
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(ContinuousParameter(params[1], (0.0, 14.0)))
+SimOptDecisions.params(p::ElevationPolicy) = [value(p.elevation_ft)]
 SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
 
 function SimOptDecisions.get_action(
-    policy::ElevationPolicy, state::SeaLevelState, sow::HouseElevationSOW, t::TimeStep
+    policy::ElevationPolicy, state::SeaLevelState, t::TimeStep, scenario::HouseElevationScenario
 )
-    return ElevationAction(policy.elevation_ft)
+    return ElevationAction(value(policy.elevation_ft))
 end
 
 function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
@@ -97,38 +99,38 @@ function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
 end
 elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
 
-function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG)
+function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationScenario, ::AbstractRNG)
     return SeaLevelState(0.0)
 end
 
-function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
+function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationScenario)
     return 1:(config.horizon)
 end
 
 function SimOptDecisions.run_timestep(
-    state::SeaLevelState, action::ElevationAction, sow::HouseElevationSOW,
-    config::HouseElevationConfig, t::TimeStep, rng::AbstractRNG
+    state::SeaLevelState, action::ElevationAction, t::TimeStep,
+    config::HouseElevationConfig, scenario::HouseElevationScenario, rng::AbstractRNG
 )
-    construction_cost = SimOptDecisions.Utils.is_first(t) ?
+    construction_cost = is_first(t) ?
         elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
 
-    surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
+    surge_dist = GeneralizedExtremeValue(value(scenario.gev_μ), value(scenario.gev_σ), value(scenario.gev_ξ))
     surge_at_gauge = rand(rng, surge_dist)
     water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
     house_floor_level = config.house_height_above_ref + action.elevation_ft
     flood_depth_at_house = water_level - house_floor_level
-    damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
+    damage_fraction = depth_damage(flood_depth_at_house, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
     return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
 end
 
-function SimOptDecisions.finalize(
-    final_state::SeaLevelState, step_records::Vector,
-    config::HouseElevationConfig, sow::HouseElevationSOW
+function SimOptDecisions.compute_outcome(
+    step_records::Vector,
+    config::HouseElevationConfig, scenario::HouseElevationScenario
 )
     construction_cost = step_records[1].construction_cost
     npv_damages = sum(
-        step_records[t].damage_fraction * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t)
+        step_records[t].damage_fraction * discount_factor(value(scenario.discount_rate), t)
         for t in eachindex(step_records)
     )
     return (construction_cost=construction_cost, npv_damages=npv_damages)
@@ -139,15 +141,15 @@ end
 
 Before optimization, understand two key concepts:
 
-- **Outcome**: Result of a *single* simulation (one policy × one SOW)
-- **Metric**: *Aggregated* statistic across many SOWs for a given policy
+- **Outcome**: Result of a *single* simulation (one policy × one scenario)
+- **Metric**: *Aggregated* statistic across many scenarios for a given policy
 
-The optimizer evaluates policies by computing metrics across the SOW ensemble.
+The optimizer evaluates policies by computing metrics across the scenario ensemble.
 
 ```{julia}
 #| output: false
 """
-Compute metrics from outcomes across many SOWs.
+Compute metrics from outcomes across many scenarios.
 Returns a NamedTuple that the optimizer can reference.
 """
 function calculate_metrics(outcomes)
@@ -167,12 +169,12 @@ end
 
 ```{julia}
 config = HouseElevationConfig()
-n_sows = 1000
+n_scenarios = 1000
 rng = Random.Xoshiro(42)
-sows = [sample_sow(rng) for _ in 1:n_sows]
+scenarios = [sample_scenario(rng) for _ in 1:n_scenarios]
 
 println("Config: $(config.horizon)-year horizon, \$$(Int(config.house_value)) house")
-println("SOWs: $(n_sows) sampled futures")
+println("Scenarios: $(n_scenarios) sampled futures")
 ```
 
 ### Multi-Objective Problem
@@ -186,7 +188,7 @@ import Metaheuristics  # loads the optimization extension
 # We'll add 0 ft separately to handle the discrete gap
 prob = OptimizationProblem(
     config,
-    sows,
+    scenarios,
     ElevationPolicy,
     calculate_metrics,
     [minimize(:construction_cost), minimize(:expected_damage)];
@@ -222,7 +224,7 @@ backend = MetaheuristicsBackend(;
 opt_result = SimOptDecisions.optimize(prob, backend)
 
 # Add the "no elevation" baseline to the Pareto front
-merge_into_pareto!(opt_result, prob, ElevationPolicy(0.0))
+merge_into_pareto!(opt_result, prob, ElevationPolicy(ContinuousParameter(0.0, (0.0, 14.0))))
 
 println("Found $(length(opt_result.pareto_params)) Pareto-optimal solutions")
 ```
@@ -326,17 +328,17 @@ println("  Total: $(round(best_obj[1] + best_obj[2], digits=3))")
 
 We've covered the complete SimOptDecisions workflow:
 
-1. **Define the problem** with types (Config, SOW, State, Action, Policy)
+1. **Define the problem** with types (Config, Scenario, State, Action, Policy)
 2. **Implement physics** (depth-damage, elevation cost)
-3. **Write callbacks** (initialize, time_axis, get_action, run_timestep, finalize)
+3. **Write callbacks** (initialize, time_axis, get_action, run_timestep, compute_outcome)
 4. **Run simulations** with `simulate()`
-5. **Evaluate policies** across many SOWs
+5. **Evaluate policies** across many scenarios
 6. **Explore systematically** with grid search or `explore()`
 7. **Optimize** with multi-objective algorithms to find Pareto-optimal solutions
 
 ## Key Takeaways
 
-1. **Structure your uncertainty** in the SOW type
+1. **Structure your uncertainty** in the Scenario type
 2. **Separate physics from framework** in standalone functions
 3. **Validate with exploration** before optimizing
 4. **Use multi-objective optimization** when objectives conflict
@@ -351,7 +353,7 @@ This model makes simplifying assumptions worth noting:
 - **Independent damages**: No cumulative effects year-to-year
 - **Single decision**: Elevation chosen once, not adaptively
 
-For real applications, you'd want to relax these assumptions. The framework supports time-varying SOWs, evolving state, and more complex policies.
+For real applications, you'd want to relax these assumptions. The framework supports time-varying scenarios, evolving state, and more complex policies.
 
 ## Next Steps
 

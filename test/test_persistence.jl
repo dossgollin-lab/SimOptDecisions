@@ -5,7 +5,7 @@ function _checkpoint_metric_calc(outcomes)
 end
 
 # Test types for "ExperimentConfig construction"
-struct PersistTestSOW <: AbstractSOW
+struct PersistTestSOW <: AbstractScenario
     id::Int
 end
 
@@ -19,10 +19,13 @@ struct CheckpointPolicy <: AbstractPolicy
 end
 
 struct CheckpointParams <: AbstractConfig end
-struct CheckpointSOW <: AbstractSOW end
+struct CheckpointSOW <: AbstractScenario end
 
 function SimOptDecisions.simulate(
-    params::CheckpointParams, sow::CheckpointSOW, policy::CheckpointPolicy, rng::AbstractRNG
+    params::CheckpointParams,
+    scenario::CheckpointSOW,
+    policy::CheckpointPolicy,
+    rng::AbstractRNG,
 )
     value = 0.0
     for ts in SimOptDecisions.Utils.timeindex(1:5)
@@ -35,7 +38,7 @@ SimOptDecisions.param_bounds(::Type{CheckpointPolicy}) = [(0.0, 1.0)]
 CheckpointPolicy(x::AbstractVector) = CheckpointPolicy(x[1])
 
 # Test types for "Experiment save/load"
-struct ExpTestSOW <: AbstractSOW end
+struct ExpTestSOW <: AbstractScenario end
 
 struct ExpResultPolicy <: AbstractPolicy
     x::Float64
@@ -56,17 +59,19 @@ end
     end
 
     @testset "ExperimentConfig construction" begin
-        sows = [PersistTestSOW(i) for i in 1:10]
+        scenarios = [PersistTestSOW(i) for i in 1:10]
         shared = SharedParameters(; rate=0.05)
         backend = MetaheuristicsBackend()
 
-        config = ExperimentConfig(42, sows, shared, backend; sow_source="test data")
+        config = ExperimentConfig(
+            42, scenarios, shared, backend; scenario_source="test data"
+        )
 
         @test config.seed == 42
-        @test length(config.sows) == 10
+        @test length(config.scenarios) == 10
         @test config.shared.rate == 0.05
         @test config.backend === backend
-        @test config.sow_source == "test data"
+        @test config.scenario_source == "test data"
         @test config.git_commit == ""
         @test config.package_versions == ""
     end
@@ -98,10 +103,10 @@ end
     end
 
     @testset "Experiment save/load" begin
-        sows = [ExpTestSOW() for _ in 1:3]
+        scenarios = [ExpTestSOW() for _ in 1:3]
         shared = SharedParameters(; param1=1.0)
         backend = MetaheuristicsBackend()
-        config = ExperimentConfig(123, sows, shared, backend)
+        config = ExperimentConfig(123, scenarios, shared, backend)
 
         result = OptimizationResult{Float64}(Dict{Symbol,Any}(), [[0.7]], [[5.0]])
 

@@ -11,8 +11,6 @@ The optimizer uses `param_bounds` and the vector constructor instead.
 """
 function params end
 
-params(p::AbstractPolicy) = interface_not_implemented(:params, typeof(p))
-
 """
     param_bounds(::Type{P}) -> Vector{Tuple{T,T}}
 
@@ -23,6 +21,75 @@ function param_bounds end
 
 function param_bounds(::Type{T}) where {T<:AbstractPolicy}
     interface_not_implemented(:param_bounds, T, "::Type")
+end
+
+# ============================================================================
+# Auto-derive param_bounds and params from ContinuousParameter fields
+# ============================================================================
+
+"""
+    param_bounds(policy::AbstractPolicy) -> Vector{Tuple{Float64,Float64}}
+
+Extract parameter bounds from a policy's ContinuousParameter fields.
+Falls back to `param_bounds(typeof(policy))` if no ContinuousParameter fields found.
+"""
+function param_bounds(policy::AbstractPolicy)
+    bounds = Tuple{Float64,Float64}[]
+    for fname in fieldnames(typeof(policy))
+        field = getfield(policy, fname)
+        if field isa ContinuousParameter
+            push!(bounds, (Float64(field.bounds[1]), Float64(field.bounds[2])))
+        elseif field isa DiscreteParameter
+            throw(
+                ArgumentError(
+                    "Field :$fname is DiscreteParameter. " *
+                    "Optimization backends like Metaheuristics only support continuous parameters. " *
+                    "Use ContinuousParameter or implement a custom optimizer.",
+                ),
+            )
+        elseif field isa CategoricalParameter
+            throw(
+                ArgumentError(
+                    "Field :$fname is CategoricalParameter. " *
+                    "Optimization backends like Metaheuristics only support continuous parameters. " *
+                    "Use ContinuousParameter or implement a custom optimizer.",
+                ),
+            )
+        end
+    end
+
+    if isempty(bounds)
+        # No ContinuousParameter fields found, fall back to type-based method
+        return param_bounds(typeof(policy))
+    end
+
+    return bounds
+end
+
+"""
+    params(policy::AbstractPolicy) -> Vector{Float64}
+
+Extract parameter values from a policy's ContinuousParameter fields.
+Auto-derives from ContinuousParameter fields if not explicitly implemented.
+"""
+function _auto_params(policy::AbstractPolicy)
+    vals = Float64[]
+    for fname in fieldnames(typeof(policy))
+        field = getfield(policy, fname)
+        if field isa ContinuousParameter
+            push!(vals, Float64(value(field)))
+        end
+    end
+    return vals
+end
+
+# Override the fallback to use auto-derive when possible
+function params(policy::AbstractPolicy)
+    vals = _auto_params(policy)
+    if isempty(vals)
+        interface_not_implemented(:params, typeof(policy))
+    end
+    return vals
 end
 
 # ============================================================================
@@ -81,9 +148,9 @@ end
 # ============================================================================
 
 """Defines a simulation-optimization problem. See examples for usage."""
-struct OptimizationProblem{C<:AbstractConfig,S<:AbstractSOW,P<:AbstractPolicy,F}
+struct OptimizationProblem{C<:AbstractConfig,S<:AbstractScenario,P<:AbstractPolicy,F}
     config::C
-    sows::Vector{S}
+    scenarios::Vector{S}
     policy_type::Type{P}
     metric_calculator::F
     objectives::Vector{Objective}
@@ -109,7 +176,7 @@ end
 # Primary constructor with validation
 function OptimizationProblem(
     config::AbstractConfig,
-    sows::AbstractVector{<:AbstractSOW},
+    scenarios::AbstractVector{<:AbstractScenario},
     policy_type::Type{P},
     metric_calculator::F,
     objectives::AbstractVector{<:Objective};
@@ -118,12 +185,12 @@ function OptimizationProblem(
     bounds::Union{Nothing,AbstractVector{<:Tuple}}=nothing,
 ) where {P<:AbstractPolicy,F}
     # Validate inputs
-    _validate_sows(sows)
+    _validate_scenarios(scenarios)
     _validate_policy_interface(policy_type)
     _validate_objectives(objectives)
 
     # Convert to concrete vector types
-    sows_vec = collect(sows)
+    scenarios_vec = collect(scenarios)
     obj_vec = collect(objectives)
     const_vec = collect(constraints)
     bounds_vec =
@@ -131,7 +198,7 @@ function OptimizationProblem(
 
     return OptimizationProblem(
         config,
-        sows_vec,
+        scenarios_vec,
         policy_type,
         metric_calculator,
         obj_vec,
@@ -141,28 +208,72 @@ function OptimizationProblem(
     )
 end
 
+# Constructor accepting Vector{AbstractMetric} for declarative metrics
+function OptimizationProblem(
+    config::AbstractConfig,
+    scenarios::AbstractVector{<:AbstractScenario},
+    policy_type::Type{P},
+    metrics::AbstractVector{<:AbstractMetric},
+    objectives::AbstractVector{<:Objective};
+    batch_size::AbstractBatchSize=FullBatch(),
+    constraints::AbstractVector{<:AbstractConstraint}=AbstractConstraint[],
+    bounds::Union{Nothing,AbstractVector{<:Tuple}}=nothing,
+) where {P<:AbstractPolicy}
+    # Validate that all objectives reference metrics that will be computed
+    metric_names = Set(_all_metric_names(metrics))
+    for obj in objectives
+        if obj.name ∉ metric_names
+            available = join(sort(collect(metric_names)), ", ")
+            throw(
+                ArgumentError(
+                    "Objective references :$(obj.name) but no metric produces it. " *
+                    "Available metrics: $available",
+                ),
+            )
+        end
+    end
+
+    # Convert to function for internal use
+    metric_func = outcomes -> compute_metrics(metrics, outcomes)
+
+    return OptimizationProblem(
+        config,
+        scenarios,
+        policy_type,
+        metric_func,
+        objectives;
+        batch_size=batch_size,
+        constraints=constraints,
+        bounds=bounds,
+    )
+end
+
 # ============================================================================
 # Batch Selection
 # ============================================================================
 
 """
-Select SOWs for a batch evaluation.
+Select scenarios for a batch evaluation.
 """
-function _select_batch(sows::Vector{S}, batch_size::FullBatch, rng::AbstractRNG) where {S}
-    return sows
-end
-
-function _select_batch(sows::Vector{S}, batch_size::FixedBatch, rng::AbstractRNG) where {S}
-    indices = randperm(rng, length(sows))[1:(batch_size.n)]
-    return sows[indices]
+function _select_batch(
+    scenarios::Vector{S}, batch_size::FullBatch, rng::AbstractRNG
+) where {S}
+    return scenarios
 end
 
 function _select_batch(
-    sows::Vector{S}, batch_size::FractionBatch, rng::AbstractRNG
+    scenarios::Vector{S}, batch_size::FixedBatch, rng::AbstractRNG
 ) where {S}
-    n = max(1, round(Int, length(sows) * batch_size.fraction))
-    indices = randperm(rng, length(sows))[1:n]
-    return sows[indices]
+    indices = randperm(rng, length(scenarios))[1:(batch_size.n)]
+    return scenarios[indices]
+end
+
+function _select_batch(
+    scenarios::Vector{S}, batch_size::FractionBatch, rng::AbstractRNG
+) where {S}
+    n = max(1, round(Int, length(scenarios) * batch_size.fraction))
+    indices = randperm(rng, length(scenarios))[1:n]
+    return scenarios[indices]
 end
 
 # ============================================================================
@@ -172,17 +283,17 @@ end
 """
     evaluate_policy(prob::OptimizationProblem, policy, rng::AbstractRNG)
 
-Evaluate a policy across all (or a batch of) SOWs and return aggregated metrics.
+Evaluate a policy across all (or a batch of) scenarios and return aggregated metrics.
 """
 function evaluate_policy(
     prob::OptimizationProblem, policy::AbstractPolicy, rng::AbstractRNG
 )
-    # Select SOWs for this evaluation
-    batch_sows = _select_batch(prob.sows, prob.batch_size, rng)
+    # Select scenarios for this evaluation
+    batch_scenarios = _select_batch(prob.scenarios, prob.batch_size, rng)
 
     # Run simulations
-    outcomes = map(batch_sows) do sow
-        simulate(prob.config, sow, policy, rng)
+    outcomes = map(batch_scenarios) do scenario
+        simulate(prob.config, scenario, policy, rng)
     end
 
     # Aggregate to metrics
@@ -225,7 +336,7 @@ end
     merge_into_pareto!(result::OptimizationResult, prob::OptimizationProblem, policy::AbstractPolicy; seed=42)
 
 Evaluate a policy and merge it into the optimization result's Pareto front.
-The policy is evaluated using the problem's config, SOWs, and metric calculator.
+The policy is evaluated using the problem's config, scenarios, and metric calculator.
 Dominance is checked: the policy is added only if not dominated, and any
 existing solutions dominated by it are removed.
 

@@ -59,6 +59,45 @@ SimOptDecisions.jl helps you:
 - **Explore** how results vary across uncertainties
 - **Optimize** to find the best trade-offs
 
+## Code Patterns You'll See
+
+Before diving into the code, here are a few Julia patterns the framework uses:
+
+### Parametric Types for Type Stability
+
+You'll see type definitions like `struct MyType{T<:AbstractFloat}`. The `T` is a **type parameter** that lets Julia specialize code for specific numeric types (Float64, Float32, etc.), enabling fast, allocation-free code.
+
+```julia
+struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
+    elevation_ft::T
+end
+```
+
+### Abstract Supertypes
+
+Types inherit from abstract types like `<:AbstractConfig`, `<:AbstractScenario`, `<:AbstractPolicy`, etc. This tells the framework how to handle your types—which callbacks to call and how to validate.
+
+### Parameter Types (for `explore()`)
+
+For systematic exploration with `explore()`, fields use **parameter wrappers**:
+
+| Type | Use Case |
+|------|----------|
+| `ContinuousParameter{T}` | Real values with optional bounds |
+| `DiscreteParameter{T}` | Integer values with optional constraints |
+| `CategoricalParameter{T}` | Categorical values with defined levels |
+| `TimeSeriesParameter{T,I}` | Time-indexed data (e.g., sea level trajectories) |
+
+These enable automatic flattening for analysis, bounds derivation for optimization, and consistent visualization. Use `value(param)` to extract the underlying value.
+
+::: {.callout-note}
+## When Are Parameter Types Required?
+
+- `simulate()`: Plain types work fine by default
+- `explore()`: Parameter types **required** for all Scenario, Policy, and Outcome fields
+- Optimization: Parameter types enable automatic `param_bounds` derivation
+:::
+
 ## Next Steps
 
 In the [next section](02-defining-your-model.qmd), we'll define the Julia types that represent this problem: configuration, uncertainty, state, actions, and policies.

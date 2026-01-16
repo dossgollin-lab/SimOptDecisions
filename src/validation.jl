@@ -1,4 +1,138 @@
 # ============================================================================
+# Parameter Type Validation
+# ============================================================================
+
+"""
+    ParameterTypeError
+
+Thrown when types don't use required parameter types for their fields.
+"""
+struct ParameterTypeError <: Exception
+    msg::String
+end
+
+Base.showerror(io::IO, e::ParameterTypeError) = print(io, e.msg)
+
+"""
+    _is_parameter_type(ftype) -> Bool
+
+Check if a field type is a valid parameter type.
+"""
+function _is_parameter_type(ftype)
+    # Direct subtypes
+    ftype <: AbstractParameter && return true
+    ftype <: TimeSeriesParameter && return true
+
+    # Handle parametric types (UnionAll)
+    if ftype isa UnionAll
+        ftype <: AbstractParameter && return true
+        ftype <: TimeSeriesParameter && return true
+    end
+
+    return false
+end
+
+# Cache of validated types to avoid repeated validation
+const _VALIDATED_TYPES = Set{Type}()
+
+"""
+    _validate_parameter_fields(T::Type, label::String)
+
+Validate that all fields in type T are parameter types.
+Throws ParameterTypeError if any field is not a parameter type.
+Results are cached so each type is only validated once per session.
+"""
+function _validate_parameter_fields(::Type{T}, label::String) where {T}
+    # Skip if already validated (and passed)
+    T in _VALIDATED_TYPES && return nothing
+
+    errors = String[]
+
+    for (fname, ftype) in zip(fieldnames(T), fieldtypes(T))
+        if !_is_parameter_type(ftype)
+            push!(errors, "  - $fname :: $ftype")
+        end
+    end
+
+    if !isempty(errors)
+        throw(
+            ParameterTypeError(
+                "$label type `$T` has non-parameter fields:\n" *
+                join(errors, "\n") *
+                "\n\n" *
+                "All fields must be one of:\n" *
+                "  - ContinuousParameter{T}  -- continuous real values with bounds\n" *
+                "  - DiscreteParameter{T}    -- integer values with optional valid_values\n" *
+                "  - CategoricalParameter{T} -- categorical values with defined levels\n" *
+                "  - TimeSeriesParameter{T,I} -- time-indexed data\n\n" *
+                "Example fix:\n" *
+                "  # Before\n" *
+                "  struct $T\n" *
+                "      $(first(errors)[5:end])  # plain type\n" *
+                "  end\n\n" *
+                "  # After\n" *
+                "  struct $T{T<:AbstractFloat}\n" *
+                "      $(split(first(errors)[5:end], " ")[1])::ContinuousParameter{T}\n" *
+                "  end",
+            ),
+        )
+    end
+
+    # Mark as validated (passed)
+    push!(_VALIDATED_TYPES, T)
+    return nothing
+end
+
+"""
+    SIMOPT_STRICT_VALIDATION
+
+Environment variable to enable strict parameter type validation at simulation time.
+Set to "true" to validate that all Scenario, Policy, and Outcome types use parameter fields.
+
+Validation is always required for `explore()`. This setting only affects `simulate()`.
+"""
+const _STRICT_VALIDATION = Ref{Union{Nothing,Bool}}(nothing)
+
+function _is_strict_validation()::Bool
+    if isnothing(_STRICT_VALIDATION[])
+        _STRICT_VALIDATION[] =
+            lowercase(get(ENV, "SIMOPT_STRICT_VALIDATION", "false")) in ("true", "1", "yes")
+    end
+    return _STRICT_VALIDATION[]
+end
+
+"""
+    _validate_simulation_types(scenario, policy)
+
+Validate that Scenario and Policy types use parameter fields.
+Called at the start of simulation to ensure type compliance.
+
+Only validates when SIMOPT_STRICT_VALIDATION=true environment variable is set.
+Use `explore()` for guaranteed validation.
+"""
+function _validate_simulation_types(scenario::AbstractScenario, policy::AbstractPolicy)
+    _is_strict_validation() || return nothing
+    _validate_parameter_fields(typeof(scenario), "Scenario")
+    _validate_parameter_fields(typeof(policy), "Policy")
+    return nothing
+end
+
+"""
+    _validate_outcome_type(outcome)
+
+Validate that an Outcome type uses parameter fields.
+Called after compute_outcome to ensure type compliance.
+
+Only validates when SIMOPT_STRICT_VALIDATION=true environment variable is set.
+Use `explore()` for guaranteed validation.
+"""
+function _validate_outcome_type(outcome)
+    _is_strict_validation() || return nothing
+    _validate_parameter_fields(typeof(outcome), "Outcome")
+    return nothing
+end
+
+# ============================================================================
 # Policy Interface Validation
 # ============================================================================
 
@@ -83,30 +217,34 @@ function _validate_policy_interface(::Type{P}) where {P<:AbstractPolicy}
 end
 
 # ============================================================================
-# SOW Validation
+# Scenario Validation
 # ============================================================================
 
 """
-Validate that SOWs are a homogeneous collection of AbstractSOW.
+Validate that scenarios are a homogeneous collection of AbstractScenario.
 """
-function _validate_sows(sows)
-    if isempty(sows)
-        throw(ArgumentError("SOWs collection cannot be empty"))
+function _validate_scenarios(scenarios)
+    if isempty(scenarios)
+        throw(ArgumentError("Scenarios collection cannot be empty"))
     end
 
-    # Check all are AbstractSOW
-    first_type = typeof(first(sows))
-    if !(first(sows) isa AbstractSOW)
-        throw(ArgumentError("SOWs must be subtypes of AbstractSOW, got $(first_type)"))
+    # Check all are AbstractScenario
+    first_type = typeof(first(scenarios))
+    if !(first(scenarios) isa AbstractScenario)
+        throw(
+            ArgumentError(
+                "Scenarios must be subtypes of AbstractScenario, got $(first_type)"
+            ),
+        )
     end
 
     # Check homogeneity
-    for (i, sow) in enumerate(sows)
-        if typeof(sow) !== first_type
+    for (i, scenario) in enumerate(scenarios)
+        if typeof(scenario) !== first_type
             throw(
                 ArgumentError(
-                    "All SOWs must be the same concrete type. " *
-                    "SOW 1 is $(first_type), but SOW $i is $(typeof(sow))",
+                    "All scenarios must be the same concrete type. " *
+                    "Scenario 1 is $(first_type), but scenario $i is $(typeof(scenario))",
                 ),
             )
         end
@@ -206,7 +344,7 @@ Called automatically by `optimize()`.
 """
 function _validate_problem(prob)
     # Re-validate components (in case user modified after construction)
-    _validate_sows(prob.sows)
+    _validate_scenarios(prob.scenarios)
     _validate_policy_interface(prob.policy_type)
     _validate_objectives(prob.objectives)
 
@@ -215,11 +353,15 @@ function _validate_problem(prob)
         throw(ArgumentError("Config validation failed"))
     end
 
-    # Validate batch size against SOW count
-    n_sows = length(prob.sows)
+    # Validate batch size against scenario count
+    n_scenarios = length(prob.scenarios)
     batch = prob.batch_size
-    if batch isa FixedBatch && batch.n > n_sows
-        throw(ArgumentError("FixedBatch size $(batch.n) exceeds number of SOWs ($n_sows)"))
+    if batch isa FixedBatch && batch.n > n_scenarios
+        throw(
+            ArgumentError(
+                "FixedBatch size $(batch.n) exceeds number of scenarios ($n_scenarios)"
+            ),
+        )
     end
 
     return nothing

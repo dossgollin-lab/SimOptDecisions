@@ -2,7 +2,7 @@
 struct TestState <: AbstractState end
 struct TestPolicy <: AbstractPolicy end
 struct TestConfig <: AbstractConfig end
-struct TestSOW <: AbstractSOW end
+struct TestScenario <: AbstractScenario end
 
 # Test types for "get_action interface" -> "custom get_action (state-dependent)"
 struct InventoryAction <: AbstractAction
@@ -18,12 +18,12 @@ struct InventoryState <: AbstractState
     level::Float64
 end
 
-struct DemandSOW <: AbstractSOW
+struct DemandScenario <: AbstractScenario
     demand::Float64
 end
 
 function SimOptDecisions.get_action(
-    policy::InventoryPolicy, state::InventoryState, sow::DemandSOW, t::TimeStep
+    policy::InventoryPolicy, state::InventoryState, t::TimeStep, scenario::DemandScenario
 )
     if state.level < policy.reorder_point
         return InventoryAction(policy.order_size)
@@ -43,14 +43,17 @@ struct MinimalStatePolicy <: AbstractPolicy
     multiplier::Float64
 end
 
-struct InfoSOW <: AbstractSOW
+struct InfoScenario <: AbstractScenario
     base_value::Float64
 end
 
 function SimOptDecisions.get_action(
-    policy::MinimalStatePolicy, state::MinimalStateMarker, sow::InfoSOW, t::TimeStep
+    policy::MinimalStatePolicy,
+    state::MinimalStateMarker,
+    t::TimeStep,
+    scenario::InfoScenario,
 )
-    return MinimalStateAction(sow.base_value * policy.multiplier * t.t)
+    return MinimalStateAction(scenario.base_value * policy.multiplier * t.t)
 end
 
 # Test types for "get_action interface" -> "get_action for static policy"
@@ -64,10 +67,13 @@ struct StaticElevationPolicy <: AbstractPolicy
     elevation_ft::Float64
 end
 
-struct FloodSOW <: AbstractSOW end
+struct FloodScenario <: AbstractScenario end
 
 function SimOptDecisions.get_action(
-    policy::StaticElevationPolicy, state::StaticStateMarker, sow::FloodSOW, t::TimeStep
+    policy::StaticElevationPolicy,
+    state::StaticStateMarker,
+    t::TimeStep,
+    scenario::FloodScenario,
 )
     return ElevationAction(policy.elevation_ft)
 end
@@ -77,7 +83,7 @@ struct AnalyticalConfig <: AbstractConfig
     multiplier::Float64
 end
 
-struct AnalyticalSOW <: AbstractSOW
+struct AnalyticalScenario <: AbstractScenario
     value::Float64
 end
 
@@ -87,12 +93,12 @@ end
 
 function SimOptDecisions.simulate(
     config::AnalyticalConfig,
-    sow::AnalyticalSOW,
+    scenario::AnalyticalScenario,
     policy::AnalyticalPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
 )
-    return (result=(config.multiplier * sow.value * policy.factor),)
+    return (result=(config.multiplier * scenario.value * policy.factor),)
 end
 
 # Test types for "Time-stepped simulation (simple for loop)"
@@ -112,11 +118,11 @@ struct CounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct EmptySOW <: AbstractSOW end
+struct EmptyScenario <: AbstractScenario end
 
 function SimOptDecisions.simulate(
     config::CounterConfig,
-    sow::EmptySOW,
+    scenario::EmptyScenario,
     policy::IncrementPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
@@ -147,11 +153,11 @@ struct SimTSIncrementPolicy <: AbstractPolicy
 end
 
 struct SimTSCounterConfig <: AbstractConfig end
-struct SimTSEmptySOW <: AbstractSOW end
+struct SimTSEmptyScenario <: AbstractScenario end
 
 function SimOptDecisions.simulate(
     config::SimTSCounterConfig,
-    sow::SimTSEmptySOW,
+    scenario::SimTSEmptyScenario,
     policy::SimTSIncrementPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
@@ -175,11 +181,11 @@ end
 
 struct TermPolicy <: AbstractPolicy end
 struct TermConfig <: AbstractConfig end
-struct TermSOW <: AbstractSOW end
+struct TermScenario <: AbstractScenario end
 
 function SimOptDecisions.simulate(
     config::TermConfig,
-    sow::TermSOW,
+    scenario::TermScenario,
     policy::TermPolicy,
     recorder::AbstractRecorder,
     rng::AbstractRNG,
@@ -202,53 +208,53 @@ end
 @testset "Simulation" begin
     @testset "Interface function errors" begin
         config = TestConfig()
-        sow = TestSOW()
+        scenario = TestScenario()
         policy = TestPolicy()
         rng = Random.Xoshiro(42)
 
         # simulate calls run_simulation by default,
         # which throws ArgumentError for time_axis (via interface_not_implemented fallback)
-        @test_throws ArgumentError simulate(config, sow, policy, rng)
+        @test_throws ArgumentError simulate(config, scenario, policy, rng)
 
         # get_action should throw helpful error if not implemented
         ts = TimeStep(1, 1)
-        @test_throws ArgumentError get_action(policy, TestState(), sow, ts)
+        @test_throws ArgumentError get_action(policy, TestState(), ts, scenario)
     end
 
     @testset "get_action interface" begin
         @testset "custom get_action (state-dependent)" begin
             policy = InventoryPolicy(10.0, 50.0)
-            sow = DemandSOW(5.0)
+            scenario = DemandScenario(5.0)
             ts = TimeStep(1, 1)
 
             # Low inventory -> order
             low_state = InventoryState(5.0)
-            action_low = get_action(policy, low_state, sow, ts)
+            action_low = get_action(policy, low_state, ts, scenario)
             @test action_low isa AbstractAction
             @test action_low.order == 50.0
 
             # High inventory -> no order
             high_state = InventoryState(15.0)
-            action_high = get_action(policy, high_state, sow, ts)
+            action_high = get_action(policy, high_state, ts, scenario)
             @test action_high.order == 0.0
         end
 
         @testset "get_action with minimal state" begin
             policy = MinimalStatePolicy(2.0)
-            sow = InfoSOW(10.0)
+            scenario = InfoScenario(10.0)
             ts = TimeStep(3, 3)
 
-            action = get_action(policy, MinimalStateMarker(), sow, ts)
+            action = get_action(policy, MinimalStateMarker(), ts, scenario)
             @test action isa AbstractAction
             @test action.action_value == 60.0  # 10 * 2 * 3
         end
 
         @testset "get_action for static policy" begin
             policy = StaticElevationPolicy(8.0)
-            sow = FloodSOW()
+            scenario = FloodScenario()
             ts = TimeStep(1, 1)
 
-            action = get_action(policy, StaticStateMarker(), sow, ts)
+            action = get_action(policy, StaticStateMarker(), ts, scenario)
             @test action isa AbstractAction
             @test action.elevation == 8.0
         end
@@ -256,25 +262,25 @@ end
 
     @testset "Direct simulate (non-time-stepped)" begin
         config = AnalyticalConfig(2.0)
-        sow = AnalyticalSOW(3.0)
+        scenario = AnalyticalScenario(3.0)
         policy = AnalyticalPolicy(4.0)
 
-        result = simulate(config, sow, policy, Random.Xoshiro(42))
+        result = simulate(config, scenario, policy, Random.Xoshiro(42))
         @test result.result == 24.0  # 2.0 * 3.0 * 4.0
     end
 
     @testset "Time-stepped simulation (simple for loop)" begin
         # Run simulation
         config = CounterConfig(10)
-        sow = EmptySOW()
+        scenario = EmptyScenario()
         policy = IncrementPolicy(5)
 
-        result = simulate(config, sow, policy, Random.Xoshiro(42))
+        result = simulate(config, scenario, policy, Random.Xoshiro(42))
         @test result.final_value == 50  # 10 steps * 5 increment
 
         # With recorder
         builder = TraceRecorderBuilder()
-        result2 = simulate(config, sow, policy, builder, Random.Xoshiro(42))
+        result2 = simulate(config, scenario, policy, builder, Random.Xoshiro(42))
         trace = build_trace(builder)
 
         @test result2.final_value == 50
@@ -284,38 +290,61 @@ end
 
         # With explicit RNG
         rng = Random.Xoshiro(42)
-        result3 = simulate(config, sow, policy, rng)
+        result3 = simulate(config, scenario, policy, rng)
         @test result3.final_value == 50
     end
 
     @testset "Type stability" begin
         config = SimTSCounterConfig()
-        sow = SimTSEmptySOW()
+        scenario = SimTSEmptyScenario()
         policy = SimTSIncrementPolicy(1.0)
         rng = Random.Xoshiro(42)
 
         # Test type inference for simulate
-        @test @inferred(simulate(config, sow, policy, NoRecorder(), rng)) isa NamedTuple
+        @test @inferred(simulate(config, scenario, policy, NoRecorder(), rng)) isa
+            NamedTuple
 
         # Test basic functionality
-        result = simulate(config, sow, policy, rng)
+        result = simulate(config, scenario, policy, rng)
         @test result.final_value == 10.0
     end
 
     @testset "Early termination" begin
         config = TermConfig()
-        sow = TermSOW()
+        scenario = TermScenario()
         policy = TermPolicy()
 
-        result = simulate(config, sow, policy, Random.Xoshiro(42))
+        result = simulate(config, scenario, policy, Random.Xoshiro(42))
         # Should terminate early at value 5, not 100
         @test result.final_value == 5
     end
 end
 
+@testset "simulate_traced" begin
+    config = CounterConfig(10)
+    scenario = EmptyScenario()
+    policy = IncrementPolicy(5)
+
+    # With rng
+    outcome, trace = simulate_traced(config, scenario, policy, Random.Xoshiro(42))
+    @test outcome.final_value == 50
+    @test trace isa SimulationTrace
+    @test length(trace.states) == 10
+    @test trace.states[end].value == 50
+
+    # Without rng (uses default_rng)
+    outcome2, trace2 = simulate_traced(config, scenario, policy)
+    @test outcome2.final_value == 50
+    @test trace2 isa SimulationTrace
+end
+
 @testset "Utils" begin
     @testset "discount_factor" begin
-        # Basic functionality
+        # Direct export (new in Section 4)
+        @test discount_factor(0.0, 1) == 1.0
+        @test discount_factor(0.10, 1) ≈ 1 / 1.10
+
+        # Utils submodule (backward compatibility)
         @test SimOptDecisions.Utils.discount_factor(0.0, 1) == 1.0
         @test SimOptDecisions.Utils.discount_factor(0.0, 10) == 1.0
 
@@ -329,6 +358,11 @@ end
     end
 
     @testset "timeindex" begin
+        # Direct export (new in Section 4)
+        times_direct = collect(timeindex(1:3))
+        @test length(times_direct) == 3
+        @test times_direct[1] == TimeStep(1, 1)
+
         # Integer range
         times = collect(SimOptDecisions.Utils.timeindex(1:5))
         @test length(times) == 5
@@ -336,7 +370,12 @@ end
         @test times[5] == TimeStep(5, 5)
         @test all(ts -> ts.t == ts.val, times)
 
-        # Check is_first and is_last helper methods
+        # Check is_first and is_last helper methods (direct export)
+        @test is_first(times[1])
+        @test all(ts -> !is_last(ts, 5), times[1:4])
+        @test is_last(times[5], 5)
+
+        # Utils submodule (backward compatibility)
         @test SimOptDecisions.Utils.is_first(times[1])
         @test all(ts -> !SimOptDecisions.Utils.is_last(ts, 5), times[1:4])
         @test SimOptDecisions.Utils.is_last(times[5], 5)

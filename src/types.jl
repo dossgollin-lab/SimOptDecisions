@@ -4,7 +4,7 @@
 abstract type AbstractState end
 abstract type AbstractPolicy end
 abstract type AbstractConfig end
-abstract type AbstractSOW end
+abstract type AbstractScenario end
 abstract type AbstractRecorder end
 abstract type AbstractAction end
 
@@ -16,7 +16,7 @@ abstract type AbstractAction end
     AbstractParameter{T}
 
 Base type for typed parameters used in exploratory modeling.
-Subtypes enable automatic flattening of SOWs, Policies, and Outcomes for analysis.
+Subtypes enable automatic flattening of Scenarios, Policies, and Outcomes for analysis.
 
 To use `explore()`, all fields in your types must be `<:AbstractParameter` or `TimeSeriesParameter`.
 """
@@ -96,7 +96,7 @@ end
 
 Extract the value from a parameter.
 """
-value(p::AbstractParameter) = p.value
+@inline value(p::AbstractParameter) = p.value
 
 Base.getindex(p::AbstractParameter) = p.value
 
@@ -133,15 +133,19 @@ end
 # ============================================================================
 
 """
-    get_action(policy::AbstractPolicy, state::AbstractState, sow::AbstractSOW, t::TimeStep) -> AbstractAction
+    get_action(policy::AbstractPolicy, state::AbstractState, t::TimeStep, scenario::AbstractScenario) -> Any
 
-Map state + SOW to action. Called by the framework before each `run_timestep`.
+Map state + scenario to action. Called by the framework before each `run_timestep`.
 
-Must be implemented for each policy type. Return value must be `<:AbstractAction`.
+Must be implemented for each policy type. Return value can be any type (AbstractAction optional).
 """
-function get_action(p::AbstractPolicy, state::AbstractState, sow::AbstractSOW, t::TimeStep)
+function get_action(
+    p::AbstractPolicy, state::AbstractState, t::TimeStep, scenario::AbstractScenario
+)
     interface_not_implemented(
-        :get_action, typeof(p), "state::AbstractState, sow::AbstractSOW, t::TimeStep"
+        :get_action,
+        typeof(p),
+        "state::AbstractState, t::TimeStep, scenario::AbstractScenario",
     )
 end
 
@@ -202,12 +206,12 @@ maximize(name::Symbol) = Objective(name, Maximize)
 abstract type AbstractBatchSize end
 
 """
-Use all SOWs in the training set for each evaluation.
+Use all scenarios in the training set for each evaluation.
 """
 struct FullBatch <: AbstractBatchSize end
 
 """
-Use a fixed number of SOWs per evaluation.
+Use a fixed number of scenarios per evaluation.
 """
 struct FixedBatch <: AbstractBatchSize
     n::Int
@@ -219,7 +223,7 @@ struct FixedBatch <: AbstractBatchSize
 end
 
 """
-Use a fraction of the SOWs per evaluation.
+Use a fraction of the scenarios per evaluation.
 """
 struct FractionBatch{T<:AbstractFloat} <: AbstractBatchSize
     fraction::T

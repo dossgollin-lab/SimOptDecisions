@@ -4,7 +4,7 @@
 
 struct NoRecorder <: AbstractRecorder end
 
-record!(::NoRecorder, state, step_record, t, action) = nothing
+@inline record!(::NoRecorder, state, step_record, t, action) = nothing
 
 # ============================================================================
 # TraceRecorderBuilder - Flexible recording during simulation

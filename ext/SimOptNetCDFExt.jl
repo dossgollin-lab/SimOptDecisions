@@ -9,7 +9,7 @@ import SimOptDecisions: AbstractResultSink, record!, finalize, netcdf_sink
     NetCDFSink
 
 File sink that writes exploration results to NetCDF format.
-Stores data with dimensions (policy, sow) for efficient multidimensional access.
+Stores data with dimensions (policy, scenario) for efficient multidimensional access.
 Create via `netcdf_sink(filepath)` after loading NCDatasets.jl.
 """
 mutable struct NetCDFSink <: AbstractResultSink
@@ -19,7 +19,7 @@ mutable struct NetCDFSink <: AbstractResultSink
     count::Int
     ds::Union{Nothing,NCDataset}
     n_policies::Int
-    n_sows::Int
+    n_scenarios::Int
     initialized::Bool
     column_names::Vector{Symbol}
 end
@@ -62,10 +62,10 @@ function _flush_netcdf!(sink::NetCDFSink)
     # Write buffered data
     for row in sink.buffer
         p_idx = row.policy_idx
-        s_idx = row.sow_idx
+        s_idx = row.scenario_idx
 
         for k in sink.column_names
-            k in (:policy_idx, :sow_idx) && continue
+            k in (:policy_idx, :scenario_idx) && continue
             varname = String(k)
             if haskey(sink.ds, varname)
                 sink.ds[varname][p_idx, s_idx] = _to_netcdf_value(row[k])
@@ -87,18 +87,18 @@ function _initialize_netcdf!(sink::NetCDFSink)
 
     # Define dimensions with unlimited size
     defDim(sink.ds, "policy", Inf)
-    defDim(sink.ds, "sow", Inf)
+    defDim(sink.ds, "scenario", Inf)
 
     # Define variables for each column (except indices)
     for k in sink.column_names
-        k in (:policy_idx, :sow_idx) && continue
+        k in (:policy_idx, :scenario_idx) && continue
         varname = String(k)
         v = first_row[k]
 
         # Determine NetCDF type
         nc_type = _netcdf_type(v)
 
-        defVar(sink.ds, varname, nc_type, ("policy", "sow"))
+        defVar(sink.ds, varname, nc_type, ("policy", "scenario"))
     end
 
     sink.initialized = true
@@ -126,16 +126,16 @@ function _to_netcdf_value(v)
     end
 end
 
-function SimOptDecisions.finalize(sink::NetCDFSink, n_policies::Int, n_sows::Int)
+function SimOptDecisions.finalize(sink::NetCDFSink, n_policies::Int, n_scenarios::Int)
     sink.n_policies = n_policies
-    sink.n_sows = n_sows
+    sink.n_scenarios = n_scenarios
 
     _flush_netcdf!(sink)
 
     if !isnothing(sink.ds)
         # Add dimension metadata
         sink.ds.attrib["n_policies"] = n_policies
-        sink.ds.attrib["n_sows"] = n_sows
+        sink.ds.attrib["n_scenarios"] = n_scenarios
         close(sink.ds)
     end
 

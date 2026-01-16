@@ -19,7 +19,7 @@ end
 # ============================================================================
 
 """
-Parameters that are constant across all SOWs and not subject to optimization.
+Parameters that are constant across all scenarios and not subject to optimization.
 Examples: discount rate, planning horizon, physical constants.
 
 Wrap your parameters in a NamedTuple for type stability and easy access.
@@ -57,18 +57,18 @@ Complete configuration for a reproducible experiment.
 - `timestamp::DateTime`: When the experiment was created
 - `git_commit::String`: Optional git commit hash (user-provided)
 - `package_versions::String`: Optional package version info (user-provided)
-- `sows::Vector{S}`: The SOWs used in this experiment
-- `sow_source::String`: Description of how SOWs were generated
+- `scenarios::Vector{S}`: The scenarios used in this experiment
+- `scenario_source::String`: Description of how scenarios were generated
 - `shared::SharedParameters`: SharedParameters for the experiment
 - `backend::B`: Optimization backend configuration
 """
-struct ExperimentConfig{S<:AbstractSOW,B<:AbstractOptimizationBackend}
+struct ExperimentConfig{S<:AbstractScenario,B<:AbstractOptimizationBackend}
     seed::Int
     timestamp::DateTime
     git_commit::String
     package_versions::String
-    sows::Vector{S}
-    sow_source::String
+    scenarios::Vector{S}
+    scenario_source::String
     shared::SharedParameters
     backend::B
 end
@@ -76,22 +76,22 @@ end
 # Convenience constructor with defaults
 function ExperimentConfig(
     seed::Int,
-    sows::AbstractVector{<:AbstractSOW},
+    scenarios::AbstractVector{<:AbstractScenario},
     shared::SharedParameters,
     backend::AbstractOptimizationBackend;
     timestamp::DateTime=Dates.now(),
     git_commit::String="",
     package_versions::String="",
-    sow_source::String="unspecified",
+    scenario_source::String="unspecified",
 )
-    _validate_sows(sows)
+    _validate_scenarios(scenarios)
     return ExperimentConfig(
         seed,
         timestamp,
         git_commit,
         package_versions,
-        collect(sows),
-        sow_source,
+        collect(scenarios),
+        scenario_source,
         shared,
         backend,
     )

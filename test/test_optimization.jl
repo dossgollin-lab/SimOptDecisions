@@ -9,14 +9,14 @@ struct OptCounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct OptEmptySOW <: AbstractSOW end
+struct OptEmptyScenario <: AbstractScenario end
 
-function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptySOW, ::AbstractRNG)
+function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptyScenario, ::AbstractRNG)
     return 0.0  # state is just a Float64 counter
 end
 
 function SimOptDecisions.get_action(
-    ::OptCounterPolicy, ::Float64, ::OptEmptySOW, ::TimeStep
+    ::OptCounterPolicy, ::Float64, ::TimeStep, ::OptEmptyScenario
 )
     return OptCounterAction()
 end
@@ -24,22 +24,23 @@ end
 function SimOptDecisions.run_timestep(
     state::Float64,
     ::OptCounterAction,
-    ::OptEmptySOW,
-    ::OptCounterConfig,
     ::TimeStep,
+    ::OptCounterConfig,
+    ::OptEmptyScenario,
     ::AbstractRNG,
 )
-    return (state + 1.0, state)  # increment state, record old value
+    new_state = state + 1.0
+    return (new_state, new_state)  # increment state, record new value for compute_outcome
 end
 
-function SimOptDecisions.time_axis(config::OptCounterConfig, ::OptEmptySOW)
+function SimOptDecisions.time_axis(config::OptCounterConfig, ::OptEmptyScenario)
     return 1:config.n_steps
 end
 
-function SimOptDecisions.finalize(
-    final_state::Float64, ::Vector, config::OptCounterConfig, ::OptEmptySOW
+function SimOptDecisions.compute_outcome(
+    step_records::Vector, config::OptCounterConfig, ::OptEmptyScenario
 )
-    return (final_value=final_state,)
+    return (final_value=step_records[end],)
 end
 
 SimOptDecisions.param_bounds(::Type{OptCounterPolicy}) = [(0.0, 10.0)]
@@ -57,14 +58,14 @@ struct EvalCounterConfig <: AbstractConfig
     n_steps::Int
 end
 
-struct EvalEmptySOW <: AbstractSOW end
+struct EvalEmptyScenario <: AbstractScenario end
 
-function SimOptDecisions.initialize(::EvalCounterConfig, ::EvalEmptySOW, ::AbstractRNG)
+function SimOptDecisions.initialize(::EvalCounterConfig, ::EvalEmptyScenario, ::AbstractRNG)
     return 0.0
 end
 
 function SimOptDecisions.get_action(
-    policy::EvalCounterPolicy, ::Float64, ::EvalEmptySOW, ::TimeStep
+    policy::EvalCounterPolicy, ::Float64, ::TimeStep, ::EvalEmptyScenario
 )
     return EvalCounterAction()
 end
@@ -72,29 +73,30 @@ end
 function SimOptDecisions.run_timestep(
     state::Float64,
     ::EvalCounterAction,
-    ::EvalEmptySOW,
-    ::EvalCounterConfig,
     ::TimeStep,
+    ::EvalCounterConfig,
+    ::EvalEmptyScenario,
     ::AbstractRNG,
 )
-    return (state + 5.0, state)  # Fixed increment of 5.0 for this test
+    new_state = state + 5.0
+    return (new_state, new_state)  # Fixed increment of 5.0, record new value for compute_outcome
 end
 
-function SimOptDecisions.time_axis(config::EvalCounterConfig, ::EvalEmptySOW)
+function SimOptDecisions.time_axis(config::EvalCounterConfig, ::EvalEmptyScenario)
     return 1:config.n_steps
 end
 
-function SimOptDecisions.finalize(
-    final_state::Float64, ::Vector, config::EvalCounterConfig, ::EvalEmptySOW
+function SimOptDecisions.compute_outcome(
+    step_records::Vector, config::EvalCounterConfig, ::EvalEmptyScenario
 )
-    return (final_value=final_state,)
+    return (final_value=step_records[end],)
 end
 
 SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
 EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
 
 # Test types for "Batch selection"
-struct BatchTestSOW <: AbstractSOW
+struct BatchTestScenario <: AbstractScenario
     id::Int
 end
 
@@ -111,18 +113,18 @@ end
     @testset "OptimizationProblem construction" begin
         # Create optimization problem
         config = OptCounterConfig(10)
-        sows = [OptEmptySOW() for _ in 1:5]
+        scenarios = [OptEmptyScenario() for _ in 1:5]
 
         function metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            config, sows, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
+            config, scenarios, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
         )
 
         @test prob.config === config
-        @test length(prob.sows) == 5
+        @test length(prob.scenarios) == 5
         @test prob.policy_type === OptCounterPolicy
         @test length(prob.objectives) == 1
         @test prob.batch_size isa FullBatch
@@ -131,7 +133,7 @@ end
         # Test with options
         prob2 = OptimizationProblem(
             config,
-            sows,
+            scenarios,
             OptCounterPolicy,
             metric_calculator,
             [minimize(:mean_value)];
@@ -143,7 +145,7 @@ end
         # Test with custom bounds
         prob3 = OptimizationProblem(
             config,
-            sows,
+            scenarios,
             OptCounterPolicy,
             metric_calculator,
             [minimize(:mean_value)];
@@ -176,14 +178,18 @@ end
 
     @testset "evaluate_policy" begin
         config = EvalCounterConfig(10)
-        sows = [EvalEmptySOW() for _ in 1:5]
+        scenarios = [EvalEmptyScenario() for _ in 1:5]
 
         function eval_metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
         prob = OptimizationProblem(
-            config, sows, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
+            config,
+            scenarios,
+            EvalCounterPolicy,
+            eval_metric_calculator,
+            [minimize(:mean_value)],
         )
 
         policy = EvalCounterPolicy(5.0)
@@ -215,27 +221,27 @@ end
     end
 
     @testset "Batch selection" begin
-        sows = [BatchTestSOW(i) for i in 1:100]
+        scenarios = [BatchTestScenario(i) for i in 1:100]
         rng = Random.Xoshiro(42)
 
         # FullBatch returns all
-        full_batch = SimOptDecisions._select_batch(sows, FullBatch(), rng)
+        full_batch = SimOptDecisions._select_batch(scenarios, FullBatch(), rng)
         @test length(full_batch) == 100
-        @test full_batch === sows
+        @test full_batch === scenarios
 
         # FixedBatch returns n
-        fixed_batch = SimOptDecisions._select_batch(sows, FixedBatch(10), rng)
+        fixed_batch = SimOptDecisions._select_batch(scenarios, FixedBatch(10), rng)
         @test length(fixed_batch) == 10
-        @test all(s -> s in sows, fixed_batch)
+        @test all(s -> s in scenarios, fixed_batch)
 
         # FractionBatch returns fraction
-        frac_batch = SimOptDecisions._select_batch(sows, FractionBatch(0.2), rng)
+        frac_batch = SimOptDecisions._select_batch(scenarios, FractionBatch(0.2), rng)
         @test length(frac_batch) == 20
-        @test all(s -> s in sows, frac_batch)
+        @test all(s -> s in scenarios, frac_batch)
 
         # FractionBatch minimum is 1
-        tiny_sows = [BatchTestSOW(1)]
-        tiny_batch = SimOptDecisions._select_batch(tiny_sows, FractionBatch(0.1), rng)
+        tiny_scenarios = [BatchTestScenario(1)]
+        tiny_batch = SimOptDecisions._select_batch(tiny_scenarios, FractionBatch(0.1), rng)
         @test length(tiny_batch) >= 1
     end
 
@@ -257,5 +263,51 @@ end
 
         # Construct policy from params in the front
         @test ResultPolicy(front[1][1][1]).x == 0.3
+    end
+
+    @testset "Auto-derive param_bounds and params" begin
+        # Test policy with ContinuousParameter fields
+        struct AutoDerivePolicy <: AbstractPolicy
+            threshold::ContinuousParameter{Float64}
+            rate::ContinuousParameter{Float64}
+        end
+
+        policy = AutoDerivePolicy(
+            ContinuousParameter(0.5, (0.0, 1.0)), ContinuousParameter(0.02, (0.0, 0.1))
+        )
+
+        # param_bounds should auto-derive from instance
+        bounds = param_bounds(policy)
+        @test bounds == [(0.0, 1.0), (0.0, 0.1)]
+
+        # params should auto-derive from instance
+        p = params(policy)
+        @test p == [0.5, 0.02]
+
+        # Test policy with DiscreteParameter should error
+        struct DiscretePolicy <: AbstractPolicy
+            n::DiscreteParameter{Int}
+        end
+
+        discrete_policy = DiscretePolicy(DiscreteParameter(5))
+        @test_throws ArgumentError param_bounds(discrete_policy)
+
+        # Test policy with CategoricalParameter should error
+        struct CategoricalPolicy <: AbstractPolicy
+            mode::CategoricalParameter{Symbol}
+        end
+
+        cat_policy = CategoricalPolicy(CategoricalParameter(:high, [:low, :high]))
+        @test_throws ArgumentError param_bounds(cat_policy)
+
+        # Test policy with no ContinuousParameter fields falls back to type method
+        struct PlainPolicy <: AbstractPolicy
+            x::Float64
+        end
+
+        # Should fall back to param_bounds(::Type{PlainPolicy}) which throws
+        plain_policy = PlainPolicy(1.0)
+        @test_throws ArgumentError param_bounds(plain_policy)
+        @test_throws ArgumentError params(plain_policy)
     end
 end

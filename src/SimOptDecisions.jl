@@ -13,6 +13,7 @@ include("validation.jl")
 include("utils.jl")
 include("timestepping.jl")
 include("simulation.jl")
+include("metrics.jl")
 include("optimization.jl")
 include("persistence.jl")
 include("plotting.jl")
@@ -25,19 +26,20 @@ include("exploration.jl")
 
 # Abstract types (users subtype these)
 export AbstractState,
-    AbstractPolicy, AbstractConfig, AbstractSOW, AbstractRecorder, AbstractAction
+    AbstractPolicy, AbstractConfig, AbstractScenario, AbstractRecorder, AbstractAction
 
-# TimeStep struct
-export TimeStep
+# TimeStep struct and accessors
+export TimeStep, index
 
 # Core simulation
-export simulate, get_action
+export simulate, simulate_traced, get_action
 
 # Callbacks (users implement these)
-export initialize, run_timestep, time_axis, finalize
+export initialize, run_timestep, time_axis, compute_outcome
 
-# Utils helper submodule
-export Utils
+# Utility functions (direct exports)
+export discount_factor, is_first, is_last, timeindex
+export Utils  # Keep submodule for backward compatibility
 
 # TimeSeriesParameter
 export TimeSeriesParameter, TimeSeriesParameterBoundsError
@@ -71,6 +73,11 @@ export validate
 # Constraints
 export AbstractConstraint, FeasibilityConstraint, PenaltyConstraint
 
+# Declarative Metrics
+export AbstractMetric,
+    ExpectedValue, Probability, Variance, MeanAndVariance, Quantile, CustomMetric
+export compute_metric, compute_metrics
+
 # Persistence
 export SharedParameters, ExperimentConfig
 export save_checkpoint, load_checkpoint
@@ -95,8 +102,8 @@ export csv_sink, netcdf_sink  # Factory functions (require extensions)
 
 # Exploration
 export ExplorationResult, explore
-export outcomes_for_policy, outcomes_for_sow
-export ExploratoryInterfaceError
+export outcomes_for_policy, outcomes_for_scenario, outcomes_for_sow
+export ExploratoryInterfaceError, ParameterTypeError
 
 # Exploration plotting (requires Makie extension)
 export plot_exploration, plot_exploration_parallel, plot_exploration_scatter

@@ -37,11 +37,11 @@ function _flatten_parameter(name::Symbol, p::CategoricalParameter, prefix::Symbo
     OrderedDict{Symbol,Any}(Symbol(prefix, :_, name) => p.value)
 end
 
-# Time series -> multiple columns with [i] notation
+# Time series -> multiple columns with [time_val] notation
 function _flatten_parameter(name::Symbol, p::TimeSeriesParameter, prefix::Symbol)
     result = OrderedDict{Symbol,Any}()
-    for (i, val) in enumerate(p.data)
-        result[Symbol(prefix, :_, name, "[", i, "]")] = val
+    for (t, val) in zip(p.time_axis, p.values)
+        result[Symbol(prefix, :_, name, "[", t, "]")] = val
     end
     return result
 end
@@ -106,7 +106,7 @@ end
 function _validate_exploratory_interface(::Type{S}, ::Type{P}, ::Type{O}) where {S,P,O}
     errors = String[]
 
-    _collect_field_errors!(errors, S, "SOW")
+    _collect_field_errors!(errors, S, "Scenario")
     _collect_field_errors!(errors, P, "Policy")
     _collect_field_errors!(errors, O, "Outcome")
 
@@ -144,12 +144,12 @@ end
 """
     ExplorationResult
 
-Results from `explore()`, containing outcomes for all (policy, sow) combinations.
+Results from `explore()`, containing outcomes for all (policy, scenario) combinations.
 
 # Indexing
-- `result[p, s]` -- outcome for policy p, sow s
+- `result[p, s]` -- outcome for policy p, scenario s
 - `outcomes_for_policy(result, p)` -- all outcomes for policy p
-- `outcomes_for_sow(result, s)` -- all outcomes for sow s
+- `outcomes_for_scenario(result, s)` -- all outcomes for scenario s
 
 # Tables.jl Integration
 Convert to DataFrame: `DataFrame(result)`
@@ -157,23 +157,25 @@ Convert to DataFrame: `DataFrame(result)`
 # Fields
 - `rows::Vector{NamedTuple}` -- all result rows
 - `n_policies::Int` -- number of policies
-- `n_sows::Int` -- number of SOWs
+- `n_scenarios::Int` -- number of scenarios
 - `policy_columns::Vector{Symbol}` -- column names for policy parameters
-- `sow_columns::Vector{Symbol}` -- column names for SOW parameters
+- `scenario_columns::Vector{Symbol}` -- column names for scenario parameters
 - `outcome_columns::Vector{Symbol}` -- column names for outcome fields
 """
 struct ExplorationResult
     rows::Vector{NamedTuple}
     n_policies::Int
-    n_sows::Int
+    n_scenarios::Int
     policy_columns::Vector{Symbol}
-    sow_columns::Vector{Symbol}
+    scenario_columns::Vector{Symbol}
     outcome_columns::Vector{Symbol}
 end
 
-function ExplorationResult(rows::Vector{NamedTuple}, n_policies::Int, n_sows::Int)
+function ExplorationResult(rows::Vector{NamedTuple}, n_policies::Int, n_scenarios::Int)
     if isempty(rows)
-        return ExplorationResult(rows, n_policies, n_sows, Symbol[], Symbol[], Symbol[])
+        return ExplorationResult(
+            rows, n_policies, n_scenarios, Symbol[], Symbol[], Symbol[]
+        )
     end
 
     all_cols = collect(keys(first(rows)))
@@ -183,27 +185,29 @@ function ExplorationResult(rows::Vector{NamedTuple}, n_policies::Int, n_sows::In
         startswith(s, "policy_") && c != :policy_idx
     end
 
-    sow_cols = filter(all_cols) do c
+    scenario_cols = filter(all_cols) do c
         s = String(c)
-        startswith(s, "sow_") && c != :sow_idx
+        startswith(s, "scenario_") && c != :scenario_idx
     end
 
     outcome_cols = filter(c -> startswith(String(c), "outcome_"), all_cols)
 
-    ExplorationResult(rows, n_policies, n_sows, policy_cols, sow_cols, outcome_cols)
+    ExplorationResult(
+        rows, n_policies, n_scenarios, policy_cols, scenario_cols, outcome_cols
+    )
 end
 
 # Indexing
 function Base.getindex(r::ExplorationResult, p::Int, s::Int)
     @boundscheck begin
         1 <= p <= r.n_policies || throw(BoundsError(r, (p, s)))
-        1 <= s <= r.n_sows || throw(BoundsError(r, (p, s)))
+        1 <= s <= r.n_scenarios || throw(BoundsError(r, (p, s)))
     end
-    idx = (p - 1) * r.n_sows + s
+    idx = (p - 1) * r.n_scenarios + s
     return r.rows[idx]
 end
 
-Base.size(r::ExplorationResult) = (r.n_policies, r.n_sows)
+Base.size(r::ExplorationResult) = (r.n_policies, r.n_scenarios)
 Base.length(r::ExplorationResult) = length(r.rows)
 
 # Iteration
@@ -225,28 +229,36 @@ end
 """
     outcomes_for_policy(result::ExplorationResult, p::Int) -> Vector{NamedTuple}
 
-Get all outcomes for a specific policy across all SOWs.
+Get all outcomes for a specific policy across all scenarios.
 """
-outcomes_for_policy(r::ExplorationResult, p::Int) = [r[p, s] for s in 1:r.n_sows]
+outcomes_for_policy(r::ExplorationResult, p::Int) = [r[p, s] for s in 1:r.n_scenarios]
 
 """
-    outcomes_for_sow(result::ExplorationResult, s::Int) -> Vector{NamedTuple}
+    outcomes_for_scenario(result::ExplorationResult, s::Int) -> Vector{NamedTuple}
 
-Get all outcomes for a specific SOW across all policies.
+Get all outcomes for a specific scenario across all policies.
 """
-outcomes_for_sow(r::ExplorationResult, s::Int) = [r[p, s] for p in 1:r.n_policies]
+outcomes_for_scenario(r::ExplorationResult, s::Int) = [r[p, s] for p in 1:r.n_policies]
+
+# Backward compatibility alias
+const outcomes_for_sow = outcomes_for_scenario
 
 # Filtering
 function Base.filter(f, r::ExplorationResult)
     filtered = filter(f, r.rows)
     ExplorationResult(
-        filtered, r.n_policies, r.n_sows, r.policy_columns, r.sow_columns, r.outcome_columns
+        filtered,
+        r.n_policies,
+        r.n_scenarios,
+        r.policy_columns,
+        r.scenario_columns,
+        r.outcome_columns,
     )
 end
 
 # Finalize InMemorySink -> ExplorationResult
-function finalize(sink::InMemorySink, n_policies::Int, n_sows::Int)
-    ExplorationResult(sink.results, n_policies, n_sows)
+function finalize(sink::InMemorySink, n_policies::Int, n_scenarios::Int)
+    ExplorationResult(sink.results, n_policies, n_scenarios)
 end
 
 # ============================================================================
@@ -254,13 +266,13 @@ end
 # ============================================================================
 
 """
-    explore(config, sows, policies; sink, rng, progress) -> ExplorationResult
+    explore(config, scenarios, policies; sink, rng, progress) -> ExplorationResult
 
-Run simulations for all combinations of policies and SOWs, collecting structured results.
+Run simulations for all combinations of policies and scenarios, collecting structured results.
 
 # Arguments
 - `config::AbstractConfig`: Simulation configuration
-- `sows::AbstractVector{<:AbstractSOW}`: States of the world to explore
+- `scenarios::AbstractVector{<:AbstractScenario}`: Scenarios to explore
 - `policies::AbstractVector{<:AbstractPolicy}`: Policies to evaluate
 
 # Keyword Arguments
@@ -272,16 +284,16 @@ Run simulations for all combinations of policies and SOWs, collecting structured
 - `ExplorationResult` (for InMemorySink) or filepath (for file sinks)
 
 # Requirements
-All fields in SOW, Policy, and Outcome types must be parameter types:
+All fields in Scenario, Policy, and Outcome types must be parameter types:
 `ContinuousParameter`, `DiscreteParameter`, `CategoricalParameter`, or `TimeSeriesParameter`.
 
 # Example
 ```julia
-result = explore(config, sows, policies)
+result = explore(config, scenarios, policies)
 
 # Access results
-result[1, 2]  # policy 1, sow 2
-outcomes_for_policy(result, 1)  # all sows for policy 1
+result[1, 2]  # policy 1, scenario 2
+outcomes_for_policy(result, 1)  # all scenarios for policy 1
 
 # Convert to DataFrame
 using DataFrames
@@ -290,41 +302,43 @@ df = DataFrame(result)
 """
 function explore(
     config::AbstractConfig,
-    sows::AbstractVector{<:AbstractSOW},
+    scenarios::AbstractVector{<:AbstractScenario},
     policies::AbstractVector{<:AbstractPolicy};
     sink::AbstractResultSink=InMemorySink(),
     rng::AbstractRNG=Random.default_rng(),
     progress::Bool=true,
 )
-    isempty(sows) && throw(ArgumentError("sows cannot be empty"))
+    isempty(scenarios) && throw(ArgumentError("scenarios cannot be empty"))
     isempty(policies) && throw(ArgumentError("policies cannot be empty"))
 
     # Run one simulation to get outcome type for validation
-    first_outcome = simulate(config, first(sows), first(policies), rng)
+    first_outcome = simulate(config, first(scenarios), first(policies), rng)
 
     # Validate all types have parameter fields
-    _validate_exploratory_interface(eltype(sows), eltype(policies), typeof(first_outcome))
+    _validate_exploratory_interface(
+        eltype(scenarios), eltype(policies), typeof(first_outcome)
+    )
 
     n_policies = length(policies)
-    n_sows = length(sows)
-    n_total = n_policies * n_sows
+    n_scenarios = length(scenarios)
+    n_total = n_policies * n_scenarios
 
     prog = progress ? Progress(n_total; desc="Exploring: ", showspeed=true) : nothing
 
     for (p_idx, policy) in enumerate(policies)
-        for (s_idx, sow) in enumerate(sows)
+        for (s_idx, scenario) in enumerate(scenarios)
             # Skip first simulation (already done for validation)
             outcome = if p_idx == 1 && s_idx == 1
                 first_outcome
             else
-                simulate(config, sow, policy, rng)
+                simulate(config, scenario, policy, rng)
             end
 
             row = (
                 policy_idx=p_idx,
-                sow_idx=s_idx,
+                scenario_idx=s_idx,
                 _flatten_to_namedtuple(policy, :policy)...,
-                _flatten_to_namedtuple(sow, :sow)...,
+                _flatten_to_namedtuple(scenario, :scenario)...,
                 _flatten_to_namedtuple(outcome, :outcome)...,
             )
 
@@ -333,26 +347,26 @@ function explore(
         end
     end
 
-    return finalize(sink, n_policies, n_sows)
+    return finalize(sink, n_policies, n_scenarios)
 end
 
 # Convenience: single policy
 function explore(
     config::AbstractConfig,
-    sows::AbstractVector{<:AbstractSOW},
+    scenarios::AbstractVector{<:AbstractScenario},
     policy::AbstractPolicy;
     kwargs...,
 )
-    explore(config, sows, [policy]; kwargs...)
+    explore(config, scenarios, [policy]; kwargs...)
 end
 
 # Convenience: from OptimizationProblem
 function explore(
     prob::OptimizationProblem, policies::AbstractVector{<:AbstractPolicy}; kwargs...
 )
-    explore(prob.config, prob.sows, policies; kwargs...)
+    explore(prob.config, prob.scenarios, policies; kwargs...)
 end
 
 function explore(prob::OptimizationProblem, policy::AbstractPolicy; kwargs...)
-    explore(prob.config, prob.sows, [policy]; kwargs...)
+    explore(prob.config, prob.scenarios, [policy]; kwargs...)
 end

@@ -6,13 +6,15 @@ execute:
   exeflags: ["--project=.."]
 ---
 
-In the previous section, we manually looped over policies and SOWs.
+In the previous section, we manually looped over policies and scenarios.
 Now we'll use a more systematic approach with the `explore()` function.
 
 ## Setup
 
 ```{julia}
 #| output: false
+#| code-fold: true
+#| code-summary: "Type definitions (click to expand)"
 using SimOptDecisions
 using Distributions
 using Random
@@ -29,23 +31,23 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
     house_value::T = 200_000.0
 end
 
-struct HouseElevationSOW{T<:AbstractFloat} <: AbstractSOW
-    gev_μ::T
-    gev_σ::T
-    gev_ξ::T
-    dd_threshold::T
-    dd_saturation::T
-    discount_rate::T
+struct HouseElevationScenario{T<:AbstractFloat} <: AbstractScenario
+    gev_μ::ContinuousParameter{T}
+    gev_σ::ContinuousParameter{T}
+    gev_ξ::ContinuousParameter{T}
+    dd_threshold::ContinuousParameter{T}
+    dd_saturation::ContinuousParameter{T}
+    discount_rate::ContinuousParameter{T}
 end
 
-function sample_sow(rng::AbstractRNG)
-    gev_μ = rand(rng, Normal(2.8, 0.3))
-    gev_σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
-    gev_ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
-    dd_threshold = rand(rng, Normal(0.0, 0.25))
-    dd_saturation = rand(rng, Normal(8.0, 0.5))
-    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
-    return HouseElevationSOW(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
+function sample_scenario(rng::AbstractRNG)
+    gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3)))
+    gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3)))
+    gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5)))
+    dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25)))
+    dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5)))
+    discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)))
+    return HouseElevationScenario(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
 end
 
 struct SeaLevelState{T<:AbstractFloat} <: AbstractState
@@ -57,13 +59,15 @@ struct ElevationAction{T<:AbstractFloat} <: AbstractAction
 end
 
 struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::T
+    elevation_ft::ContinuousParameter{T}
 end
 
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(ContinuousParameter(params[1], (0.0, 14.0)))
+
 function SimOptDecisions.get_action(
-    policy::ElevationPolicy, state::SeaLevelState, sow::HouseElevationSOW, t::TimeStep
+    policy::ElevationPolicy, state::SeaLevelState, t::TimeStep, scenario::HouseElevationScenario
 )
-    return ElevationAction(policy.elevation_ft)
+    return ElevationAction(value(policy.elevation_ft))
 end
 
 function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
@@ -92,38 +96,38 @@ function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
 end
 elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
 
-function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationSOW, ::AbstractRNG)
+function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationScenario, ::AbstractRNG)
     return SeaLevelState(0.0)
 end
 
-function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationSOW)
+function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationScenario)
     return 1:(config.horizon)
 end
 
 function SimOptDecisions.run_timestep(
-    state::SeaLevelState, action::ElevationAction, sow::HouseElevationSOW,
-    config::HouseElevationConfig, t::TimeStep, rng::AbstractRNG
+    state::SeaLevelState, action::ElevationAction, t::TimeStep,
+    config::HouseElevationConfig, scenario::HouseElevationScenario, rng::AbstractRNG
 )
-    construction_cost = SimOptDecisions.Utils.is_first(t) ?
+    construction_cost = is_first(t) ?
         elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
 
-    surge_dist = GeneralizedExtremeValue(sow.gev_μ, sow.gev_σ, sow.gev_ξ)
+    surge_dist = GeneralizedExtremeValue(value(scenario.gev_μ), value(scenario.gev_σ), value(scenario.gev_ξ))
     surge_at_gauge = rand(rng, surge_dist)
     water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
     house_floor_level = config.house_height_above_ref + action.elevation_ft
     flood_depth_at_house = water_level - house_floor_level
-    damage_fraction = depth_damage(flood_depth_at_house, sow.dd_threshold, sow.dd_saturation)
+    damage_fraction = depth_damage(flood_depth_at_house, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
     return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
 end
 
-function SimOptDecisions.finalize(
-    final_state::SeaLevelState, step_records::Vector,
-    config::HouseElevationConfig, sow::HouseElevationSOW
+function SimOptDecisions.compute_outcome(
+    step_records::Vector,
+    config::HouseElevationConfig, scenario::HouseElevationScenario
 )
     construction_cost = step_records[1].construction_cost
     npv_damages = sum(
-        step_records[t].damage_fraction * SimOptDecisions.Utils.discount_factor(sow.discount_rate, t)
+        step_records[t].damage_fraction * discount_factor(value(scenario.discount_rate), t)
         for t in eachindex(step_records)
     )
     return (construction_cost=construction_cost, npv_damages=npv_damages)
@@ -133,24 +137,24 @@ end
 ## Grid Search: Manual Exploration
 
 Let's start with a systematic grid search over elevation levels.
-We'll evaluate each elevation across many SOWs:
+We'll evaluate each elevation across many scenarios:
 
 ```{julia}
 config = HouseElevationConfig()
-n_sows = 1000
+n_scenarios = 1000
 rng = Random.Xoshiro(42)
-sows = [sample_sow(rng) for _ in 1:n_sows]
+scenarios = [sample_scenario(rng) for _ in 1:n_scenarios]
 
 elevations = 0:14
 results = Dict{Int,Vector{Float64}}()
 
 for elev in elevations
-    policy = ElevationPolicy(Float64(elev))
-    outcomes = [simulate(config, sow, policy).npv_damages for sow in sows]
+    policy = ElevationPolicy(ContinuousParameter(Float64(elev), (0.0, 14.0)))
+    outcomes = [simulate(config, scenario, policy).npv_damages for scenario in scenarios]
     results[elev] = outcomes
 end
 
-println("Evaluated $(length(elevations)) elevations × $(n_sows) SOWs = $(length(elevations) * n_sows) simulations")
+println("Evaluated $(length(elevations)) elevations × $(n_scenarios) scenarios = $(length(elevations) * n_scenarios) simulations")
 ```
 
 ### Trade-off Curve
@@ -224,8 +228,8 @@ let
     optimal_by_rate = Float64[]
 
     for rate in rate_bins
-        filtered_sows = filter(s -> abs(s.discount_rate - rate) < 0.005, sows)
-        if length(filtered_sows) < 10
+        filtered_scenarios = filter(s -> abs(value(s.discount_rate) - rate) < 0.005, scenarios)
+        if length(filtered_scenarios) < 10
             push!(optimal_by_rate, NaN)
             continue
         end
@@ -233,8 +237,8 @@ let
         best_elev = 0
         best_cost = Inf
         for elev in elevations
-            policy = ElevationPolicy(Float64(elev))
-            outcomes = [simulate(config, sow, policy).npv_damages for sow in filtered_sows]
+            policy = ElevationPolicy(ContinuousParameter(Float64(elev), (0.0, 14.0)))
+            outcomes = [simulate(config, scenario, policy).npv_damages for scenario in filtered_scenarios]
             total = elevation_cost(elev) + mean(outcomes)
             if total < best_cost
                 best_cost = total
@@ -264,11 +268,11 @@ Lower discount rates favor higher elevation because future damages are weighted 
 ## The `explore()` Function
 
 For more systematic exploration with automatic tabular output, SimOptDecisions provides the `explore()` function.
-However, it requires types with **parameter wrappers**.
+Since we've been using `ContinuousParameter` throughout this tutorial, our types are already compatible!
 
-### Parameter Types
+For this demo, we'll define simplified types with fewer parameters to produce cleaner output.
 
-To use `explore()`, wrap your SOW, Policy, and Outcome fields with parameter types:
+### Parameter Types (Review)
 
 | Type | Use Case | Example |
 |------|----------|---------|
@@ -281,8 +285,8 @@ To use `explore()`, wrap your SOW, Policy, and Outcome fields with parameter typ
 
 ```{julia}
 #| output: false
-# SOW with parameter wrappers
-struct ExploreSOW{T<:AbstractFloat} <: AbstractSOW
+# Scenario with parameter wrappers
+struct ExploreScenario{T<:AbstractFloat} <: AbstractScenario
     gev_μ::ContinuousParameter{T}
     gev_σ::ContinuousParameter{T}
     discount_rate::ContinuousParameter{T}
@@ -306,27 +310,27 @@ end
 
 # Callbacks for the wrapped types
 function SimOptDecisions.get_action(
-    policy::ExplorePolicy, state::ExploreState, sow::ExploreSOW, t::TimeStep
+    policy::ExplorePolicy, state::ExploreState, t::TimeStep, scenario::ExploreScenario
 )
     return ExploreAction(value(policy.elevation_ft))
 end
 
-function SimOptDecisions.initialize(::HouseElevationConfig, ::ExploreSOW, ::AbstractRNG)
+function SimOptDecisions.initialize(::HouseElevationConfig, ::ExploreScenario, ::AbstractRNG)
     return ExploreState(0.0)
 end
 
-function SimOptDecisions.time_axis(config::HouseElevationConfig, ::ExploreSOW)
+function SimOptDecisions.time_axis(config::HouseElevationConfig, ::ExploreScenario)
     return 1:(config.horizon)
 end
 
 function SimOptDecisions.run_timestep(
-    state::ExploreState, action::ExploreAction, sow::ExploreSOW,
-    config::HouseElevationConfig, t::TimeStep, rng::AbstractRNG
+    state::ExploreState, action::ExploreAction, t::TimeStep,
+    config::HouseElevationConfig, scenario::ExploreScenario, rng::AbstractRNG
 )
-    construction_cost = SimOptDecisions.Utils.is_first(t) ?
+    construction_cost = is_first(t) ?
         elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
 
-    surge_dist = GeneralizedExtremeValue(value(sow.gev_μ), value(sow.gev_σ), 0.15)
+    surge_dist = GeneralizedExtremeValue(value(scenario.gev_μ), value(scenario.gev_σ), 0.15)
     surge_at_gauge = rand(rng, surge_dist)
     water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
     house_floor_level = config.house_height_above_ref + action.elevation_ft
@@ -337,14 +341,14 @@ function SimOptDecisions.run_timestep(
 end
 
 # Outcome with parameter wrappers (required for explore)
-function SimOptDecisions.finalize(
-    final_state::ExploreState, step_records::Vector,
-    config::HouseElevationConfig, sow::ExploreSOW
+function SimOptDecisions.compute_outcome(
+    step_records::Vector,
+    config::HouseElevationConfig, scenario::ExploreScenario
 )
     construction_cost = step_records[1].construction_cost
     npv_damages = sum(
         step_records[t].damage_fraction *
-        SimOptDecisions.Utils.discount_factor(value(sow.discount_rate), t)
+        discount_factor(value(scenario.discount_rate), t)
         for t in eachindex(step_records)
     )
     return (
@@ -357,9 +361,9 @@ end
 ### Running Exploration
 
 ```{julia}
-# Create wrapped SOWs and policies
-explore_sows = [
-    ExploreSOW(
+# Create wrapped scenarios and policies
+explore_scenarios = [
+    ExploreScenario(
         ContinuousParameter(rand(rng, Normal(2.8, 0.3))),
         ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))),
         ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)))
@@ -369,10 +373,10 @@ explore_sows = [
 
 explore_policies = [ExplorePolicy(ContinuousParameter(Float64(e))) for e in 0:2:10]
 
-result = explore(config, explore_sows, explore_policies; progress=false)
+result = explore(config, explore_scenarios, explore_policies; progress=false)
 
 println("Exploration result: $(size(result))")
-println("Columns: policy_idx, sow_idx, plus flattened parameters and outcomes")
+println("Columns: policy_idx, scenario_idx, plus flattened parameters and outcomes")
 ```
 
 ### Accessing Results
@@ -380,9 +384,9 @@ println("Columns: policy_idx, sow_idx, plus flattened parameters and outcomes")
 ```{julia}
 # Access specific result
 r = result[1, 1]
-println("Policy 1, SOW 1:")
+println("Policy 1, Scenario 1:")
 println("  Elevation: $(r.policy_elevation_ft) ft")
-println("  Discount rate: $(round(r.sow_discount_rate, digits=3))")
+println("  Discount rate: $(round(r.scenario_discount_rate, digits=3))")
 println("  NPV damages: $(round(r.outcome_npv_damages, digits=3))")
 ```
 

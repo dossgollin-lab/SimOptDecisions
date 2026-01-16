@@ -50,14 +50,14 @@ Requires `using CairoMakie` or `using GLMakie`.
 # Keyword Arguments
 - `outcome_field::Symbol`: Which outcome field to visualize
 - `policy_param::Union{Symbol,Nothing}=nothing`: Policy parameter for x-axis labels
-- `sow_param::Union{Symbol,Nothing}=nothing`: SOW parameter for y-axis labels
+- `scenario_param::Union{Symbol,Nothing}=nothing`: Scenario parameter for y-axis labels
 """
 function plot_exploration end
 
 """
     plot_exploration_parallel(result::ExplorationResult; kwargs...) -> (Figure, Axis)
 
-Parallel coordinates plot showing policy/SOW parameters and outcomes.
+Parallel coordinates plot showing policy/scenario parameters and outcomes.
 Requires `using CairoMakie` or `using GLMakie`.
 
 # Keyword Arguments
