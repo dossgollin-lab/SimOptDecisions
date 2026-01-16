@@ -127,8 +127,8 @@ explore(config, scenarios, policies; sink=sink)
 See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions/) for:
 
 - [Getting Started](https://dossgollin-lab.github.io/SimOptDecisions/guide/getting-started.html) — checklist + minimal working example
-- [Exploratory Modeling](https://dossgollin-lab.github.io/SimOptDecisions/guide/exploration.html) — parameter types, streaming output, visualization
-- [House Elevation Example](https://dossgollin-lab.github.io/SimOptDecisions/examples/house_elevation.html) — complete tutorial with multi-objective optimization
+- [Exploratory Modeling](https://dossgollin-lab.github.io/SimOptDecisions/tutorial/05-exploratory-modeling.html) — parameter types, streaming output, visualization
+- [House Elevation Tutorial](https://dossgollin-lab.github.io/SimOptDecisions/tutorial/01-the-problem.html) — complete tutorial with multi-objective optimization
 
 ## Installation
 

@@ -16,7 +16,7 @@ abstract type AbstractAction end
     AbstractParameter{T}
 
 Base type for typed parameters used in exploratory modeling.
-Subtypes enable automatic flattening of SOWs, Policies, and Outcomes for analysis.
+Subtypes enable automatic flattening of Scenarios, Policies, and Outcomes for analysis.
 
 To use `explore()`, all fields in your types must be `<:AbstractParameter` or `TimeSeriesParameter`.
 """
@@ -202,12 +202,12 @@ maximize(name::Symbol) = Objective(name, Maximize)
 abstract type AbstractBatchSize end
 
 """
-Use all SOWs in the training set for each evaluation.
+Use all scenarios in the training set for each evaluation.
 """
 struct FullBatch <: AbstractBatchSize end
 
 """
-Use a fixed number of SOWs per evaluation.
+Use a fixed number of scenarios per evaluation.
 """
 struct FixedBatch <: AbstractBatchSize
     n::Int
@@ -219,7 +219,7 @@ struct FixedBatch <: AbstractBatchSize
 end
 
 """
-Use a fraction of the SOWs per evaluation.
+Use a fraction of the scenarios per evaluation.
 """
 struct FractionBatch{T<:AbstractFloat} <: AbstractBatchSize
     fraction::T

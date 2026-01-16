@@ -93,7 +93,7 @@ end
     end
 
     @testset "Validation errors" begin
-        struct BadSOW <: AbstractScenario
+        struct BadScenario <: AbstractScenario
             x::Float64  # not a parameter type!
         end
 
@@ -107,7 +107,7 @@ end
 
         @test_throws ExploratoryInterfaceError begin
             SimOptDecisions._validate_exploratory_interface(
-                BadSOW, GoodPolicy{Float64}, GoodOutcome{Float64}
+                BadScenario, GoodPolicy{Float64}, GoodOutcome{Float64}
             )
         end
     end
