@@ -12,18 +12,18 @@ This package is under active development and the API may change.
 
 ## What is SimOptDecisions?
 
-SimOptDecisions helps you find good decision strategies when the future is uncertain.
+SimOptDecisions is a Julia framework for conducting exploratory modeling and simulation-optimization under uncertainty.
 
-You provide a simulation model and a parameterized policy. The framework runs your model across many possible futures, aggregates the results, and searches for policy parameters that perform well.
+You provide a simulation model and a parameterized policy. The framework runs your model, aggregates the results, and facilitates visualization and policy search.
 
-It's useful when you can simulate outcomes but can't solve for optimal decisions analytically.
+Designed to be flexible but imposes just enough structure to enable type stability, fast execution, and ergonomic APIs.
 
 ## Key Vocabulary
 
 | Term | What it means |
 |------|---------------|
 | **Config** | Fixed parameters that don't change across scenarios |
-| **Scenario** | One possible future (your uncertain parameters) |
+| **Scenario** | One possible future (your uncertain parameters)^[Also called "State of the World" (SOW) in some decision analysis literature] |
 | **Policy** | A decision rule with tunable parameters |
 | **Action** | What the policy decides at each timestep |
 | **State** | Your model's internal state that evolves over time |
@@ -32,81 +32,25 @@ It's useful when you can simulate outcomes but can't solve for optimal decisions
 
 ## How It Works
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                        You define                            │
-├──────────────────────────────────────────────────────────────┤
-│  Types: Config, Scenario, State, Action, Policy              │
-│  Callbacks: initialize, get_action, run_timestep,            │
-│             time_axis, compute_outcome                       │
-└──────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────┐
-│                   Framework handles                          │
-├──────────────────────────────────────────────────────────────┤
-│  simulate(config, scenario, policy) → run one scenario       │
-│  evaluate_policy(prob, policy)      → run across scenarios   │
-│  optimize(prob, backend)            → search for best params │
-└──────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                     ┌────────────────┐
-                     │  Pareto Front  │
-                     └────────────────┘
+When you call `simulate(config, scenario, policy)`, the framework orchestrates your callbacks:
+
+```{mermaid}
+flowchart LR
+    A[simulate] --> B[time_axis]
+    B --> C[initialize]
+    C --> D{for t in times}
+    D --> E[get_action]
+    E --> F[run_timestep]
+    F --> D
+    D --> G[compute_outcome]
+    G --> H[outcome]
 ```
 
-## Callback Flow
+The framework then provides higher-level functions:
 
-When you call `simulate(config, scenario, policy, rng)`, here's what happens:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    simulate(config, scenario, policy, rng)                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │  times = time_axis(config,    │
-                        │                    scenario)  │
-                        └───────────────────────────────┘
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │  state = initialize(config,   │
-                        │              scenario, rng)   │
-                        └───────────────────────────────┘
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │     for t in times:           │
-                        │  ┌─────────────────────────┐  │
-                        │  │ action = get_action(    │  │
-                        │  │   policy, state, t,     │  │
-                        │  │   scenario)             │  │
-                        │  └───────────┬─────────────┘  │
-                        │              │                │
-                        │              ▼                │
-                        │  ┌─────────────────────────┐  │
-                        │  │ state, record =         │  │
-                        │  │   run_timestep(state,   │  │
-                        │  │   action, t, config,    │  │
-                        │  │   scenario, rng)        │  │
-                        │  └─────────────────────────┘  │
-                        └───────────────────────────────┘
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │  outcome = compute_outcome(   │
-                        │    step_records, config,      │
-                        │    scenario)                  │
-                        └───────────────────────────────┘
-                                        │
-                                        ▼
-                                ┌───────────────┐
-                                │    outcome    │
-                                └───────────────┘
-```
+- `simulate(config, scenario, policy)` — run one scenario
+- `explore(config, scenarios, policies)` — systematically evaluate all combinations
+- `optimize(problem, backend)` — search for Pareto-optimal policies
 
 ## Installation
 

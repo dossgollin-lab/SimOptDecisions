@@ -153,10 +153,12 @@ explore(config, scenarios, policies; sink=sink)
 """
 function csv_sink end
 
-function csv_sink(filepath::String)
+# Fallback with helpful error - uses AbstractString so String (from extension) takes precedence
+function csv_sink(filepath::AbstractString)
     error(
-        "csv_sink requires the CSV package.\n" *
-        "Run `using CSV` to load the SimOptCSVExt extension.",
+        "csv_sink requires the CSV package. Add it with:\n" *
+        "  using CSV\n" *
+        "Then call: csv_sink(\"$filepath\")",
     )
 end
 
@@ -177,9 +179,11 @@ explore(config, scenarios, policies; sink=sink)
 """
 function netcdf_sink end
 
-function netcdf_sink(filepath::String; kwargs...)
+# Fallback with helpful error - uses AbstractString so String (from extension) takes precedence
+function netcdf_sink(filepath::AbstractString; kwargs...)
     error(
-        "netcdf_sink requires the NCDatasets package.\n" *
-        "Run `using NCDatasets` to load the SimOptNetCDFExt extension.",
+        "netcdf_sink requires the NCDatasets package. Add it with:\n" *
+        "  using NCDatasets\n" *
+        "Then call: netcdf_sink(\"$filepath\")",
     )
 end

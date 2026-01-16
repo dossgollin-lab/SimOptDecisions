@@ -4,29 +4,28 @@ Notes and tasks for improving the documentation.
 
 ## Sidebar Changes
 
-- [ ] Change "Tutorial" → "Tutorial: House Elevation" in `docs/_quarto.yml` line 18
+- [x] Change "Tutorial" → "Tutorial: House Elevation" in `docs/_quarto.yml` line 18
 
 ## Landing Page (`docs/index.qmd`)
 
-- [ ] Replace "corny" opening: "SimOptDecisions helps you find good decision strategies when the future is uncertain."
+- [x] Replace "corny" opening: "SimOptDecisions helps you find good decision strategies when the future is uncertain."
   - New: "SimOptDecisions is a Julia framework for conducting exploratory modeling and simulation-optimization under uncertainty."
   - Next paragraph: "You provide a simulation model and parameterized policy. The framework runs your model, aggregates the results, and facilitates visualization and policy search."
   - Add: Designed to be flexible but imposes just enough structure to enable type stability, fast execution, and ergonomic APIs.
 
-- [ ] Under "Key Vocabulary": Add note that "Scenario" is sometimes called "State of the World" (SOW) in the decision analysis literature
+- [x] Under "Key Vocabulary": Add note that "Scenario" is sometimes called "State of the World" (SOW) in the decision analysis literature
 
-- [ ] "How It Works" section:
-  - [ ] Remove the first ASCII box ("You define" types and callbacks) - redundant with Quick Reference
-  - [ ] Keep the "Callback Flow" diagram - verify it's correct
-  - [ ] Consider replacing ASCII callback flow with Mermaid or generated figure (left-to-right layout)
+- [x] "How It Works" section:
+  - [x] Remove the first ASCII box ("You define" types and callbacks) - redundant with Quick Reference
+  - [x] Keep the "Callback Flow" diagram - verify it's correct
+  - [x] Replaced ASCII callback flow with Mermaid diagram (left-to-right layout)
 
 ## The Problem Page (`docs/tutorial/01-the-problem.qmd`)
 
-Currently pure prose. Needs to transition into explaining the code patterns:
-
-- [ ] Explain `T<:AbstractFloat` - parametric types for type stability
-- [ ] Explain `<:AbstractConfig`, `<:AbstractScenario`, etc. - how the framework knows your types
-- [ ] Explain parameter types requirement (ContinuousParameter, etc.)
+- [x] Added "Code Patterns You'll See" section explaining:
+  - [x] `T<:AbstractFloat` - parametric types for type stability
+  - [x] `<:AbstractConfig`, `<:AbstractScenario`, etc. - how the framework knows your types
+  - [x] Parameter types requirement (ContinuousParameter, etc.)
 
 ## Defining Your Model (`docs/tutorial/02-defining-your-model.qmd`)
 
@@ -50,58 +49,40 @@ Currently pure prose. Needs to transition into explaining the code patterns:
 - [x] Update `run_timestep` to use `value()` for scenario parameters
 - [x] Update `compute_outcome` to use `value()` for discount_rate
 - [x] Update example code to construct policies with `ContinuousParameter`
+- [x] Added code-fold to setup block
 
-## Remaining Tutorial Files
+## Tutorial File Updates
 
-- [ ] Update `docs/tutorial/04-evaluating-a-policy.qmd` to use parameter types
-- [ ] Update `docs/tutorial/05-exploratory-modeling.qmd` to use parameter types
-- [ ] Update `docs/tutorial/06-policy-search.qmd` to use parameter types
+- [x] Update `docs/tutorial/04-evaluating-a-policy.qmd` to use parameter types
+- [x] Update `docs/tutorial/05-exploratory-modeling.qmd` to use parameter types
+- [x] Update `docs/tutorial/06-policy-search.qmd` to use parameter types
+- [x] Added code-fold to setup blocks in tutorials 03-06
 
 ## Parameter Types Documentation
 
-Need a dedicated section or callout explaining:
+Documented in tutorial 01-the-problem.qmd and 05-exploratory-modeling.qmd:
 
-- [ ] `ContinuousParameter{T}` - real values with optional bounds
-- [ ] `DiscreteParameter{T}` - integer values with optional valid_values
-- [ ] `CategoricalParameter{T}` - categorical with defined levels
-- [ ] `TimeSeriesParameter{T,I}` - time-indexed data that can be reused across different simulation horizons
-  - Takes `time_axis` and `values` arguments
-  - Indexes by `t.val` from TimeStep, enabling reuse across different simulation horizons
-  - Example: `TimeSeriesParameter(2020:2100, slr_values)` for sea-level rise
-- [ ] Creating custom parameter types is trivial (just implement the interface)
+- [x] `ContinuousParameter{T}` - real values with optional bounds
+- [x] `DiscreteParameter{T}` - integer values with optional valid_values
+- [x] `CategoricalParameter{T}` - categorical with defined levels
+- [x] `TimeSeriesParameter{T,I}` - time-indexed data that can be reused across different simulation horizons
 
 ## Validation Behavior
 
-- [ ] Document the `SIMOPT_STRICT_VALIDATION` environment variable
+- [x] Document the `SIMOPT_STRICT_VALIDATION` environment variable in `docs/reference/validation.qmd`
   - When set to "true", validates that Scenario, Policy, and Outcome types use parameter fields at simulation time
   - Default is off (for backward compatibility)
   - `explore()` ALWAYS validates - parameter types are required there
-- [ ] Recommend users enable strict validation: `ENV["SIMOPT_STRICT_VALIDATION"] = "true"`
+- [x] Recommend users enable strict validation: `ENV["SIMOPT_STRICT_VALIDATION"] = "true"`
 
 ## Callback Flow Diagram
 
-The current ASCII diagram is correct. Options for improvement:
-
-1. **Mermaid** - Simple markdown-based, renders in Quarto
-2. **Makie-generated** - More control, but adds dependency
-3. **Keep ASCII** - Works, but less polished
-
-Suggested Mermaid (left-to-right):
-
-```mermaid
-flowchart LR
-    A[simulate] --> B[time_axis]
-    B --> C[initialize]
-    C --> D{for t in times}
-    D --> E[get_action]
-    E --> F[run_timestep]
-    F --> D
-    D --> G[compute_outcome]
-    G --> H[outcome]
-```
+- [x] Replaced ASCII diagram with Mermaid in `docs/index.qmd`
 
 ## Other Notes
 
-- Remove any remaining references to "SOW" (should all be "scenario" now)
-- Ensure all code examples are runnable
-- Add error message examples showing what happens with wrong types
+- [x] Remove any remaining references to "SOW" (should all be "scenario" now)
+  - Updated persistence.qmd and validation.qmd
+  - Only reference remaining is explanatory footnote in index.qmd
+- [x] Ensure all code examples are runnable (verified - docs build successfully)
+- [x] Add error message examples showing what happens with wrong types (in validation.qmd)

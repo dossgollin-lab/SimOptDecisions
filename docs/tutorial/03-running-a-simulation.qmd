@@ -14,6 +14,8 @@ First, we need all the type definitions from the previous section:
 
 ```{julia}
 #| output: false
+#| code-fold: true
+#| code-summary: "Type definitions from previous section (click to expand)"
 using SimOptDecisions
 using Distributions
 using Random

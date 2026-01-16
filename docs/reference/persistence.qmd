@@ -7,7 +7,7 @@ SimOptDecisions provides tools for saving and loading optimization state, enabli
 
 ## SharedParameters
 
-`SharedParameters` wraps fixed parameters that are constant across all SOWs and not subject to optimization. Use it for things like discount rates, planning horizons, and physical constants.
+`SharedParameters` wraps fixed parameters that are constant across all scenarios and not subject to optimization. Use it for things like discount rates, planning horizons, and physical constants.
 
 ```julia
 # Create from keyword arguments
@@ -34,12 +34,12 @@ In practice, you can put the same values in both. SharedParameters is useful whe
 ```julia
 exp_config = ExperimentConfig(
     42,                    # seed
-    sows,                  # Vector of SOWs
+    scenarios,                  # Vector of scenarios
     shared_params,         # SharedParameters
     backend;               # AbstractOptimizationBackend
     timestamp=Dates.now(),
     git_commit="abc123",   # optional, for reproducibility tracking
-    sow_source="Latin Hypercube sampling from priors"
+    scenario_source="Latin Hypercube sampling from priors"
 )
 ```
 
@@ -51,8 +51,8 @@ exp_config = ExperimentConfig(
 | `timestamp` | `DateTime` | When the experiment was created |
 | `git_commit` | `String` | Optional git commit hash |
 | `package_versions` | `String` | Optional package version info |
-| `sows` | `Vector{<:AbstractSOW}` | The SOWs used in this experiment |
-| `sow_source` | `String` | Description of how SOWs were generated |
+| `scenarios` | `Vector{<:AbstractScenario}` | The scenarios used in this experiment |
+| `scenario_source` | `String` | Description of how scenarios were generated |
 | `shared` | `SharedParameters` | Fixed parameters |
 | `backend` | `AbstractOptimizationBackend` | Optimization configuration |
 
@@ -121,7 +121,7 @@ using Dates
 # 1. Set up experiment configuration
 seed = 42
 rng = Random.Xoshiro(seed)
-sows = [sample_sow(rng) for _ in 1:1000]
+scenarios = [sample_scenario(rng) for _ in 1:1000]
 
 shared = SharedParameters(
     discount_rate=0.03,
@@ -135,13 +135,13 @@ backend = MetaheuristicsBackend(
 )
 
 exp_config = ExperimentConfig(
-    seed, sows, shared, backend;
+    seed, scenarios, shared, backend;
     git_commit=read(`git rev-parse HEAD`, String) |> strip,
-    sow_source="1000 SOWs from Latin Hypercube sampling"
+    scenario_source="1000 scenarios from Latin Hypercube sampling"
 )
 
 # 2. Run optimization
-prob = OptimizationProblem(config, sows, MyPolicy, calculate_metrics, objectives)
+prob = OptimizationProblem(config, scenarios, MyPolicy, calculate_metrics, objectives)
 result = SimOptDecisions.optimize(prob, backend)
 
 # 3. Save everything
