@@ -25,9 +25,22 @@
         @test value(p) == 5
         @test p[] == 5
 
-        # With valid values
+        # With valid values (vector)
         p2 = DiscreteParameter(2, [1, 2, 3])
         @test p2.valid_values == [1, 2, 3]
+
+        # With range (collected to vector)
+        p3 = DiscreteParameter(3, 1:5)
+        @test p3.valid_values == [1, 2, 3, 4, 5]
+        @test p3.value == 3
+
+        # With tuple (collected to vector)
+        p4 = DiscreteParameter(10, (5, 10, 15))
+        @test p4.valid_values == [5, 10, 15]
+
+        # Invalid value throws
+        @test_throws ArgumentError DiscreteParameter(99, [1, 2, 3])
+        @test_throws ArgumentError DiscreteParameter(0, 1:5)
     end
 
     @testset "CategoricalParameter" begin
@@ -45,6 +58,27 @@
         p2 = CategoricalParameter("a", ["a", "b", "c"])
         @test p2.value == "a"
         @test p2.levels == ["a", "b", "c"]
+
+        # Tuple levels (collected to vector)
+        p3 = CategoricalParameter(:x, (:x, :y, :z))
+        @test p3.levels == [:x, :y, :z]
+    end
+
+    @testset "GenericParameter" begin
+        # Basic construction (warning is issued but we test it works)
+        struct TestComplexType
+            data::Vector{Int}
+        end
+
+        obj = TestComplexType([1, 2, 3])
+        p = @test_logs (:warn, r"GenericParameter detected") GenericParameter(obj)
+        @test p.value === obj
+        @test value(p) === obj
+        @test p[] === obj
+
+        # Second construction should not warn (maxlog=1)
+        p2 = @test_logs GenericParameter(TestComplexType([4, 5]))
+        @test p2.value.data == [4, 5]
     end
 
     @testset "TimeSeriesParameter value() and time_axis()" begin

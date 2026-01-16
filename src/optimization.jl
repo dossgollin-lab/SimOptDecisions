@@ -42,7 +42,7 @@ function param_bounds(policy::AbstractPolicy)
         elseif field isa DiscreteParameter
             throw(
                 ArgumentError(
-                    "Field :$fname is DiscreteParameter. " *
+                    "Policy field :$fname is DiscreteParameter. " *
                     "Optimization backends like Metaheuristics only support continuous parameters. " *
                     "Use ContinuousParameter or implement a custom optimizer.",
                 ),
@@ -50,9 +50,25 @@ function param_bounds(policy::AbstractPolicy)
         elseif field isa CategoricalParameter
             throw(
                 ArgumentError(
-                    "Field :$fname is CategoricalParameter. " *
+                    "Policy field :$fname is CategoricalParameter. " *
                     "Optimization backends like Metaheuristics only support continuous parameters. " *
                     "Use ContinuousParameter or implement a custom optimizer.",
+                ),
+            )
+        elseif field isa TimeSeriesParameter
+            throw(
+                ArgumentError(
+                    "Policy field :$fname is TimeSeriesParameter. " *
+                    "Time series data belongs in Scenarios, not Policies. " *
+                    "Policies define decision rules with scalar parameters.",
+                ),
+            )
+        elseif field isa GenericParameter
+            throw(
+                ArgumentError(
+                    "Policy field :$fname is GenericParameter. " *
+                    "GenericParameter cannot be optimized (no bounds). " *
+                    "Use ContinuousParameter for optimizable policy parameters.",
                 ),
             )
         end

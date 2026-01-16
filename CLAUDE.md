@@ -9,3 +9,4 @@ Before making code changes, read [STYLE.md](STYLE.md) for project conventions.
 3. **Interface methods** - Use `interface_not_implemented()` helper for fallback errors
 4. **No over-engineering** - Avoid abstractions unless clearly needed
 5. Keep git commits short and do not name coauthors or add email addresses
+6. **Explicit failure over silent wrong behavior** - Never provide "convenience" constructors that silently pick defaults (e.g., `Foo(values) = Foo(first(values), values)`). If required information is missing, throw an error with a helpful message

@@ -57,14 +57,31 @@ An integer-valued parameter with optional valid values constraint.
 # Example
 ```julia
 DiscreteParameter(5)                        # any integer
-DiscreteParameter(2, [1, 2, 3, 4, 5])       # constrained
+DiscreteParameter(2, [1, 2, 3, 4, 5])       # constrained to set
+DiscreteParameter(3, 1:5)                   # constrained to range (collected)
 ```
 """
 struct DiscreteParameter{T<:Integer} <: AbstractParameter{T}
     value::T
     valid_values::Union{Nothing,Vector{T}}
+
+    function DiscreteParameter(value::T, valid_values::Vector{T}) where {T<:Integer}
+        value ∈ valid_values || throw(ArgumentError("Value `$value` not in valid_values $valid_values"))
+        new{T}(value, valid_values)
+    end
+
+    function DiscreteParameter(value::T, ::Nothing) where {T<:Integer}
+        new{T}(value, nothing)
+    end
 end
+
+# Convenience: unconstrained integer
 DiscreteParameter(value::T) where {T<:Integer} = DiscreteParameter(value, nothing)
+
+# Convenience: accept any iterable for valid_values (ranges, sets, tuples)
+function DiscreteParameter(value::T, valid_values) where {T<:Integer}
+    DiscreteParameter(value, collect(T, valid_values))
+end
 
 """
     CategoricalParameter{T}
@@ -79,6 +96,7 @@ A categorical parameter with defined levels.
 ```julia
 CategoricalParameter(:high, [:low, :medium, :high])
 CategoricalParameter("scenario_a", ["scenario_a", "scenario_b"])
+CategoricalParameter(:a, (:a, :b, :c))  # tuple converted to vector
 ```
 """
 struct CategoricalParameter{T} <: AbstractParameter{T}
@@ -88,6 +106,46 @@ struct CategoricalParameter{T} <: AbstractParameter{T}
     function CategoricalParameter(value::T, levels::Vector{T}) where {T}
         value ∈ levels || throw(ArgumentError("Value `$value` not in levels $levels"))
         new{T}(value, levels)
+    end
+end
+
+# Convenience: accept any iterable for levels (tuples, sets, etc.)
+function CategoricalParameter(value::T, levels) where {T}
+    CategoricalParameter(value, collect(T, levels))
+end
+
+"""
+    GenericParameter{T}
+
+A parameter holding any value. The framework cannot optimize, explore, or visualize this type.
+
+Use only when you need to pass complex objects through the simulation that don't fit
+other parameter types. Consider using CategoricalParameter with an identifier instead.
+
+# Example
+```julia
+# Prefer this pattern:
+struct MyScenario <: AbstractScenario
+    model_id::CategoricalParameter{String}  # identifier
+end
+# Then load models from config based on model_id
+
+# GenericParameter is a last resort:
+struct MyScenario <: AbstractScenario
+    complex_object::GenericParameter{MyComplexType}
+end
+```
+"""
+struct GenericParameter{T} <: AbstractParameter{T}
+    value::T
+
+    function GenericParameter(value::T) where {T}
+        @warn """GenericParameter detected. This type cannot be:
+  - Optimized (no bounds)
+  - Explored (cannot flatten to table)
+  - Visualized (no numeric representation)
+Consider using CategoricalParameter with an identifier instead.""" maxlog = 1
+        new{T}(value)
     end
 end
 

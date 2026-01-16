@@ -46,10 +46,17 @@ function _flatten_parameter(name::Symbol, p::TimeSeriesParameter, prefix::Symbol
     return result
 end
 
+# GenericParameter -> skip with warning (cannot flatten)
+function _flatten_parameter(name::Symbol, ::GenericParameter, prefix::Symbol)
+    @warn "Skipping GenericParameter field :$name - cannot flatten to table" maxlog = 1
+    return OrderedDict{Symbol,Any}()
+end
+
 """
     _flatten_to_namedtuple(obj, prefix::Symbol) -> NamedTuple
 
 Flatten a struct with parameter fields to a NamedTuple with prefixed column names.
+GenericParameter fields are skipped with a warning.
 """
 function _flatten_to_namedtuple(obj, prefix::Symbol)
     T = typeof(obj)
@@ -59,6 +66,7 @@ function _flatten_to_namedtuple(obj, prefix::Symbol)
         field = getfield(obj, fname)
 
         if field isa AbstractParameter
+            # Includes GenericParameter (skipped via its _flatten_parameter method)
             merge!(result, _flatten_parameter(fname, field, prefix))
         elseif field isa TimeSeriesParameter
             merge!(result, _flatten_parameter(fname, field, prefix))
@@ -81,6 +89,7 @@ All fields must be one of:
   - DiscreteParameter{T}    -- integer values
   - CategoricalParameter{T} -- categorical/enum values
   - TimeSeriesParameter{T}  -- time series data
+  - GenericParameter{T}     -- any value (skipped during exploration)
 
 Example fix:
 

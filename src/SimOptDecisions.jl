@@ -91,7 +91,7 @@ export to_scalars, plot_trace, plot_pareto, plot_parallel
 # ---------- Phase 4 Exports: Exploratory Modeling ----------
 
 # Parameter types
-export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
+export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter, GenericParameter
 export value
 
 # Sinks
