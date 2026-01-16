@@ -29,7 +29,8 @@ struct ValidatablePolicy <: AbstractPolicy end
 
 @testset "Validation" begin
     @testset "SOW validation" begin
-        @test SimOptDecisions._validate_scenarios([OptTestSOW1(), OptTestSOW1()]) === nothing
+        @test SimOptDecisions._validate_scenarios([OptTestSOW1(), OptTestSOW1()]) ===
+            nothing
         @test_throws ArgumentError SimOptDecisions._validate_scenarios([])
         @test_throws ArgumentError SimOptDecisions._validate_scenarios([
             OptTestSOW1(), OptTestSOW2()

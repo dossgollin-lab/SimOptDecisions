@@ -139,9 +139,13 @@ Map state + scenario to action. Called by the framework before each `run_timeste
 
 Must be implemented for each policy type. Return value can be any type (AbstractAction optional).
 """
-function get_action(p::AbstractPolicy, state::AbstractState, t::TimeStep, scenario::AbstractScenario)
+function get_action(
+    p::AbstractPolicy, state::AbstractState, t::TimeStep, scenario::AbstractScenario
+)
     interface_not_implemented(
-        :get_action, typeof(p), "state::AbstractState, t::TimeStep, scenario::AbstractScenario"
+        :get_action,
+        typeof(p),
+        "state::AbstractState, t::TimeStep, scenario::AbstractScenario",
     )
 end
 

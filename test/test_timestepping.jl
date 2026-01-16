@@ -52,12 +52,13 @@ function SimOptDecisions.time_axis(config::TSCounterConfig, ::TSCounterSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    step_records::Vector,
-    config::TSCounterConfig,
-    scenario::TSCounterSOW,
+    step_records::Vector, config::TSCounterConfig, scenario::TSCounterSOW
 )
     # Access final state from last step_record
-    return (final_value=step_records[end].final_value, total_increments=sum(r.increment for r in step_records))
+    return (
+        final_value=step_records[end].final_value,
+        total_increments=sum(r.increment for r in step_records),
+    )
 end
 
 # Test types for "Callbacks" -> "Minimal state model"
@@ -213,11 +214,12 @@ function SimOptDecisions.time_axis(config::TSActionConfig, ::TSActionSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    step_records::Vector,
-    config::TSActionConfig,
-    scenario::TSActionSOW,
+    step_records::Vector, config::TSActionConfig, scenario::TSActionSOW
 )
-    return (final_level=step_records[end].final_level, total_growth=sum(r.growth for r in step_records))
+    return (
+        final_level=step_records[end].final_level,
+        total_growth=sum(r.growth for r in step_records),
+    )
 end
 
 # Test types for "Callbacks" -> "Recording support"
@@ -262,9 +264,7 @@ function SimOptDecisions.time_axis(config::TSRecordConfig, ::TSRecordSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    step_records::Vector,
-    config::TSRecordConfig,
-    scenario::TSRecordSOW,
+    step_records::Vector, config::TSRecordConfig, scenario::TSRecordSOW
 )
     return (final_value=step_records[end].final_value,)
 end
@@ -304,10 +304,10 @@ function SimOptDecisions.time_axis(::TSTypeConfig, ::TSTypeSOW)
     return 1:5
 end
 
-function SimOptDecisions.compute_outcome(
-    step_records::Vector, ::TSTypeConfig, ::TSTypeSOW
-)
-    return (final=step_records[end].final_value, sum=sum(r.prev_value for r in step_records))
+function SimOptDecisions.compute_outcome(step_records::Vector, ::TSTypeConfig, ::TSTypeSOW)
+    return (
+        final=step_records[end].final_value, sum=sum(r.prev_value for r in step_records)
+    )
 end
 
 # Test types for "Callbacks" -> "Scenario-dependent compute_outcome"
@@ -402,9 +402,7 @@ function SimOptDecisions.time_axis(config::TSConnectConfig, ::TSConnectSOW)
 end
 
 function SimOptDecisions.compute_outcome(
-    step_records::Vector,
-    config::TSConnectConfig,
-    scenario::TSConnectSOW,
+    step_records::Vector, config::TSConnectConfig, scenario::TSConnectSOW
 )
     return (final_count=step_records[end].final_count,)
 end

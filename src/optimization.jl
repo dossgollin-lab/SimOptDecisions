@@ -40,17 +40,21 @@ function param_bounds(policy::AbstractPolicy)
         if field isa ContinuousParameter
             push!(bounds, (Float64(field.bounds[1]), Float64(field.bounds[2])))
         elseif field isa DiscreteParameter
-            throw(ArgumentError(
-                "Field :$fname is DiscreteParameter. " *
-                "Optimization backends like Metaheuristics only support continuous parameters. " *
-                "Use ContinuousParameter or implement a custom optimizer."
-            ))
+            throw(
+                ArgumentError(
+                    "Field :$fname is DiscreteParameter. " *
+                    "Optimization backends like Metaheuristics only support continuous parameters. " *
+                    "Use ContinuousParameter or implement a custom optimizer.",
+                ),
+            )
         elseif field isa CategoricalParameter
-            throw(ArgumentError(
-                "Field :$fname is CategoricalParameter. " *
-                "Optimization backends like Metaheuristics only support continuous parameters. " *
-                "Use ContinuousParameter or implement a custom optimizer."
-            ))
+            throw(
+                ArgumentError(
+                    "Field :$fname is CategoricalParameter. " *
+                    "Optimization backends like Metaheuristics only support continuous parameters. " *
+                    "Use ContinuousParameter or implement a custom optimizer.",
+                ),
+            )
         end
     end
 
@@ -220,10 +224,12 @@ function OptimizationProblem(
     for obj in objectives
         if obj.name ∉ metric_names
             available = join(sort(collect(metric_names)), ", ")
-            throw(ArgumentError(
-                "Objective references :$(obj.name) but no metric produces it. " *
-                "Available metrics: $available"
-            ))
+            throw(
+                ArgumentError(
+                    "Objective references :$(obj.name) but no metric produces it. " *
+                    "Available metrics: $available",
+                ),
+            )
         end
     end
 
@@ -231,8 +237,14 @@ function OptimizationProblem(
     metric_func = outcomes -> compute_metrics(metrics, outcomes)
 
     return OptimizationProblem(
-        config, scenarios, policy_type, metric_func, objectives;
-        batch_size=batch_size, constraints=constraints, bounds=bounds
+        config,
+        scenarios,
+        policy_type,
+        metric_func,
+        objectives;
+        batch_size=batch_size,
+        constraints=constraints,
+        bounds=bounds,
     )
 end
 
@@ -243,11 +255,15 @@ end
 """
 Select scenarios for a batch evaluation.
 """
-function _select_batch(scenarios::Vector{S}, batch_size::FullBatch, rng::AbstractRNG) where {S}
+function _select_batch(
+    scenarios::Vector{S}, batch_size::FullBatch, rng::AbstractRNG
+) where {S}
     return scenarios
 end
 
-function _select_batch(scenarios::Vector{S}, batch_size::FixedBatch, rng::AbstractRNG) where {S}
+function _select_batch(
+    scenarios::Vector{S}, batch_size::FixedBatch, rng::AbstractRNG
+) where {S}
     indices = randperm(rng, length(scenarios))[1:(batch_size.n)]
     return scenarios[indices]
 end

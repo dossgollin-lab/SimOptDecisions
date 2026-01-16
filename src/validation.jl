@@ -95,7 +95,8 @@ const _STRICT_VALIDATION = Ref{Union{Nothing,Bool}}(nothing)
 
 function _is_strict_validation()::Bool
     if isnothing(_STRICT_VALIDATION[])
-        _STRICT_VALIDATION[] = lowercase(get(ENV, "SIMOPT_STRICT_VALIDATION", "false")) in ("true", "1", "yes")
+        _STRICT_VALIDATION[] =
+            lowercase(get(ENV, "SIMOPT_STRICT_VALIDATION", "false")) in ("true", "1", "yes")
     end
     return _STRICT_VALIDATION[]
 end
@@ -230,7 +231,11 @@ function _validate_scenarios(scenarios)
     # Check all are AbstractScenario
     first_type = typeof(first(scenarios))
     if !(first(scenarios) isa AbstractScenario)
-        throw(ArgumentError("Scenarios must be subtypes of AbstractScenario, got $(first_type)"))
+        throw(
+            ArgumentError(
+                "Scenarios must be subtypes of AbstractScenario, got $(first_type)"
+            ),
+        )
     end
 
     # Check homogeneity
@@ -352,7 +357,11 @@ function _validate_problem(prob)
     n_scenarios = length(prob.scenarios)
     batch = prob.batch_size
     if batch isa FixedBatch && batch.n > n_scenarios
-        throw(ArgumentError("FixedBatch size $(batch.n) exceeds number of scenarios ($n_scenarios)"))
+        throw(
+            ArgumentError(
+                "FixedBatch size $(batch.n) exceeds number of scenarios ($n_scenarios)"
+            ),
+        )
     end
 
     return nothing

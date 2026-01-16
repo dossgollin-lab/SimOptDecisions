@@ -79,9 +79,7 @@
         config = OptCounterConfig(5)
         scenarios = [OptEmptyScenario() for _ in 1:3]
 
-        metrics = [
-            ExpectedValue(:mean_value, :final_value),
-        ]
+        metrics = [ExpectedValue(:mean_value, :final_value)]
 
         # Valid: objective references existing metric
         prob = OptimizationProblem(

@@ -22,7 +22,10 @@ struct CheckpointParams <: AbstractConfig end
 struct CheckpointSOW <: AbstractScenario end
 
 function SimOptDecisions.simulate(
-    params::CheckpointParams, scenario::CheckpointSOW, policy::CheckpointPolicy, rng::AbstractRNG
+    params::CheckpointParams,
+    scenario::CheckpointSOW,
+    policy::CheckpointPolicy,
+    rng::AbstractRNG,
 )
     value = 0.0
     for ts in SimOptDecisions.Utils.timeindex(1:5)
@@ -60,7 +63,9 @@ end
         shared = SharedParameters(; rate=0.05)
         backend = MetaheuristicsBackend()
 
-        config = ExperimentConfig(42, scenarios, shared, backend; scenario_source="test data")
+        config = ExperimentConfig(
+            42, scenarios, shared, backend; scenario_source="test data"
+        )
 
         @test config.seed == 42
         @test length(config.scenarios) == 10

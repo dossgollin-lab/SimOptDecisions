@@ -29,7 +29,9 @@ struct ExploreTestOutcome{T<:AbstractFloat}
 end
 
 # Implement callbacks
-SimOptDecisions.time_axis(config::ExploreTestConfig, scenario::ExploreTestScenario) = 1:config.n_steps
+function SimOptDecisions.time_axis(config::ExploreTestConfig, scenario::ExploreTestScenario)
+    1:config.n_steps
+end
 
 function SimOptDecisions.initialize(
     config::ExploreTestConfig, scenario::ExploreTestScenario, rng::AbstractRNG
@@ -38,7 +40,10 @@ function SimOptDecisions.initialize(
 end
 
 function SimOptDecisions.get_action(
-    policy::ExploreTestPolicy, state::ExploreTestState, t::TimeStep, scenario::ExploreTestScenario
+    policy::ExploreTestPolicy,
+    state::ExploreTestState,
+    t::TimeStep,
+    scenario::ExploreTestScenario,
 )
     ExploreTestAction()
 end
@@ -59,7 +64,8 @@ function SimOptDecisions.compute_outcome(
     step_records, config::ExploreTestConfig, scenario::ExploreTestScenario
 )
     ExploreTestOutcome(
-        ContinuousParameter(step_records[end].step_value), DiscreteParameter(length(step_records))
+        ContinuousParameter(step_records[end].step_value),
+        DiscreteParameter(length(step_records)),
     )
 end
 

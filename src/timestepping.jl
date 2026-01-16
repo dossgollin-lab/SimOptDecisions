@@ -26,7 +26,9 @@ struct TimeSeriesParameterBoundsError <: Exception
 end
 
 function Base.showerror(io::IO, e::TimeSeriesParameterBoundsError)
-    print(io, "TimeSeriesParameterBoundsError: time value $(e.requested) not in time_axis. ")
+    print(
+        io, "TimeSeriesParameterBoundsError: time value $(e.requested) not in time_axis. "
+    )
     if length(e.available) <= 10
         print(io, "Available: $(e.available)")
     else
@@ -63,10 +65,14 @@ struct TimeSeriesParameter{T<:AbstractFloat,I}
     time_axis::Vector{I}
     values::Vector{T}
 
-    function TimeSeriesParameter(time_axis::Vector{I}, values::Vector{T}) where {T<:AbstractFloat,I}
+    function TimeSeriesParameter(
+        time_axis::Vector{I}, values::Vector{T}
+    ) where {T<:AbstractFloat,I}
         isempty(values) && throw(ArgumentError("TimeSeriesParameter cannot be empty"))
         length(time_axis) != length(values) && throw(
-            ArgumentError("time_axis length ($(length(time_axis))) must match values length ($(length(values)))")
+            ArgumentError(
+                "time_axis length ($(length(time_axis))) must match values length ($(length(values)))",
+            ),
         )
         new{T,I}(time_axis, values)
     end
@@ -97,8 +103,7 @@ end
 
 # Indexing by integer position (1-based)
 function Base.getindex(ts::TimeSeriesParameter{T,I}, i::Integer) where {T,I}
-    (i < 1 || i > length(ts.values)) &&
-        throw(BoundsError(ts, i))
+    (i < 1 || i > length(ts.values)) && throw(BoundsError(ts, i))
     ts.values[i]
 end
 
@@ -218,9 +223,7 @@ function compute_outcome end
 
 function compute_outcome(step_records, config::AbstractConfig, ::AbstractScenario)
     interface_not_implemented(
-        :compute_outcome,
-        typeof(config),
-        "step_records::Vector, scenario::AbstractScenario",
+        :compute_outcome, typeof(config), "step_records::Vector, scenario::AbstractScenario"
     )
 end
 
@@ -259,7 +262,9 @@ function run_simulation(
 
     # Framework calls get_action, then run_timestep
     first_action = get_action(policy, state, first_ts, scenario)
-    state, first_step_record = run_timestep(state, first_action, first_ts, config, scenario, rng)
+    state, first_step_record = run_timestep(
+        state, first_action, first_ts, config, scenario, rng
+    )
     record!(recorder, state, first_step_record, first_ts.val, first_action)
 
     step_records = Vector{typeof(first_step_record)}(undef, n)
@@ -279,7 +284,10 @@ end
 
 # Without recorder (rng only)
 function run_simulation(
-    config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy, rng::AbstractRNG
+    config::AbstractConfig,
+    scenario::AbstractScenario,
+    policy::AbstractPolicy,
+    rng::AbstractRNG,
 )
     return run_simulation(config, scenario, policy, NoRecorder(), rng)
 end
@@ -295,6 +303,8 @@ function run_simulation(
 end
 
 # Minimal (no recorder, no rng)
-function run_simulation(config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy)
+function run_simulation(
+    config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy
+)
     return run_simulation(config, scenario, policy, NoRecorder(), default_rng())
 end

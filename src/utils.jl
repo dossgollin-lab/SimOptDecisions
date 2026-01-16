@@ -65,7 +65,7 @@ Functions are also exported directly from SimOptDecisions.
 - `is_last(ts, times)`: Check if TimeStep is the last in sequence
 """
 module Utils
-    # Re-export from parent module for backward compatibility
-    using ..SimOptDecisions: discount_factor, is_first, is_last, timeindex, TimeStep
-    export discount_factor, is_first, is_last, timeindex
+# Re-export from parent module for backward compatibility
+using ..SimOptDecisions: discount_factor, is_first, is_last, timeindex, TimeStep
+export discount_factor, is_first, is_last, timeindex
 end

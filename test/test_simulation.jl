@@ -48,7 +48,10 @@ struct InfoScenario <: AbstractScenario
 end
 
 function SimOptDecisions.get_action(
-    policy::MinimalStatePolicy, state::MinimalStateMarker, t::TimeStep, scenario::InfoScenario
+    policy::MinimalStatePolicy,
+    state::MinimalStateMarker,
+    t::TimeStep,
+    scenario::InfoScenario,
 )
     return MinimalStateAction(scenario.base_value * policy.multiplier * t.t)
 end
@@ -67,7 +70,10 @@ end
 struct FloodScenario <: AbstractScenario end
 
 function SimOptDecisions.get_action(
-    policy::StaticElevationPolicy, state::StaticStateMarker, t::TimeStep, scenario::FloodScenario
+    policy::StaticElevationPolicy,
+    state::StaticStateMarker,
+    t::TimeStep,
+    scenario::FloodScenario,
 )
     return ElevationAction(policy.elevation_ft)
 end
@@ -295,7 +301,8 @@ end
         rng = Random.Xoshiro(42)
 
         # Test type inference for simulate
-        @test @inferred(simulate(config, scenario, policy, NoRecorder(), rng)) isa NamedTuple
+        @test @inferred(simulate(config, scenario, policy, NoRecorder(), rng)) isa
+            NamedTuple
 
         # Test basic functionality
         result = simulate(config, scenario, policy, rng)

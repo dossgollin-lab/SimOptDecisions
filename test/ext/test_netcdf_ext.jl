@@ -24,7 +24,8 @@
     end
 
     # Implement callbacks
-    SimOptDecisions.time_axis(config::NCTestConfig, scenario::NCTestScenario) = 1:config.n_steps
+    SimOptDecisions.time_axis(config::NCTestConfig, scenario::NCTestScenario) =
+        1:config.n_steps
 
     function SimOptDecisions.initialize(
         config::NCTestConfig, scenario::NCTestScenario, rng::AbstractRNG

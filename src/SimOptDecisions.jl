@@ -74,7 +74,8 @@ export validate
 export AbstractConstraint, FeasibilityConstraint, PenaltyConstraint
 
 # Declarative Metrics
-export AbstractMetric, ExpectedValue, Probability, Variance, MeanAndVariance, Quantile, CustomMetric
+export AbstractMetric,
+    ExpectedValue, Probability, Variance, MeanAndVariance, Quantile, CustomMetric
 export compute_metric, compute_metrics
 
 # Persistence

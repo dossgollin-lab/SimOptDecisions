@@ -185,7 +185,11 @@ end
         end
 
         prob = OptimizationProblem(
-            config, scenarios, EvalCounterPolicy, eval_metric_calculator, [minimize(:mean_value)]
+            config,
+            scenarios,
+            EvalCounterPolicy,
+            eval_metric_calculator,
+            [minimize(:mean_value)],
         )
 
         policy = EvalCounterPolicy(5.0)
@@ -269,8 +273,7 @@ end
         end
 
         policy = AutoDerivePolicy(
-            ContinuousParameter(0.5, (0.0, 1.0)),
-            ContinuousParameter(0.02, (0.0, 0.1))
+            ContinuousParameter(0.5, (0.0, 1.0)), ContinuousParameter(0.02, (0.0, 0.1))
         )
 
         # param_bounds should auto-derive from instance

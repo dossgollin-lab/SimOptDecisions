@@ -173,7 +173,9 @@ end
 
 function ExplorationResult(rows::Vector{NamedTuple}, n_policies::Int, n_scenarios::Int)
     if isempty(rows)
-        return ExplorationResult(rows, n_policies, n_scenarios, Symbol[], Symbol[], Symbol[])
+        return ExplorationResult(
+            rows, n_policies, n_scenarios, Symbol[], Symbol[], Symbol[]
+        )
     end
 
     all_cols = collect(keys(first(rows)))
@@ -190,7 +192,9 @@ function ExplorationResult(rows::Vector{NamedTuple}, n_policies::Int, n_scenario
 
     outcome_cols = filter(c -> startswith(String(c), "outcome_"), all_cols)
 
-    ExplorationResult(rows, n_policies, n_scenarios, policy_cols, scenario_cols, outcome_cols)
+    ExplorationResult(
+        rows, n_policies, n_scenarios, policy_cols, scenario_cols, outcome_cols
+    )
 end
 
 # Indexing
@@ -243,7 +247,12 @@ const outcomes_for_sow = outcomes_for_scenario
 function Base.filter(f, r::ExplorationResult)
     filtered = filter(f, r.rows)
     ExplorationResult(
-        filtered, r.n_policies, r.n_scenarios, r.policy_columns, r.scenario_columns, r.outcome_columns
+        filtered,
+        r.n_policies,
+        r.n_scenarios,
+        r.policy_columns,
+        r.scenario_columns,
+        r.outcome_columns,
     )
 end
 
@@ -306,7 +315,9 @@ function explore(
     first_outcome = simulate(config, first(scenarios), first(policies), rng)
 
     # Validate all types have parameter fields
-    _validate_exploratory_interface(eltype(scenarios), eltype(policies), typeof(first_outcome))
+    _validate_exploratory_interface(
+        eltype(scenarios), eltype(policies), typeof(first_outcome)
+    )
 
     n_policies = length(policies)
     n_scenarios = length(scenarios)

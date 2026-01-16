@@ -49,7 +49,10 @@ end
 
 # Without recorder (rng only)
 function simulate(
-    config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy, rng::AbstractRNG
+    config::AbstractConfig,
+    scenario::AbstractScenario,
+    policy::AbstractPolicy,
+    rng::AbstractRNG,
 )
     return simulate(config, scenario, policy, NoRecorder(), rng)
 end
@@ -65,7 +68,9 @@ function simulate(
 end
 
 # Minimal (no recorder, no rng)
-function simulate(config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy)
+function simulate(
+    config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy
+)
     return simulate(config, scenario, policy, NoRecorder(), default_rng())
 end
 
