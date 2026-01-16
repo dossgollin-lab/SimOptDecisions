@@ -22,11 +22,13 @@ function _is_parameter_type(ftype)
     # Direct subtypes
     ftype <: AbstractParameter && return true
     ftype <: TimeSeriesParameter && return true
+    ftype <: GenericParameter && return true
 
     # Handle parametric types (UnionAll)
     if ftype isa UnionAll
         ftype <: AbstractParameter && return true
         ftype <: TimeSeriesParameter && return true
+        ftype <: GenericParameter && return true
     end
 
     return false
@@ -64,7 +66,8 @@ function _validate_parameter_fields(::Type{T}, label::String) where {T}
                 "  - ContinuousParameter{T}  -- continuous real values with bounds\n" *
                 "  - DiscreteParameter{T}    -- integer values with optional valid_values\n" *
                 "  - CategoricalParameter{T} -- categorical values with defined levels\n" *
-                "  - TimeSeriesParameter{T,I} -- time-indexed data\n\n" *
+                "  - TimeSeriesParameter{T,I} -- time-indexed data\n" *
+                "  - GenericParameter{T}     -- complex objects (skipped in explore/flatten)\n\n" *
                 "Example fix:\n" *
                 "  # Before\n" *
                 "  struct $T\n" *

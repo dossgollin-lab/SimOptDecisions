@@ -98,6 +98,24 @@ end
         @test nt[Symbol("scenario_demand[2022]")] == 3.0
     end
 
+    @testset "GenericParameter flattening (skipped)" begin
+        struct GenericScenario <: AbstractScenario
+            x::ContinuousParameter{Float64}
+            model::GenericParameter{Dict{Symbol,Int}}
+        end
+
+        scenario = GenericScenario(
+            ContinuousParameter(1.5), GenericParameter(Dict(:a => 1, :b => 2))
+        )
+        nt = SimOptDecisions._flatten_to_namedtuple(scenario, :scenario)
+
+        # x should be flattened
+        @test nt.scenario_x == 1.5
+        # model should be skipped (not in keys)
+        @test !haskey(nt, :scenario_model)
+        @test length(keys(nt)) == 1
+    end
+
     @testset "Validation errors" begin
         struct BadScenario <: AbstractScenario
             x::Float64  # not a parameter type!

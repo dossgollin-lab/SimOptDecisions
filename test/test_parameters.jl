@@ -54,4 +54,21 @@
         @test time_axis(ts) == [2020, 2021, 2022]
         @test time_axis(ts) === ts.time_axis  # same reference
     end
+
+    @testset "GenericParameter" begin
+        # Basic usage
+        p = GenericParameter("a string")
+        @test p.value == "a string"
+        @test value(p) == "a string"
+        @test p[] == "a string"
+
+        # With complex type
+        data = Dict(:a => 1, :b => 2)
+        p2 = GenericParameter(data)
+        @test value(p2) === data
+
+        # Type-parameterized
+        p3 = GenericParameter{Vector{Int}}([1, 2, 3])
+        @test p3.value == [1, 2, 3]
+    end
 end

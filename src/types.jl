@@ -92,13 +92,39 @@ struct CategoricalParameter{T} <: AbstractParameter{T}
 end
 
 """
+    GenericParameter{T}
+
+A generic parameter for complex objects that cannot be flattened or optimized.
+
+Use this for infrastructure objects like model instances, database connections,
+or cached data. These fields are:
+- Skipped in `explore()` (not varied)
+- Excluded from `to_table` / file export
+- Not visualized
+
+Consider using `CategoricalParameter` to select from predefined options instead,
+then load the actual resource in `initialize()`.
+
+# Example
+```julia
+GenericParameter(my_sfincs_model)
+GenericParameter{SFINCSModel}(model)
+```
+"""
+struct GenericParameter{T}
+    value::T
+end
+
+"""
     value(p::AbstractParameter) -> T
 
 Extract the value from a parameter.
 """
 @inline value(p::AbstractParameter) = p.value
+@inline value(p::GenericParameter) = p.value
 
 Base.getindex(p::AbstractParameter) = p.value
+Base.getindex(p::GenericParameter) = p.value
 
 """
 Throw a helpful error for unimplemented interface methods.

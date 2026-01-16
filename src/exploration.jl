@@ -46,10 +46,16 @@ function _flatten_parameter(name::Symbol, p::TimeSeriesParameter, prefix::Symbol
     return result
 end
 
+# GenericParameter -> skipped (returns empty dict)
+function _flatten_parameter(::Symbol, ::GenericParameter, ::Symbol)
+    return OrderedDict{Symbol,Any}()
+end
+
 """
     _flatten_to_namedtuple(obj, prefix::Symbol) -> NamedTuple
 
 Flatten a struct with parameter fields to a NamedTuple with prefixed column names.
+GenericParameter fields are skipped (not included in output).
 """
 function _flatten_to_namedtuple(obj, prefix::Symbol)
     T = typeof(obj)
@@ -58,7 +64,10 @@ function _flatten_to_namedtuple(obj, prefix::Symbol)
     for fname in fieldnames(T)
         field = getfield(obj, fname)
 
-        if field isa AbstractParameter
+        if field isa GenericParameter
+            # Skip GenericParameter - not included in flattened output
+            continue
+        elseif field isa AbstractParameter
             merge!(result, _flatten_parameter(fname, field, prefix))
         elseif field isa TimeSeriesParameter
             merge!(result, _flatten_parameter(fname, field, prefix))
@@ -81,6 +90,7 @@ All fields must be one of:
   - DiscreteParameter{T}    -- integer values
   - CategoricalParameter{T} -- categorical/enum values
   - TimeSeriesParameter{T}  -- time series data
+  - GenericParameter{T}     -- complex objects (skipped in flattening)
 
 Example fix:
 
@@ -117,7 +127,7 @@ function _validate_exploratory_interface(::Type{S}, ::Type{P}, ::Type{O}) where 
                 join(errors, "\n") *
                 "\n\n" *
                 "All fields must be: ContinuousParameter, DiscreteParameter, " *
-                "CategoricalParameter, or TimeSeriesParameter.\n\n" *
+                "CategoricalParameter, TimeSeriesParameter, or GenericParameter.\n\n" *
                 "Note: `simulate()` and `evaluate_policy()` still work without this.",
             ),
         )
@@ -126,10 +136,10 @@ end
 
 function _collect_field_errors!(errors, T, label)
     for (fname, ftype) in zip(fieldnames(T), fieldtypes(T))
-        is_param = ftype <: AbstractParameter || ftype <: TimeSeriesParameter
+        is_param = ftype <: AbstractParameter || ftype <: TimeSeriesParameter || ftype <: GenericParameter
         # Handle parametric types (UnionAll)
         if !is_param && ftype isa UnionAll
-            is_param = ftype <: AbstractParameter || ftype <: TimeSeriesParameter
+            is_param = ftype <: AbstractParameter || ftype <: TimeSeriesParameter || ftype <: GenericParameter
         end
         if !is_param
             push!(errors, "  - $label.$fname :: $ftype")

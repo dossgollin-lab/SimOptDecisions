@@ -19,6 +19,7 @@ include("persistence.jl")
 include("plotting.jl")
 include("sinks.jl")
 include("exploration.jl")
+include("macros.jl")
 
 # ============================================================================
 # Exports
@@ -92,7 +93,11 @@ export to_scalars, plot_trace, plot_pareto, plot_parallel
 
 # Parameter types
 export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
+export GenericParameter
 export value
+
+# Definition macros
+export @scenariodef, @policydef, @configdef, @statedef
 
 # Sinks
 export AbstractResultSink, NoSink, InMemorySink
