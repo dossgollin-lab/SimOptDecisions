@@ -31,17 +31,17 @@ end
 
 ## Position Helpers
 
-Use the `Utils.is_first` and `Utils.is_last` methods to check position in the sequence:
+Use `is_first` and `is_last` to check position in the sequence:
 
 ```julia
-using SimOptDecisions: Utils
+using SimOptDecisions
 
 # Check if first timestep
-Utils.is_first(ts)  # true if ts.t == 1
+is_first(ts)  # true if ts.t == 1
 
 # Check if last timestep (pass the time axis or its length)
-Utils.is_last(ts, times)      # true if ts.t == length(times)
-Utils.is_last(ts, n::Integer) # true if ts.t == n
+is_last(ts, times)      # true if ts.t == length(times)
+is_last(ts, n::Integer) # true if ts.t == n
 ```
 
 Example usage:
@@ -50,14 +50,14 @@ Example usage:
 function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
     # Use config.horizon directly for efficiency (avoids calling time_axis each timestep)
 
-    if Utils.is_first(t)
+    if is_first(t)
         # First timestep: apply initial setup costs
         setup_cost = config.setup_cost
     else
         setup_cost = 0.0
     end
 
-    if Utils.is_last(t, config.horizon)
+    if is_last(t, config.horizon)
         # Last timestep: apply terminal value
         terminal_value = state.value * config.salvage_rate
     else
@@ -136,15 +136,15 @@ end
 
 ## The timeindex Utility
 
-The framework uses `Utils.timeindex` internally to iterate over time axes. You can also use it directly:
+The framework uses `timeindex` internally to iterate over time axes. You can also use it directly:
 
 ```julia
-using SimOptDecisions: Utils
+using SimOptDecisions
 
 times = 1:5
-for ts in Utils.timeindex(times)
+for ts in timeindex(times)
     println("Step $(ts.t), value $(ts.val)")
-    if Utils.is_last(ts, times)
+    if is_last(ts, times)
         println("Done!")
     end
 end
@@ -162,17 +162,17 @@ Done!
 
 ## Discounting
 
-The `Utils.discount_factor` helper computes standard exponential discounting:
+The `discount_factor` helper computes standard exponential discounting:
 
 ```julia
-Utils.discount_factor(rate, t)  # Returns 1 / (1 + rate)^t
+discount_factor(rate, t)  # Returns 1 / (1 + rate)^t
 ```
 
 Example:
 ```julia
 function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
     cost = compute_cost(state, action)
-    discounted_cost = cost * Utils.discount_factor(config.discount_rate, t.t)
+    discounted_cost = cost * discount_factor(config.discount_rate, t.t)
     return (new_state, (cost=cost, discounted_cost=discounted_cost))
 end
 ```
@@ -184,7 +184,7 @@ end
 ```julia
 function SimOptDecisions.run_timestep(state, action, t::TimeStep, config, scenario, rng)
     # Different behavior in first vs later timesteps
-    if Utils.is_first(t)
+    if is_first(t)
         # Initial investment/setup
         capital_cost = action.investment
     else

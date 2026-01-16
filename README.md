@@ -86,6 +86,10 @@ using SimOptDecisions
 using DataFrames
 
 # Define types with parameter fields for exploration
+Base.@kwdef struct MyConfig <: AbstractConfig
+    horizon::Int = 50
+end
+
 struct MyScenario{T} <: AbstractScenario
     growth_rate::ContinuousParameter{T}
     climate::CategoricalParameter{Symbol}
@@ -105,6 +109,9 @@ scenarios = [
     for r in 0.01:0.01:0.10, s in [:low, :high]
 ]
 policies = [MyPolicy(ContinuousParameter(t)) for t in 0.1:0.1:0.5]
+
+# Create config
+config = MyConfig(horizon=50)
 
 # Run all combinations
 result = explore(config, vec(scenarios), policies)
