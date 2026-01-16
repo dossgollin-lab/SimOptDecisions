@@ -38,7 +38,17 @@ function param_bounds(policy::AbstractPolicy)
     for fname in fieldnames(typeof(policy))
         field = getfield(policy, fname)
         if field isa ContinuousParameter
-            push!(bounds, (Float64(field.bounds[1]), Float64(field.bounds[2])))
+            lo, hi = Float64(field.bounds[1]), Float64(field.bounds[2])
+            if !isfinite(lo) || !isfinite(hi)
+                throw(
+                    ArgumentError(
+                        "Policy field :$fname has non-finite bounds ($lo, $hi). " *
+                        "Optimization requires finite bounds. " *
+                        "Use ContinuousParameter(value, (lower, upper)) with finite bounds.",
+                    ),
+                )
+            end
+            push!(bounds, (lo, hi))
         elseif field isa DiscreteParameter
             throw(
                 ArgumentError(

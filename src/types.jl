@@ -140,10 +140,10 @@ struct GenericParameter{T} <: AbstractParameter{T}
     value::T
 
     function GenericParameter(value::T) where {T}
-        @warn """GenericParameter detected. This type cannot be:
-  - Optimized (no bounds)
-  - Explored (cannot flatten to table)
-  - Visualized (no numeric representation)
+        @warn """GenericParameter detected. This type:
+  - Cannot be optimized (no bounds)
+  - Is skipped during exploration (not flattened to table columns)
+  - Cannot be visualized (no numeric representation)
 Consider using CategoricalParameter with an identifier instead.""" maxlog = 1
         new{T}(value)
     end

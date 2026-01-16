@@ -85,11 +85,11 @@ Cannot flatten `$T` for exploratory analysis.
 Problem: Field `$fname` has type `$ftype`, which is not a parameter type.
 
 All fields must be one of:
-  - ContinuousParameter{T}  -- continuous real values
-  - DiscreteParameter{T}    -- integer values
-  - CategoricalParameter{T} -- categorical/enum values
-  - TimeSeriesParameter{T}  -- time series data
-  - GenericParameter{T}     -- any value (skipped during exploration)
+  - ContinuousParameter{T}   -- continuous real values
+  - DiscreteParameter{T}     -- integer values
+  - CategoricalParameter{T}  -- categorical/enum values
+  - TimeSeriesParameter{T,I} -- time series data
+  - GenericParameter{T}      -- any value (skipped during exploration)
 
 Example fix:
 

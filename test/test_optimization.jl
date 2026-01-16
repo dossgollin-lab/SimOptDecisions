@@ -309,5 +309,30 @@ end
         plain_policy = PlainPolicy(1.0)
         @test_throws ArgumentError param_bounds(plain_policy)
         @test_throws ArgumentError params(plain_policy)
+
+        # Test policy with TimeSeriesParameter should error
+        struct TimeSeriesPolicy <: AbstractPolicy
+            trajectory::TimeSeriesParameter{Float64,Int}
+        end
+
+        ts_policy = TimeSeriesPolicy(TimeSeriesParameter(1:3, [1.0, 2.0, 3.0]))
+        @test_throws ArgumentError param_bounds(ts_policy)
+
+        # Test policy with GenericParameter should error
+        struct GenericPolicy <: AbstractPolicy
+            complex::GenericParameter{Vector{Int}}
+        end
+
+        # GenericParameter may or may not warn (depends on test order due to maxlog=1)
+        gen_policy = GenericPolicy(GenericParameter([1, 2, 3]))
+        @test_throws ArgumentError param_bounds(gen_policy)
+
+        # Test policy with unbounded ContinuousParameter should error
+        struct UnboundedPolicy <: AbstractPolicy
+            x::ContinuousParameter{Float64}
+        end
+
+        unbounded_policy = UnboundedPolicy(ContinuousParameter(0.5))  # Default bounds are (-Inf, Inf)
+        @test_throws ArgumentError param_bounds(unbounded_policy)
     end
 end

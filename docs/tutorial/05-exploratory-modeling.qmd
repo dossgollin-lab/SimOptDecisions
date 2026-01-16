@@ -279,7 +279,12 @@ For this demo, we'll define simplified types with fewer parameters to produce cl
 | `ContinuousParameter{T}` | Real values | `ContinuousParameter(0.5)` |
 | `DiscreteParameter{T}` | Integers | `DiscreteParameter(10)` |
 | `CategoricalParameter{T}` | Categories | `CategoricalParameter(:high, [:low, :high])` |
-| `TimeSeriesParameter{T}` | Time series | `TimeSeriesParameter([1.0, 2.0, 3.0])` |
+| `TimeSeriesParameter{T,I}` | Time series | `TimeSeriesParameter(2020:2030, values)` |
+| `GenericParameter{T}` | Complex objects | `GenericParameter(my_object)` |
+
+::: {.callout-note}
+`GenericParameter` is for complex objects that don't fit other types. These fields are **skipped** during exploration (not flattened to columns). Prefer `CategoricalParameter` with an identifier when possible.
+:::
 
 ### Wrapped Types for Exploration
 

@@ -65,7 +65,7 @@ function _validate_parameter_fields(::Type{T}, label::String) where {T}
                 "  - DiscreteParameter{T}    -- integer values with optional valid_values\n" *
                 "  - CategoricalParameter{T} -- categorical values with defined levels\n" *
                 "  - TimeSeriesParameter{T,I} -- time-indexed data\n" *
-                "  - GenericParameter{T}     -- any value (limited: no optimization/exploration)\n\n" *
+                "  - GenericParameter{T}     -- any value (skipped during exploration, no optimization)\n\n" *
                 "Example fix:\n" *
                 "  # Before\n" *
                 "  struct $T\n" *
