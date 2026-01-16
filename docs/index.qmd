@@ -34,30 +34,37 @@ Designed to be flexible but imposes just enough structure to enable type stabili
 
 The framework is built around nested loops. At the innermost level, a single simulation runs:
 
-```
-simulate(config, scenario, policy):
+```julia
+# One simulation: config × scenario × policy → outcome
+function simulate(config, scenario, policy, rng)
     state = initialize(config, scenario, rng)
-    for t in time_axis(config, scenario):
+    records = []
+    for t in time_axis(config, scenario)
         action = get_action(policy, state, t, scenario)
         state, record = run_timestep(state, action, t, config, scenario, rng)
+        push!(records, record)
+    end
     return compute_outcome(records, config, scenario)
+end
 ```
 
 Higher-level functions iterate over these simulations:
 
-```
-explore(config, scenarios, policies):       # Systematic evaluation
-    for policy in policies:
-        for scenario in scenarios:
-            outcome = simulate(config, scenario, policy)
-            # flatten and record
+```julia
+# explore: all combinations → structured table
+for policy in policies
+    for scenario in scenarios
+        outcome = simulate(config, scenario, policy, rng)
+        # flatten and record
+    end
+end
 
-optimize(problem, backend):                  # Policy search
-    for candidate_policy in search_space:
-        for scenario in scenarios:
-            outcome = simulate(config, scenario, candidate_policy)
-        metrics = aggregate(outcomes)
-        # update Pareto front
+# optimize: search for Pareto-optimal policies
+for candidate_policy in search_space
+    outcomes = [simulate(config, s, candidate_policy, rng) for s in scenarios]
+    metrics = calculate_metrics(outcomes)
+    # update Pareto front
+end
 ```
 
 **Key functions:**
