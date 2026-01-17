@@ -28,7 +28,7 @@ function SimOptDecisions.simulate(
     rng::AbstractRNG,
 )
     value = 0.0
-    for ts in SimOptDecisions.Utils.timeindex(1:5)
+    for ts in timeindex(1:5)
         value += policy.x
     end
     return (final=value,)

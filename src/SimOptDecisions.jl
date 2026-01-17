@@ -19,6 +19,7 @@ include("persistence.jl")
 include("plotting.jl")
 include("sinks.jl")
 include("exploration.jl")
+include("macros.jl")
 
 # ============================================================================
 # Exports
@@ -37,9 +38,8 @@ export simulate, simulate_traced, get_action
 # Callbacks (users implement these)
 export initialize, run_timestep, time_axis, compute_outcome
 
-# Utility functions (direct exports)
+# Utility functions
 export discount_factor, is_first, is_last, timeindex
-export Utils  # Keep submodule for backward compatibility
 
 # TimeSeriesParameter
 export TimeSeriesParameter, TimeSeriesParameterBoundsError
@@ -92,7 +92,11 @@ export to_scalars, plot_trace, plot_pareto, plot_parallel
 
 # Parameter types
 export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
+export GenericParameter
 export value
+
+# Definition macros
+export @scenariodef, @policydef, @configdef, @statedef
 
 # Sinks
 export AbstractResultSink, NoSink, InMemorySink
@@ -102,7 +106,7 @@ export csv_sink, netcdf_sink  # Factory functions (require extensions)
 
 # Exploration
 export ExplorationResult, explore
-export outcomes_for_policy, outcomes_for_scenario, outcomes_for_sow
+export outcomes_for_policy, outcomes_for_scenario
 export ExploratoryInterfaceError, ParameterTypeError
 
 # Exploration plotting (requires Makie extension)

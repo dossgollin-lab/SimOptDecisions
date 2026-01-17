@@ -26,7 +26,7 @@ function SimOptDecisions.simulate(
     params::MHCounterParams, scenario::MHEmptySOW, policy::MHCounterPolicy, rng::AbstractRNG
 )
     value = 0.0
-    for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+    for ts in timeindex(1:params.n_steps)
         value += policy.increment
     end
     return (final_value=value,)
@@ -50,7 +50,7 @@ function SimOptDecisions.simulate(
     params::MHCounterParams, scenario::MHEmptySOW, policy::MHMultiPolicy, rng::AbstractRNG
 )
     value = 0.0
-    for ts in SimOptDecisions.Utils.timeindex(1:params.n_steps)
+    for ts in timeindex(1:params.n_steps)
         value += policy.param1 - policy.param2 * 0.1
     end
     return (final_value=value,)

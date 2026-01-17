@@ -44,15 +44,15 @@ using SimOptDecisions
 using Random
 
 # =============================================================================
-# TYPES
+# TYPES (using macros for Scenario/Policy)
 # =============================================================================
 
 struct MyConfig <: AbstractConfig
     horizon::Int
 end
 
-struct MyScenario{T<:AbstractFloat} <: AbstractScenario
-    growth_rate::T
+@scenariodef MyScenario begin
+    @continuous growth_rate
 end
 
 struct MyState{T<:AbstractFloat} <: AbstractState
@@ -61,7 +61,9 @@ end
 
 struct MyAction <: AbstractAction end
 
-struct MyPolicy <: AbstractPolicy end
+@policydef MyPolicy begin
+    @continuous threshold 0.0 10.0
+end
 
 # =============================================================================
 # CALLBACKS
@@ -83,7 +85,7 @@ function SimOptDecisions.run_timestep(
     scenario::MyScenario,
     rng::AbstractRNG,
 )
-    new_value = state.value * (1 + scenario.growth_rate)
+    new_value = state.value * (1 + value(scenario.growth_rate))
     step_record = (value=state.value,)
     return (MyState(new_value), step_record)
 end
@@ -105,8 +107,8 @@ end
 # =============================================================================
 
 config = MyConfig(10)
-scenario = MyScenario(0.05)
-policy = MyPolicy()
+scenario = MyScenario(growth_rate = ContinuousParameter(0.05))
+policy = MyPolicy(threshold = ContinuousParameter(5.0, (0.0, 10.0)))
 
 result = simulate(config, scenario, policy)
 println("Final value: ", result.final_value)
@@ -124,11 +126,11 @@ struct MyConfig <: AbstractConfig
 end
 ```
 
-**Scenario** holds uncertain parameters. Each Scenario represents one possible future:
+**Scenario** holds uncertain parameters. Use `@scenariodef` with `@continuous`, `@discrete`, etc.:
 
 ```julia
-struct MyScenario{T<:AbstractFloat} <: AbstractScenario
-    growth_rate::T      # uncertain: could be 3%, 5%, 7%...
+@scenariodef MyScenario begin
+    @continuous growth_rate  # uncertain: could be 3%, 5%, 7%...
 end
 ```
 
@@ -140,17 +142,18 @@ struct MyState{T<:AbstractFloat} <: AbstractState
 end
 ```
 
-**Action** represents what gets decided at each timestep. Can be any type (AbstractAction is optional):
+**Action** represents what gets decided at each timestep. Can be any type:
 
 ```julia
-struct MyAction <: AbstractAction end  # can be empty for simple models
-# Or just return a number/tuple: get_action(...) = 0.5
+struct MyAction <: AbstractAction end
 ```
 
-**Policy** defines how decisions are made. For optimization, include tunable parameters:
+**Policy** defines how decisions are made. Use `@policydef` with bounds for optimization:
 
 ```julia
-struct MyPolicy <: AbstractPolicy end  # no parameters in this simple example
+@policydef MyPolicy begin
+    @continuous threshold 0.0 10.0  # tunable parameter with bounds
+end
 ```
 
 ### Callbacks
@@ -171,7 +174,7 @@ SimOptDecisions.get_action(policy::MyPolicy, state::MyState, t::TimeStep, scenar
 
 ```julia
 function SimOptDecisions.run_timestep(state::MyState, action::MyAction, t::TimeStep, config::MyConfig, scenario::MyScenario, rng::AbstractRNG)
-    new_value = state.value * (1 + scenario.growth_rate)
+    new_value = state.value * (1 + value(scenario.growth_rate))
     return (MyState(new_value), (value=state.value,))
 end
 ```
@@ -192,22 +195,18 @@ end
 
 ## Adding Optimization
 
-To optimize policy parameters, add these methods:
+With `@policydef`, bounds are already defined. Just add a vector constructor:
 
 ```julia
-# Policy with tunable parameters
-struct OptimizablePolicy{T<:AbstractFloat} <: AbstractPolicy
-    threshold::T
+# Use named form to enable adding methods
+@policydef OptimizablePolicy begin
+    @continuous threshold 0.0 10.0
 end
 
-# Constructor from parameter vector
-OptimizablePolicy(params::AbstractVector) = OptimizablePolicy(params[1])
-
-# Extract parameters
-SimOptDecisions.params(p::OptimizablePolicy) = [p.threshold]
-
-# Define bounds
-SimOptDecisions.param_bounds(::Type{<:OptimizablePolicy}) = [(0.0, 10.0)]
+# Add constructor from parameter vector (required for optimization)
+OptimizablePolicy(params::AbstractVector) = OptimizablePolicy(
+    threshold = ContinuousParameter(params[1], (0.0, 10.0))
+)
 ```
 
 Then set up and run optimization:
@@ -222,7 +221,7 @@ function calculate_metrics(outcomes)
 end
 
 # Sample many possible futures
-scenarios = [MyScenario(rand() * 0.1) for _ in 1:100]
+scenarios = [MyScenario(growth_rate = ContinuousParameter(rand() * 0.1)) for _ in 1:100]
 
 # Set up the problem
 prob = OptimizationProblem(

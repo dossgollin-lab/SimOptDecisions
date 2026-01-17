@@ -14,11 +14,11 @@
         @test ts_float.val == 0.5
 
         # is_first and is_last helper methods
-        @test SimOptDecisions.Utils.is_first(ts)
-        @test !SimOptDecisions.Utils.is_first(ts_date)
-        @test SimOptDecisions.Utils.is_last(ts, 1)
-        @test !SimOptDecisions.Utils.is_last(ts, 10)
-        @test SimOptDecisions.Utils.is_last(ts_date, 5)
+        @test is_first(ts)
+        @test !is_first(ts_date)
+        @test is_last(ts, 1)
+        @test !is_last(ts, 10)
+        @test is_last(ts_date, 5)
     end
 
     @testset "Time Axis Validation" begin

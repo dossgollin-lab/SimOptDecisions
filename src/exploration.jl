@@ -9,11 +9,7 @@ using ProgressMeter: Progress, next!
 # Error Types
 # ============================================================================
 
-"""
-    ExploratoryInterfaceError
-
-Thrown when types don't meet requirements for exploratory modeling.
-"""
+"""Thrown when types don't meet requirements for exploratory modeling."""
 struct ExploratoryInterfaceError <: Exception
     msg::String
 end
@@ -24,7 +20,6 @@ Base.showerror(io::IO, e::ExploratoryInterfaceError) = print(io, e.msg)
 # Flattening Infrastructure
 # ============================================================================
 
-# Single-value parameters -> single column
 function _flatten_parameter(name::Symbol, p::ContinuousParameter, prefix::Symbol)
     OrderedDict{Symbol,Any}(Symbol(prefix, :_, name) => p.value)
 end
@@ -37,7 +32,6 @@ function _flatten_parameter(name::Symbol, p::CategoricalParameter, prefix::Symbo
     OrderedDict{Symbol,Any}(Symbol(prefix, :_, name) => p.value)
 end
 
-# Time series -> multiple columns with [time_val] notation
 function _flatten_parameter(name::Symbol, p::TimeSeriesParameter, prefix::Symbol)
     result = OrderedDict{Symbol,Any}()
     for (t, val) in zip(p.time_axis, p.values)
@@ -46,11 +40,11 @@ function _flatten_parameter(name::Symbol, p::TimeSeriesParameter, prefix::Symbol
     return result
 end
 
-"""
-    _flatten_to_namedtuple(obj, prefix::Symbol) -> NamedTuple
+function _flatten_parameter(::Symbol, ::GenericParameter, ::Symbol)
+    return OrderedDict{Symbol,Any}()
+end
 
-Flatten a struct with parameter fields to a NamedTuple with prefixed column names.
-"""
+"""Flatten a struct with parameter fields to a NamedTuple. GenericParameter fields are skipped."""
 function _flatten_to_namedtuple(obj, prefix::Symbol)
     T = typeof(obj)
     result = OrderedDict{Symbol,Any}()
@@ -58,7 +52,9 @@ function _flatten_to_namedtuple(obj, prefix::Symbol)
     for fname in fieldnames(T)
         field = getfield(obj, fname)
 
-        if field isa AbstractParameter
+        if field isa GenericParameter
+            continue
+        elseif field isa AbstractParameter
             merge!(result, _flatten_parameter(fname, field, prefix))
         elseif field isa TimeSeriesParameter
             merge!(result, _flatten_parameter(fname, field, prefix))
@@ -71,32 +67,7 @@ function _flatten_to_namedtuple(obj, prefix::Symbol)
 end
 
 function _format_field_error(T, fname, ftype)
-    """
-Cannot flatten `$T` for exploratory analysis.
-
-Problem: Field `$fname` has type `$ftype`, which is not a parameter type.
-
-All fields must be one of:
-  - ContinuousParameter{T}  -- continuous real values
-  - DiscreteParameter{T}    -- integer values
-  - CategoricalParameter{T} -- categorical/enum values
-  - TimeSeriesParameter{T}  -- time series data
-
-Example fix:
-
-    # Before
-    struct $T
-        $fname::$ftype
-    end
-
-    # After
-    struct $T
-        $fname::ContinuousParameter{Float64}
-    end
-
-Note: `simulate()` and `evaluate_policy()` work without this requirement.
-Only `explore()` requires parameter types for structured output.
-"""
+    "Field `$fname::$ftype` in `$T` is not a parameter type."
 end
 
 # ============================================================================
@@ -117,7 +88,7 @@ function _validate_exploratory_interface(::Type{S}, ::Type{P}, ::Type{O}) where 
                 join(errors, "\n") *
                 "\n\n" *
                 "All fields must be: ContinuousParameter, DiscreteParameter, " *
-                "CategoricalParameter, or TimeSeriesParameter.\n\n" *
+                "CategoricalParameter, TimeSeriesParameter, or GenericParameter.\n\n" *
                 "Note: `simulate()` and `evaluate_policy()` still work without this.",
             ),
         )
@@ -126,14 +97,7 @@ end
 
 function _collect_field_errors!(errors, T, label)
     for (fname, ftype) in zip(fieldnames(T), fieldtypes(T))
-        is_param = ftype <: AbstractParameter || ftype <: TimeSeriesParameter
-        # Handle parametric types (UnionAll)
-        if !is_param && ftype isa UnionAll
-            is_param = ftype <: AbstractParameter || ftype <: TimeSeriesParameter
-        end
-        if !is_param
-            push!(errors, "  - $label.$fname :: $ftype")
-        end
+        _is_parameter_type(ftype) || push!(errors, "  - $label.$fname :: $ftype")
     end
 end
 
@@ -141,27 +105,7 @@ end
 # ExplorationResult
 # ============================================================================
 
-"""
-    ExplorationResult
-
-Results from `explore()`, containing outcomes for all (policy, scenario) combinations.
-
-# Indexing
-- `result[p, s]` -- outcome for policy p, scenario s
-- `outcomes_for_policy(result, p)` -- all outcomes for policy p
-- `outcomes_for_scenario(result, s)` -- all outcomes for scenario s
-
-# Tables.jl Integration
-Convert to DataFrame: `DataFrame(result)`
-
-# Fields
-- `rows::Vector{NamedTuple}` -- all result rows
-- `n_policies::Int` -- number of policies
-- `n_scenarios::Int` -- number of scenarios
-- `policy_columns::Vector{Symbol}` -- column names for policy parameters
-- `scenario_columns::Vector{Symbol}` -- column names for scenario parameters
-- `outcome_columns::Vector{Symbol}` -- column names for outcome fields
-"""
+"""Results from `explore()`. Indexable via `result[p, s]` and Tables.jl compatible."""
 struct ExplorationResult
     rows::Vector{NamedTuple}
     n_policies::Int
@@ -179,17 +123,12 @@ function ExplorationResult(rows::Vector{NamedTuple}, n_policies::Int, n_scenario
     end
 
     all_cols = collect(keys(first(rows)))
-
-    policy_cols = filter(all_cols) do c
-        s = String(c)
-        startswith(s, "policy_") && c != :policy_idx
-    end
-
-    scenario_cols = filter(all_cols) do c
-        s = String(c)
-        startswith(s, "scenario_") && c != :scenario_idx
-    end
-
+    policy_cols = filter(
+        c -> startswith(String(c), "policy_") && c != :policy_idx, all_cols
+    )
+    scenario_cols = filter(
+        c -> startswith(String(c), "scenario_") && c != :scenario_idx, all_cols
+    )
     outcome_cols = filter(c -> startswith(String(c), "outcome_"), all_cols)
 
     ExplorationResult(
@@ -197,7 +136,6 @@ function ExplorationResult(rows::Vector{NamedTuple}, n_policies::Int, n_scenario
     )
 end
 
-# Indexing
 function Base.getindex(r::ExplorationResult, p::Int, s::Int)
     @boundscheck begin
         1 <= p <= r.n_policies || throw(BoundsError(r, (p, s)))
@@ -209,13 +147,10 @@ end
 
 Base.size(r::ExplorationResult) = (r.n_policies, r.n_scenarios)
 Base.length(r::ExplorationResult) = length(r.rows)
-
-# Iteration
 Base.iterate(r::ExplorationResult) = iterate(r.rows)
 Base.iterate(r::ExplorationResult, state) = iterate(r.rows, state)
 Base.eltype(::Type{ExplorationResult}) = NamedTuple
 
-# Tables.jl interface
 Tables.istable(::Type{<:ExplorationResult}) = true
 Tables.rowaccess(::Type{<:ExplorationResult}) = true
 Tables.rows(r::ExplorationResult) = r.rows
@@ -226,24 +161,12 @@ function Tables.schema(r::ExplorationResult)
     Tables.Schema(keys(row), typeof.(values(row)))
 end
 
-"""
-    outcomes_for_policy(result::ExplorationResult, p::Int) -> Vector{NamedTuple}
-
-Get all outcomes for a specific policy across all scenarios.
-"""
+"""Get all outcomes for a specific policy across all scenarios."""
 outcomes_for_policy(r::ExplorationResult, p::Int) = [r[p, s] for s in 1:r.n_scenarios]
 
-"""
-    outcomes_for_scenario(result::ExplorationResult, s::Int) -> Vector{NamedTuple}
-
-Get all outcomes for a specific scenario across all policies.
-"""
+"""Get all outcomes for a specific scenario across all policies."""
 outcomes_for_scenario(r::ExplorationResult, s::Int) = [r[p, s] for p in 1:r.n_policies]
 
-# Backward compatibility alias
-const outcomes_for_sow = outcomes_for_scenario
-
-# Filtering
 function Base.filter(f, r::ExplorationResult)
     filtered = filter(f, r.rows)
     ExplorationResult(
@@ -256,7 +179,6 @@ function Base.filter(f, r::ExplorationResult)
     )
 end
 
-# Finalize InMemorySink -> ExplorationResult
 function finalize(sink::InMemorySink, n_policies::Int, n_scenarios::Int)
     ExplorationResult(sink.results, n_policies, n_scenarios)
 end
@@ -266,39 +188,9 @@ end
 # ============================================================================
 
 """
-    explore(config, scenarios, policies; sink, rng, progress) -> ExplorationResult
+Run simulations for all (policy, scenario) combinations. Returns ExplorationResult.
 
-Run simulations for all combinations of policies and scenarios, collecting structured results.
-
-# Arguments
-- `config::AbstractConfig`: Simulation configuration
-- `scenarios::AbstractVector{<:AbstractScenario}`: Scenarios to explore
-- `policies::AbstractVector{<:AbstractPolicy}`: Policies to evaluate
-
-# Keyword Arguments
-- `sink::AbstractResultSink = InMemorySink()`: Where to store results
-- `rng::AbstractRNG = Random.default_rng()`: Random number generator
-- `progress::Bool = true`: Show progress bar
-
-# Returns
-- `ExplorationResult` (for InMemorySink) or filepath (for file sinks)
-
-# Requirements
-All fields in Scenario, Policy, and Outcome types must be parameter types:
-`ContinuousParameter`, `DiscreteParameter`, `CategoricalParameter`, or `TimeSeriesParameter`.
-
-# Example
-```julia
-result = explore(config, scenarios, policies)
-
-# Access results
-result[1, 2]  # policy 1, scenario 2
-outcomes_for_policy(result, 1)  # all scenarios for policy 1
-
-# Convert to DataFrame
-using DataFrames
-df = DataFrame(result)
-```
+All fields in Scenario, Policy, and Outcome must use parameter types.
 """
 function explore(
     config::AbstractConfig,
@@ -311,10 +203,7 @@ function explore(
     isempty(scenarios) && throw(ArgumentError("scenarios cannot be empty"))
     isempty(policies) && throw(ArgumentError("policies cannot be empty"))
 
-    # Run one simulation to get outcome type for validation
     first_outcome = simulate(config, first(scenarios), first(policies), rng)
-
-    # Validate all types have parameter fields
     _validate_exploratory_interface(
         eltype(scenarios), eltype(policies), typeof(first_outcome)
     )
@@ -327,7 +216,6 @@ function explore(
 
     for (p_idx, policy) in enumerate(policies)
         for (s_idx, scenario) in enumerate(scenarios)
-            # Skip first simulation (already done for validation)
             outcome = if p_idx == 1 && s_idx == 1
                 first_outcome
             else
@@ -350,7 +238,6 @@ function explore(
     return finalize(sink, n_policies, n_scenarios)
 end
 
-# Convenience: single policy
 function explore(
     config::AbstractConfig,
     scenarios::AbstractVector{<:AbstractScenario},
@@ -360,7 +247,6 @@ function explore(
     explore(config, scenarios, [policy]; kwargs...)
 end
 
-# Convenience: from OptimizationProblem
 function explore(
     prob::OptimizationProblem, policies::AbstractVector{<:AbstractPolicy}; kwargs...
 )

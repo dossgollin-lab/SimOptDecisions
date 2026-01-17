@@ -32,24 +32,45 @@ Designed to be flexible but imposes just enough structure to enable type stabili
 
 ## How It Works
 
-When you call `simulate(config, scenario, policy)`, the framework orchestrates your callbacks:
+The framework is built around nested loops. At the innermost level, a single simulation runs:
 
-```{mermaid}
-flowchart LR
-    A[simulate] --> B[time_axis]
-    B --> C[initialize]
-    C --> D{for t in times}
-    D --> E[get_action]
-    E --> F[run_timestep]
-    F --> D
-    D --> G[compute_outcome]
-    G --> H[outcome]
+```julia
+# One simulation: config × scenario × policy → outcome
+function simulate(config, scenario, policy, rng)
+    state = initialize(config, scenario, rng)
+    records = []
+    for t in time_axis(config, scenario)
+        action = get_action(policy, state, t, scenario)
+        state, record = run_timestep(state, action, t, config, scenario, rng)
+        push!(records, record)
+    end
+    return compute_outcome(records, config, scenario)
+end
 ```
 
-The framework then provides higher-level functions:
+Higher-level functions iterate over these simulations:
 
-- `simulate(config, scenario, policy)` — run one scenario
-- `explore(config, scenarios, policies)` — systematically evaluate all combinations
+```julia
+# explore: all combinations → structured table
+for policy in policies
+    for scenario in scenarios
+        outcome = simulate(config, scenario, policy, rng)
+        # flatten and record
+    end
+end
+
+# optimize: search for Pareto-optimal policies
+for candidate_policy in search_space
+    outcomes = [simulate(config, s, candidate_policy, rng) for s in scenarios]
+    metrics = calculate_metrics(outcomes)
+    # update Pareto front
+end
+```
+
+**Key functions:**
+
+- `simulate(config, scenario, policy)` — run one simulation, get one outcome
+- `explore(config, scenarios, policies)` — all combinations → structured table
 - `optimize(problem, backend)` — search for Pareto-optimal policies
 
 ## Installation
@@ -58,7 +79,7 @@ Requires Julia 1.10 or later.
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions.jl")
+Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions")
 ```
 
 ## Next Steps

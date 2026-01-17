@@ -113,7 +113,7 @@ Objectives must be:
 
 ## Parameter Type Validation
 
-SimOptDecisions can validate that your Scenario, Policy, and Outcome types use parameter wrappers (`ContinuousParameter`, `DiscreteParameter`, `CategoricalParameter`, or `TimeSeriesParameter`).
+SimOptDecisions can validate that your Scenario, Policy, and Outcome types use parameter wrappers (`ContinuousParameter`, `DiscreteParameter`, `CategoricalParameter`, `TimeSeriesParameter`, or `GenericParameter`).
 
 ### When Is Validation Required?
 
@@ -158,6 +158,7 @@ All fields must be one of:
   - DiscreteParameter{T}    -- integer values with optional valid_values
   - CategoricalParameter{T} -- categorical values with defined levels
   - TimeSeriesParameter{T,I} -- time-indexed data
+  - GenericParameter{T}     -- complex objects (skipped in explore/flatten)
 
 Example fix:
   # Before

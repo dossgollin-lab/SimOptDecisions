@@ -2,56 +2,23 @@
 # Parameter Type Validation
 # ============================================================================
 
-"""
-    ParameterTypeError
-
-Thrown when types don't use required parameter types for their fields.
-"""
+"""Thrown when types don't use required parameter types."""
 struct ParameterTypeError <: Exception
     msg::String
 end
 
 Base.showerror(io::IO, e::ParameterTypeError) = print(io, e.msg)
 
-"""
-    _is_parameter_type(ftype) -> Bool
-
-Check if a field type is a valid parameter type.
-"""
-function _is_parameter_type(ftype)
-    # Direct subtypes
-    ftype <: AbstractParameter && return true
-    ftype <: TimeSeriesParameter && return true
-
-    # Handle parametric types (UnionAll)
-    if ftype isa UnionAll
-        ftype <: AbstractParameter && return true
-        ftype <: TimeSeriesParameter && return true
-    end
-
-    return false
-end
-
-# Cache of validated types to avoid repeated validation
 const _VALIDATED_TYPES = Set{Type}()
 
-"""
-    _validate_parameter_fields(T::Type, label::String)
-
-Validate that all fields in type T are parameter types.
-Throws ParameterTypeError if any field is not a parameter type.
-Results are cached so each type is only validated once per session.
-"""
+"""Validate that all fields in type T are parameter types."""
 function _validate_parameter_fields(::Type{T}, label::String) where {T}
-    # Skip if already validated (and passed)
     T in _VALIDATED_TYPES && return nothing
 
     errors = String[]
 
     for (fname, ftype) in zip(fieldnames(T), fieldtypes(T))
-        if !_is_parameter_type(ftype)
-            push!(errors, "  - $fname :: $ftype")
-        end
+        _is_parameter_type(ftype) || push!(errors, "  - $fname :: $ftype")
     end
 
     if !isempty(errors)
@@ -59,38 +26,20 @@ function _validate_parameter_fields(::Type{T}, label::String) where {T}
             ParameterTypeError(
                 "$label type `$T` has non-parameter fields:\n" *
                 join(errors, "\n") *
-                "\n\n" *
-                "All fields must be one of:\n" *
-                "  - ContinuousParameter{T}  -- continuous real values with bounds\n" *
-                "  - DiscreteParameter{T}    -- integer values with optional valid_values\n" *
-                "  - CategoricalParameter{T} -- categorical values with defined levels\n" *
-                "  - TimeSeriesParameter{T,I} -- time-indexed data\n\n" *
-                "Example fix:\n" *
-                "  # Before\n" *
-                "  struct $T\n" *
-                "      $(first(errors)[5:end])  # plain type\n" *
-                "  end\n\n" *
-                "  # After\n" *
-                "  struct $T{T<:AbstractFloat}\n" *
-                "      $(split(first(errors)[5:end], " ")[1])::ContinuousParameter{T}\n" *
-                "  end",
+                "\n\nAll fields must be one of:\n" *
+                "  - ContinuousParameter{T}\n" *
+                "  - DiscreteParameter{T}\n" *
+                "  - CategoricalParameter{T}\n" *
+                "  - TimeSeriesParameter{T,I}\n" *
+                "  - GenericParameter{T}",
             ),
         )
     end
 
-    # Mark as validated (passed)
     push!(_VALIDATED_TYPES, T)
     return nothing
 end
 
-"""
-    SIMOPT_STRICT_VALIDATION
-
-Environment variable to enable strict parameter type validation at simulation time.
-Set to "true" to validate that all Scenario, Policy, and Outcome types use parameter fields.
-
-Validation is always required for `explore()`. This setting only affects `simulate()`.
-"""
 const _STRICT_VALIDATION = Ref{Union{Nothing,Bool}}(nothing)
 
 function _is_strict_validation()::Bool
@@ -101,15 +50,7 @@ function _is_strict_validation()::Bool
     return _STRICT_VALIDATION[]
 end
 
-"""
-    _validate_simulation_types(scenario, policy)
-
-Validate that Scenario and Policy types use parameter fields.
-Called at the start of simulation to ensure type compliance.
-
-Only validates when SIMOPT_STRICT_VALIDATION=true environment variable is set.
-Use `explore()` for guaranteed validation.
-"""
+"""Validate Scenario and Policy types (only when SIMOPT_STRICT_VALIDATION=true)."""
 function _validate_simulation_types(scenario::AbstractScenario, policy::AbstractPolicy)
     _is_strict_validation() || return nothing
     _validate_parameter_fields(typeof(scenario), "Scenario")
@@ -117,15 +58,7 @@ function _validate_simulation_types(scenario::AbstractScenario, policy::Abstract
     return nothing
 end
 
-"""
-    _validate_outcome_type(outcome)
-
-Validate that an Outcome type uses parameter fields.
-Called after compute_outcome to ensure type compliance.
-
-Only validates when SIMOPT_STRICT_VALIDATION=true environment variable is set.
-Use `explore()` for guaranteed validation.
-"""
+"""Validate Outcome type (only when SIMOPT_STRICT_VALIDATION=true)."""
 function _validate_outcome_type(outcome)
     _is_strict_validation() || return nothing
     _validate_parameter_fields(typeof(outcome), "Outcome")
@@ -136,82 +69,47 @@ end
 # Policy Interface Validation
 # ============================================================================
 
-"""
-Validate that a policy type implements the required optimization interface:
-- `param_bounds(::Type{P})` returns vector of (lower, upper) tuples
-- `P(x::AbstractVector)` constructor exists
-"""
+"""Validate that a policy type implements param_bounds and vector constructor."""
 function _validate_policy_interface(::Type{P}) where {P<:AbstractPolicy}
-    # Check param_bounds is implemented and returns correct type
     bounds = try
         param_bounds(P)
     catch e
         if e isa ArgumentError && contains(e.msg, "not implemented")
-            throw(
-                ArgumentError(
-                    "Policy type $P must implement `param_bounds(::Type{$P})` " *
-                    "returning a Vector of (lower, upper) tuples",
-                ),
-            )
+            throw(ArgumentError("Policy type $P must implement `param_bounds(::Type{$P})`"))
         end
         rethrow(e)
     end
 
-    if !isa(bounds, AbstractVector)
-        throw(
-            ArgumentError(
-                "param_bounds(::Type{$P}) must return an AbstractVector of tuples, " *
-                "got $(typeof(bounds))",
-            ),
-        )
-    end
+    isa(bounds, AbstractVector) || throw(
+        ArgumentError(
+            "param_bounds(::Type{$P}) must return an AbstractVector, got $(typeof(bounds))",
+        ),
+    )
 
-    if isempty(bounds)
-        throw(
-            ArgumentError(
-                "param_bounds(::Type{$P}) returned empty bounds. " *
-                "Policies must have at least one parameter.",
-            ),
-        )
-    end
+    isempty(bounds) &&
+        throw(ArgumentError("param_bounds(::Type{$P}) returned empty bounds"))
 
-    # Validate each bound is a 2-tuple with lower <= upper
     for (i, b) in enumerate(bounds)
-        if !isa(b, Tuple) || length(b) != 2
-            throw(
-                ArgumentError(
-                    "param_bounds(::Type{$P})[$i] must be a 2-tuple (lower, upper), got $b"
-                ),
-            )
-        end
-        if b[1] > b[2]
-            throw(
-                ArgumentError(
-                    "param_bounds(::Type{$P})[$i] has lower > upper: $(b[1]) > $(b[2])"
-                ),
-            )
-        end
+        (isa(b, Tuple) && length(b) == 2) ||
+            throw(ArgumentError("param_bounds(::Type{$P})[$i] must be a 2-tuple, got $b"))
+        b[1] > b[2] && throw(
+            ArgumentError(
+                "param_bounds(::Type{$P})[$i] has lower > upper: $(b[1]) > $(b[2])"
+            ),
+        )
     end
 
-    # Check constructor works with sample parameters
     sample_x = [(b[1] + b[2]) / 2 for b in bounds]
     test_policy = try
         P(sample_x)
     catch e
         throw(
-            ArgumentError(
-                "$P must have a constructor accepting AbstractVector. " *
-                "Add: $P(x::AbstractVector{T}) where T<:AbstractFloat = ...\n" *
-                "Original error: $e",
-            ),
+            ArgumentError("$P must have a constructor accepting AbstractVector. Error: $e"),
         )
     end
 
-    if !(test_policy isa AbstractPolicy)
-        throw(
-            ArgumentError("$P(x) must return an AbstractPolicy, got $(typeof(test_policy))")
-        )
-    end
+    test_policy isa AbstractPolicy ||
+        throw(ArgumentError("$P(x) must return an AbstractPolicy"))
 
     return nothing
 end
@@ -220,34 +118,21 @@ end
 # Scenario Validation
 # ============================================================================
 
-"""
-Validate that scenarios are a homogeneous collection of AbstractScenario.
-"""
+"""Validate that scenarios are a homogeneous collection of AbstractScenario."""
 function _validate_scenarios(scenarios)
-    if isempty(scenarios)
-        throw(ArgumentError("Scenarios collection cannot be empty"))
-    end
+    isempty(scenarios) && throw(ArgumentError("Scenarios collection cannot be empty"))
 
-    # Check all are AbstractScenario
     first_type = typeof(first(scenarios))
-    if !(first(scenarios) isa AbstractScenario)
-        throw(
+    first(scenarios) isa AbstractScenario || throw(
+        ArgumentError("Scenarios must be subtypes of AbstractScenario, got $first_type")
+    )
+
+    for (i, scenario) in enumerate(scenarios)
+        typeof(scenario) === first_type || throw(
             ArgumentError(
-                "Scenarios must be subtypes of AbstractScenario, got $(first_type)"
+                "All scenarios must be the same type. Scenario 1 is $first_type, scenario $i is $(typeof(scenario))",
             ),
         )
-    end
-
-    # Check homogeneity
-    for (i, scenario) in enumerate(scenarios)
-        if typeof(scenario) !== first_type
-            throw(
-                ArgumentError(
-                    "All scenarios must be the same concrete type. " *
-                    "Scenario 1 is $(first_type), but scenario $i is $(typeof(scenario))",
-                ),
-            )
-        end
     end
 
     return nothing
@@ -257,27 +142,18 @@ end
 # Objectives Validation
 # ============================================================================
 
-"""
-Validate that objectives are well-formed.
-"""
+"""Validate that objectives are well-formed."""
 function _validate_objectives(objectives)
-    if isempty(objectives)
-        throw(ArgumentError("At least one objective is required"))
-    end
+    isempty(objectives) && throw(ArgumentError("At least one objective is required"))
 
     names = Set{Symbol}()
     for obj in objectives
-        if !(obj isa Objective)
-            throw(
-                ArgumentError(
-                    "Objectives must be Objective structs, got $(typeof(obj)). " *
-                    "Use `minimize(:name)` or `maximize(:name)`.",
-                ),
-            )
-        end
-        if obj.name in names
-            throw(ArgumentError("Duplicate objective name: $(obj.name)"))
-        end
+        obj isa Objective || throw(
+            ArgumentError(
+                "Objectives must be Objective structs. Use `minimize(:name)` or `maximize(:name)`.",
+            ),
+        )
+        obj.name in names && throw(ArgumentError("Duplicate objective name: $(obj.name)"))
         push!(names, obj.name)
     end
 
@@ -288,20 +164,10 @@ end
 # Config Validation Hooks
 # ============================================================================
 
-"""
-    validate(config::AbstractConfig) -> Bool
-
-Override this to add domain-specific validation for your config.
-Default returns true (valid).
-"""
+"""Override for domain-specific config validation. Default returns true."""
 validate(config::AbstractConfig) = true
 
-"""
-    validate(policy::AbstractPolicy, config::AbstractConfig) -> Bool
-
-Override this to add domain-specific validation for policy/config compatibility.
-Default returns true (valid).
-"""
+"""Override for domain-specific policy/config validation. Default returns true."""
 validate(policy::AbstractPolicy, config::AbstractConfig) = true
 
 # ============================================================================
@@ -310,22 +176,16 @@ validate(policy::AbstractPolicy, config::AbstractConfig) = true
 
 abstract type AbstractConstraint end
 
-"""
-A constraint that must be satisfied for a solution to be feasible.
-The function should return true if the policy is feasible.
-"""
+"""A constraint that must be satisfied for feasibility. Function returns true if feasible."""
 struct FeasibilityConstraint{F} <: AbstractConstraint
     name::Symbol
-    func::F  # policy -> Bool (true = feasible)
+    func::F
 end
 
-"""
-A constraint that adds a penalty to the objective(s) when violated.
-The function should return 0.0 for no violation, positive for violation.
-"""
+"""A constraint that adds a penalty when violated. Function returns 0.0 for no violation."""
 struct PenaltyConstraint{T<:AbstractFloat,F} <: AbstractConstraint
     name::Symbol
-    func::F  # policy -> Float64 (0.0 = no violation)
+    func::F
     weight::T
 
     function PenaltyConstraint(name::Symbol, func::F, weight::T) where {T<:AbstractFloat,F}
@@ -338,22 +198,14 @@ end
 # Full Problem Validation
 # ============================================================================
 
-"""
-Validate an OptimizationProblem before running optimization.
-Called automatically by `optimize()`.
-"""
+"""Validate an OptimizationProblem before running optimization."""
 function _validate_problem(prob)
-    # Re-validate components (in case user modified after construction)
     _validate_scenarios(prob.scenarios)
     _validate_policy_interface(prob.policy_type)
     _validate_objectives(prob.objectives)
 
-    # Validate config
-    if !validate(prob.config)
-        throw(ArgumentError("Config validation failed"))
-    end
+    validate(prob.config) || throw(ArgumentError("Config validation failed"))
 
-    # Validate batch size against scenario count
     n_scenarios = length(prob.scenarios)
     batch = prob.batch_size
     if batch isa FixedBatch && batch.n > n_scenarios

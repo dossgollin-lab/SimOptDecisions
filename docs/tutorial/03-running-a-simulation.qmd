@@ -30,27 +30,28 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
     house_value::T = 200_000.0
 end
 
-# Scenario (using ContinuousParameter for exploratory analysis)
-struct HouseElevationScenario{T<:AbstractFloat} <: AbstractScenario
-    gev_μ::ContinuousParameter{T}
-    gev_σ::ContinuousParameter{T}
-    gev_ξ::ContinuousParameter{T}
-    dd_threshold::ContinuousParameter{T}
-    dd_saturation::ContinuousParameter{T}
-    discount_rate::ContinuousParameter{T}
+# Scenario
+@scenariodef HouseElevationScenario begin
+    @continuous gev_μ
+    @continuous gev_σ
+    @continuous gev_ξ
+    @continuous dd_threshold
+    @continuous dd_saturation
+    @continuous discount_rate
 end
 
 function sample_scenario(rng::AbstractRNG)
-    gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3)))
-    gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3)))
-    gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5)))
-    dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25)))
-    dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5)))
-    discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)))
-    return HouseElevationScenario(gev_μ, gev_σ, gev_ξ, dd_threshold, dd_saturation, discount_rate)
+    HouseElevationScenario(
+        gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3))),
+        gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))),
+        gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))),
+        dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25))),
+        dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5))),
+        discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))),
+    )
 end
 
-# State, Action, Policy
+# State, Action
 struct SeaLevelState{T<:AbstractFloat} <: AbstractState
     msl::T
 end
@@ -59,11 +60,12 @@ struct ElevationAction{T<:AbstractFloat} <: AbstractAction
     elevation_ft::T
 end
 
-struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::ContinuousParameter{T}
+# Policy
+@policydef ElevationPolicy begin
+    @continuous elevation_ft 0.0 14.0
 end
 
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(ContinuousParameter(params[1], (0.0, 14.0)))
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(elevation_ft = ContinuousParameter(params[1], (0.0, 14.0)))
 
 function SimOptDecisions.get_action(
     policy::ElevationPolicy, state::SeaLevelState, t::TimeStep, scenario::HouseElevationScenario

@@ -60,7 +60,7 @@ Avoid `Vector{Any}` and ensure type-stable code. Use parametric types or builder
 
 ### Constructors
 
-Use `Base.@kwdef` for types created infrequently (parameters, SOWs, configs):
+Use `Base.@kwdef` for types created infrequently (parameters, scenarios, configs):
 
 ```julia
 Base.@kwdef struct MyConfig{T<:AbstractFloat}
@@ -128,14 +128,18 @@ execute:
 SimOptDecisions.jl/
 ├── src/
 │   ├── SimOptDecisions.jl    # Main module, exports
-│   ├── types.jl              # Abstract types, TimeStep, Objective, AbstractAction
+│   ├── types.jl              # Abstract types, TimeStep, Objective, parameter types
 │   ├── simulation.jl         # simulate() entry point
-│   ├── timestepping.jl       # Callbacks: initialize, run_timestep, time_axis, finalize
+│   ├── timestepping.jl       # Callbacks: initialize, run_timestep, time_axis, compute_outcome
 │   ├── recorders.jl          # NoRecorder, SimulationTrace, Tables.jl
-│   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
 │   ├── validation.jl         # _validate_* functions, constraints
+│   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
+│   ├── metrics.jl            # Declarative metrics (ExpectedValue, Probability, etc.)
+│   ├── exploration.jl        # explore(), ExplorationResult
+│   ├── macros.jl             # @scenariodef, @policydef, etc.
+│   ├── sinks.jl              # Result sinks (InMemorySink, StreamingSink)
 │   ├── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
-│   ├── utils.jl              # Utils submodule (discount_factor, timeindex)
+│   ├── utils.jl              # discount_factor, timeindex, is_first, is_last
 │   └── plotting.jl           # Plotting interface declarations
 ├── ext/
 │   ├── SimOptMetaheuristicsExt.jl

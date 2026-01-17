@@ -1,6 +1,4 @@
-# Abstract type hierarchy - kept simple and unparameterized
-# Julia's multiple dispatch catches type mismatches via MethodError at runtime
-
+# Abstract type hierarchy
 abstract type AbstractState end
 abstract type AbstractPolicy end
 abstract type AbstractConfig end
@@ -12,31 +10,10 @@ abstract type AbstractAction end
 # Parameter Types for Exploratory Modeling
 # ============================================================================
 
-"""
-    AbstractParameter{T}
-
-Base type for typed parameters used in exploratory modeling.
-Subtypes enable automatic flattening of Scenarios, Policies, and Outcomes for analysis.
-
-To use `explore()`, all fields in your types must be `<:AbstractParameter` or `TimeSeriesParameter`.
-"""
+"""Base type for typed parameters. Subtypes enable automatic flattening for `explore()`."""
 abstract type AbstractParameter{T} end
 
-"""
-    ContinuousParameter{T<:AbstractFloat}
-
-A continuous real-valued parameter with optional bounds.
-
-# Fields
-- `value::T`: The parameter value
-- `bounds::Tuple{T,T}`: (lower, upper) bounds, defaults to (-Inf, Inf)
-
-# Example
-```julia
-ContinuousParameter(0.5)                    # unbounded
-ContinuousParameter(0.5, (0.0, 1.0))        # bounded
-```
-"""
+"""Continuous real-valued parameter with optional bounds."""
 struct ContinuousParameter{T<:AbstractFloat} <: AbstractParameter{T}
     value::T
     bounds::Tuple{T,T}
@@ -45,42 +22,14 @@ function ContinuousParameter(value::T) where {T<:AbstractFloat}
     ContinuousParameter(value, (T(-Inf), T(Inf)))
 end
 
-"""
-    DiscreteParameter{T<:Integer}
-
-An integer-valued parameter with optional valid values constraint.
-
-# Fields
-- `value::T`: The parameter value
-- `valid_values::Union{Nothing,Vector{T}}`: Allowed values, or nothing for any integer
-
-# Example
-```julia
-DiscreteParameter(5)                        # any integer
-DiscreteParameter(2, [1, 2, 3, 4, 5])       # constrained
-```
-"""
+"""Integer parameter with optional valid values constraint."""
 struct DiscreteParameter{T<:Integer} <: AbstractParameter{T}
     value::T
     valid_values::Union{Nothing,Vector{T}}
 end
 DiscreteParameter(value::T) where {T<:Integer} = DiscreteParameter(value, nothing)
 
-"""
-    CategoricalParameter{T}
-
-A categorical parameter with defined levels.
-
-# Fields
-- `value::T`: The current value (must be in levels)
-- `levels::Vector{T}`: All valid categorical values
-
-# Example
-```julia
-CategoricalParameter(:high, [:low, :medium, :high])
-CategoricalParameter("scenario_a", ["scenario_a", "scenario_b"])
-```
-"""
+"""Categorical parameter with defined levels."""
 struct CategoricalParameter{T} <: AbstractParameter{T}
     value::T
     levels::Vector{T}
@@ -91,20 +40,32 @@ struct CategoricalParameter{T} <: AbstractParameter{T}
     end
 end
 
-"""
-    value(p::AbstractParameter) -> T
+"""Generic parameter for complex objects. Skipped in explore/flatten."""
+struct GenericParameter{T}
+    value::T
+end
 
-Extract the value from a parameter.
-"""
+"""Extract the value from a parameter."""
 @inline value(p::AbstractParameter) = p.value
+@inline value(p::GenericParameter) = p.value
 
 Base.getindex(p::AbstractParameter) = p.value
+Base.getindex(p::GenericParameter) = p.value
 
-"""
-Throw a helpful error for unimplemented interface methods.
+"""Check if a type is a valid parameter type."""
+function _is_parameter_type(ftype)
+    ftype <: AbstractParameter && return true
+    ftype <: TimeSeriesParameter && return true
+    ftype <: GenericParameter && return true
+    if ftype isa UnionAll
+        ftype <: AbstractParameter && return true
+        ftype <: TimeSeriesParameter && return true
+        ftype <: GenericParameter && return true
+    end
+    return false
+end
 
-Use this when defining fallback methods for interface functions.
-"""
+"""Throw a helpful error for unimplemented interface methods."""
 function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
     hint = isempty(signature) ? "" : ", $signature"
     throw(
@@ -115,14 +76,7 @@ function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
     )
 end
 
-"""
-Wraps time information passed to simulation callbacks.
-
-- `t`: 1-based index into time_axis
-- `val`: Actual time value (Int, Float64, Date, etc.)
-
-Use `is_first(ts)` and `is_last(ts, times)` helper methods to check position.
-"""
+"""Time information for callbacks: `t` (1-based index), `val` (actual time value)."""
 struct TimeStep{V}
     t::Int
     val::V
@@ -132,13 +86,7 @@ end
 # Action Interface
 # ============================================================================
 
-"""
-    get_action(policy::AbstractPolicy, state::AbstractState, t::TimeStep, scenario::AbstractScenario) -> Any
-
-Map state + scenario to action. Called by the framework before each `run_timestep`.
-
-Must be implemented for each policy type. Return value can be any type (AbstractAction optional).
-"""
+"""Map state + scenario to action. Called by framework before each `run_timestep`."""
 function get_action(
     p::AbstractPolicy, state::AbstractState, t::TimeStep, scenario::AbstractScenario
 )
@@ -149,7 +97,6 @@ function get_action(
     )
 end
 
-# Helper for validation - called at simulation start
 function _validate_time_axis(times)
     T = eltype(times)
     if T === Any
@@ -164,39 +111,21 @@ function _validate_time_axis(times)
 end
 
 # ============================================================================
-# Optimization Direction
+# Optimization
 # ============================================================================
 
 @enum OptimizationDirection Minimize Maximize
 
-# ============================================================================
-# Objective Definition
-# ============================================================================
-
-"""
-Specifies which metric to optimize and in which direction.
-
-# Fields
-- `name::Symbol`: The name of the metric (must be returned by metric_calculator)
-- `direction::OptimizationDirection`: Whether to minimize or maximize
-"""
+"""Specifies which metric to optimize and in which direction."""
 struct Objective
     name::Symbol
     direction::OptimizationDirection
 end
 
-"""
-    minimize(name::Symbol) -> Objective
-
-Create an objective that minimizes the named metric.
-"""
+"""Create an objective that minimizes the named metric."""
 minimize(name::Symbol) = Objective(name, Minimize)
 
-"""
-    maximize(name::Symbol) -> Objective
-
-Create an objective that maximizes the named metric.
-"""
+"""Create an objective that maximizes the named metric."""
 maximize(name::Symbol) = Objective(name, Maximize)
 
 # ============================================================================
@@ -205,14 +134,10 @@ maximize(name::Symbol) = Objective(name, Maximize)
 
 abstract type AbstractBatchSize end
 
-"""
-Use all scenarios in the training set for each evaluation.
-"""
+"""Use all scenarios for each evaluation."""
 struct FullBatch <: AbstractBatchSize end
 
-"""
-Use a fixed number of scenarios per evaluation.
-"""
+"""Use a fixed number of scenarios per evaluation."""
 struct FixedBatch <: AbstractBatchSize
     n::Int
 
@@ -222,9 +147,7 @@ struct FixedBatch <: AbstractBatchSize
     end
 end
 
-"""
-Use a fraction of the scenarios per evaluation.
-"""
+"""Use a fraction of scenarios per evaluation."""
 struct FractionBatch{T<:AbstractFloat} <: AbstractBatchSize
     fraction::T
 
@@ -235,26 +158,12 @@ struct FractionBatch{T<:AbstractFloat} <: AbstractBatchSize
 end
 
 # ============================================================================
-# Optimization Backend Abstract Type
+# Optimization Backend
 # ============================================================================
 
 abstract type AbstractOptimizationBackend end
 
-# ============================================================================
-# Metaheuristics Backend Configuration
-# ============================================================================
-
-"""
-Configuration for Metaheuristics.jl optimization backend.
-The actual optimization is implemented in the extension.
-
-# Fields
-- `algorithm::Symbol`: Algorithm name (e.g., :ECA, :DE, :PSO)
-- `max_iterations::Int`: Maximum number of iterations
-- `population_size::Int`: Population size for evolutionary algorithms
-- `parallel::Bool`: Enable parallel fitness evaluation (requires Julia threads)
-- `options::Dict{Symbol,Any}`: Additional algorithm-specific options
-"""
+"""Configuration for Metaheuristics.jl backend. Actual optimization in extension."""
 struct MetaheuristicsBackend <: AbstractOptimizationBackend
     algorithm::Symbol
     max_iterations::Int

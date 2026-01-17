@@ -47,11 +47,66 @@
         @test p2.levels == ["a", "b", "c"]
     end
 
-    @testset "TimeSeriesParameter value() and time_axis()" begin
+    @testset "TimeSeriesParameter" begin
+        # Construction with explicit time_axis
         ts = TimeSeriesParameter(2020:2022, [1.0, 2.0, 3.0])
-        @test value(ts) == [1.0, 2.0, 3.0]
-        @test value(ts) === ts.values  # same reference
+        @test length(ts) == 3
         @test time_axis(ts) == [2020, 2021, 2022]
-        @test time_axis(ts) === ts.time_axis  # same reference
+        @test time_axis(ts) === ts.time_axis
+        @test value(ts) == [1.0, 2.0, 3.0]
+        @test value(ts) === ts.values
+
+        # Integer indexing (by position)
+        @test ts[1] == 1.0
+        @test ts[2] == 2.0
+        @test ts[3] == 3.0
+
+        # TimeStep indexing (looks up t.val in time_axis)
+        @test ts[TimeStep(1, 2020)] == 1.0
+        @test ts[TimeStep(2, 2021)] == 2.0
+        @test ts[TimeStep(3, 2022)] == 3.0
+
+        # Bounds errors
+        @test_throws BoundsError ts[0]
+        @test_throws BoundsError ts[4]
+        @test_throws TimeSeriesParameterBoundsError ts[TimeStep(1, 2025)]
+
+        # Iteration
+        @test collect(ts) == [1.0, 2.0, 3.0]
+
+        # Empty not allowed
+        @test_throws ArgumentError TimeSeriesParameter(1:0, Float64[])
+
+        # Mismatched lengths not allowed
+        @test_throws ArgumentError TimeSeriesParameter(1:3, [1.0, 2.0])
+
+        # Values-only constructor (auto-generates 1:n time axis)
+        ts_auto = TimeSeriesParameter([10.0, 20.0, 30.0])
+        @test length(ts_auto) == 3
+        @test time_axis(ts_auto) == [1, 2, 3]
+        @test ts_auto[TimeStep(1, 1)] == 10.0
+        @test ts_auto[TimeStep(2, 2)] == 20.0
+
+        # Construction from range values
+        ts2 = TimeSeriesParameter(1:3, 1.0:3.0)
+        @test length(ts2) == 3
+        @test ts2[2] == 2.0
+    end
+
+    @testset "GenericParameter" begin
+        # Basic usage
+        p = GenericParameter("a string")
+        @test p.value == "a string"
+        @test value(p) == "a string"
+        @test p[] == "a string"
+
+        # With complex type
+        data = Dict(:a => 1, :b => 2)
+        p2 = GenericParameter(data)
+        @test value(p2) === data
+
+        # Type-parameterized
+        p3 = GenericParameter{Vector{Int}}([1, 2, 3])
+        @test p3.value == [1, 2, 3]
     end
 end

@@ -43,43 +43,17 @@ This is a classic decision under uncertainty:
 
 But what's "optimal" depends on assumptions about the uncertain future. Different assumptions lead to different recommendations.
 
-## What Makes This Interesting
-
-This problem has features common to many real-world decisions:
-
-1. **Multi-dimensional uncertainty**: Storm intensity, damage relationships, and discount rates are all uncertain
-2. **Irreversible decisions**: Once you elevate, you can't easily undo it
-3. **Long time horizons**: Benefits accrue over decades
-4. **Competing objectives**: Minimize upfront cost vs. minimize expected damages
-
-SimOptDecisions.jl helps you:
-
-- **Structure** the problem clearly (types for each concept)
-- **Simulate** outcomes under different scenarios
-- **Explore** how results vary across uncertainties
-- **Optimize** to find the best trade-offs
-
 ## Code Patterns You'll See
 
 Before diving into the code, here are a few Julia patterns the framework uses:
-
-### Parametric Types for Type Stability
-
-You'll see type definitions like `struct MyType{T<:AbstractFloat}`. The `T` is a **type parameter** that lets Julia specialize code for specific numeric types (Float64, Float32, etc.), enabling fast, allocation-free code.
-
-```julia
-struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::T
-end
-```
 
 ### Abstract Supertypes
 
 Types inherit from abstract types like `<:AbstractConfig`, `<:AbstractScenario`, `<:AbstractPolicy`, etc. This tells the framework how to handle your types—which callbacks to call and how to validate.
 
-### Parameter Types (for `explore()`)
+### Parameter Types
 
-For systematic exploration with `explore()`, fields use **parameter wrappers**:
+Scenario, Policy, and Outcome fields use **parameter wrappers**:
 
 | Type | Use Case |
 |------|----------|
@@ -87,8 +61,19 @@ For systematic exploration with `explore()`, fields use **parameter wrappers**:
 | `DiscreteParameter{T}` | Integer values with optional constraints |
 | `CategoricalParameter{T}` | Categorical values with defined levels |
 | `TimeSeriesParameter{T,I}` | Time-indexed data (e.g., sea level trajectories) |
+| `GenericParameter{T}` | Complex objects (skipped in flattening) |
 
 These enable automatic flattening for analysis, bounds derivation for optimization, and consistent visualization. Use `value(param)` to extract the underlying value.
+
+```julia
+struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
+    elevation_ft::ContinuousParameter{T}
+end
+
+# Access the value
+policy = ElevationPolicy(ContinuousParameter(5.0, (0.0, 14.0)))
+value(policy.elevation_ft)  # returns 5.0
+```
 
 ::: {.callout-note}
 ## When Are Parameter Types Required?

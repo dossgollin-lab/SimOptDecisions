@@ -131,7 +131,7 @@ function SimOptDecisions.simulate(
     action = CounterAction(policy.increment)
     record!(recorder, state, nothing, nothing, nothing)
 
-    for ts in SimOptDecisions.Utils.timeindex(1:config.n_steps)
+    for ts in timeindex(1:config.n_steps)
         state = CounterState(state.value + policy.increment)
         record!(recorder, state, (increment=policy.increment,), ts.val, action)
     end
@@ -166,7 +166,7 @@ function SimOptDecisions.simulate(
     action = SimTSCounterAction(policy.increment)
     record!(recorder, state, nothing, nothing, nothing)
 
-    for ts in SimOptDecisions.Utils.timeindex(1:10)
+    for ts in timeindex(1:10)
         state = SimTSCounterState(state.value + policy.increment)
         record!(recorder, state, (increment=policy.increment,), ts.val, action)
     end
@@ -191,7 +191,7 @@ function SimOptDecisions.simulate(
     rng::AbstractRNG,
 )
     value = 0
-    for ts in SimOptDecisions.Utils.timeindex(1:100)
+    for ts in timeindex(1:100)
         value += 1
         # Early termination condition
         if value >= 5
@@ -340,57 +340,35 @@ end
 
 @testset "Utils" begin
     @testset "discount_factor" begin
-        # Direct export (new in Section 4)
         @test discount_factor(0.0, 1) == 1.0
+        @test discount_factor(0.0, 10) == 1.0
         @test discount_factor(0.10, 1) ≈ 1 / 1.10
-
-        # Utils submodule (backward compatibility)
-        @test SimOptDecisions.Utils.discount_factor(0.0, 1) == 1.0
-        @test SimOptDecisions.Utils.discount_factor(0.0, 10) == 1.0
-
-        # 10% discount rate
-        @test SimOptDecisions.Utils.discount_factor(0.10, 1) ≈ 1 / 1.10
-        @test SimOptDecisions.Utils.discount_factor(0.10, 2) ≈ 1 / 1.10^2
-        @test SimOptDecisions.Utils.discount_factor(0.10, 10) ≈ 1 / 1.10^10
-
-        # 5% discount rate, year 0 should be 1.0
-        @test SimOptDecisions.Utils.discount_factor(0.05, 0) == 1.0
+        @test discount_factor(0.10, 2) ≈ 1 / 1.10^2
+        @test discount_factor(0.10, 10) ≈ 1 / 1.10^10
+        @test discount_factor(0.05, 0) == 1.0
     end
 
     @testset "timeindex" begin
-        # Direct export (new in Section 4)
-        times_direct = collect(timeindex(1:3))
-        @test length(times_direct) == 3
-        @test times_direct[1] == TimeStep(1, 1)
-
-        # Integer range
-        times = collect(SimOptDecisions.Utils.timeindex(1:5))
+        times = collect(timeindex(1:5))
         @test length(times) == 5
         @test times[1] == TimeStep(1, 1)
         @test times[5] == TimeStep(5, 5)
         @test all(ts -> ts.t == ts.val, times)
 
-        # Check is_first and is_last helper methods (direct export)
         @test is_first(times[1])
         @test all(ts -> !is_last(ts, 5), times[1:4])
         @test is_last(times[5], 5)
 
-        # Utils submodule (backward compatibility)
-        @test SimOptDecisions.Utils.is_first(times[1])
-        @test all(ts -> !SimOptDecisions.Utils.is_last(ts, 5), times[1:4])
-        @test SimOptDecisions.Utils.is_last(times[5], 5)
-
         # Non-1-based range
-        times2 = collect(SimOptDecisions.Utils.timeindex(2020:2025))
+        times2 = collect(timeindex(2020:2025))
         @test length(times2) == 6
         @test times2[1] == TimeStep(1, 2020)
         @test times2[6] == TimeStep(6, 2025)
 
         # Single element
-        times3 = collect(SimOptDecisions.Utils.timeindex(1:1))
+        times3 = collect(timeindex(1:1))
         @test length(times3) == 1
-        @test times3[1] == TimeStep(1, 1)
-        @test SimOptDecisions.Utils.is_first(times3[1])
-        @test SimOptDecisions.Utils.is_last(times3[1], 1)
+        @test is_first(times3[1])
+        @test is_last(times3[1], 1)
     end
 end
