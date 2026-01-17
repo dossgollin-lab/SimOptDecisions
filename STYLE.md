@@ -135,7 +135,7 @@ SimOptDecisions.jl/
 │   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
 │   ├── validation.jl         # _validate_* functions, constraints
 │   ├── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
-│   ├── utils.jl              # Utils submodule (discount_factor, timeindex)
+│   ├── utils.jl              # discount_factor, timeindex, is_first, is_last
 │   └── plotting.jl           # Plotting interface declarations
 ├── ext/
 │   ├── SimOptMetaheuristicsExt.jl

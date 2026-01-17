@@ -4,41 +4,22 @@ using TOML: TOML
 # Package Version
 # ============================================================================
 
-# Read version from Project.toml at module load time
 const _PROJECT_TOML = joinpath(@__DIR__, "..", "Project.toml")
 const PACKAGE_VERSION = let
-    if isfile(_PROJECT_TOML)
-        TOML.parsefile(_PROJECT_TOML)["version"]
-    else
-        "unknown"
-    end
+    isfile(_PROJECT_TOML) ? TOML.parsefile(_PROJECT_TOML)["version"] : "unknown"
 end
 
 # ============================================================================
 # Shared Parameters
 # ============================================================================
 
-"""
-Parameters that are constant across all scenarios and not subject to optimization.
-Examples: discount rate, planning horizon, physical constants.
-
-Wrap your parameters in a NamedTuple for type stability and easy access.
-
-# Example
-```julia
-sp = SharedParameters(discount_rate=0.03, horizon=50)
-sp.discount_rate  # 0.03
-sp.horizon        # 50
-```
-"""
+"""Parameters constant across scenarios, not subject to optimization (e.g., discount rate)."""
 struct SharedParameters{T<:NamedTuple}
     params::T
 end
 
-# Convenience constructor from keyword arguments
 SharedParameters(; kwargs...) = SharedParameters(NamedTuple(kwargs))
 
-# Allow direct field access
 function Base.getproperty(sp::SharedParameters, name::Symbol)
     return name === :params ? getfield(sp, :params) : getfield(sp, :params)[name]
 end
@@ -49,19 +30,7 @@ Base.propertynames(sp::SharedParameters) = propertynames(getfield(sp, :params))
 # Experiment Configuration
 # ============================================================================
 
-"""
-Complete configuration for a reproducible experiment.
-
-# Fields
-- `seed::Int`: Random seed for reproducibility
-- `timestamp::DateTime`: When the experiment was created
-- `git_commit::String`: Optional git commit hash (user-provided)
-- `package_versions::String`: Optional package version info (user-provided)
-- `scenarios::Vector{S}`: The scenarios used in this experiment
-- `scenario_source::String`: Description of how scenarios were generated
-- `shared::SharedParameters`: SharedParameters for the experiment
-- `backend::B`: Optimization backend configuration
-"""
+"""Complete configuration for a reproducible experiment."""
 struct ExperimentConfig{S<:AbstractScenario,B<:AbstractOptimizationBackend}
     seed::Int
     timestamp::DateTime
@@ -73,7 +42,6 @@ struct ExperimentConfig{S<:AbstractScenario,B<:AbstractOptimizationBackend}
     backend::B
 end
 
-# Convenience constructor with defaults
 function ExperimentConfig(
     seed::Int,
     scenarios::AbstractVector{<:AbstractScenario},
@@ -85,98 +53,39 @@ function ExperimentConfig(
     scenario_source::String="unspecified",
 )
     _validate_scenarios(scenarios)
-    return ExperimentConfig(
-        seed,
-        timestamp,
-        git_commit,
-        package_versions,
-        collect(scenarios),
-        scenario_source,
-        shared,
-        backend,
-    )
+    return ExperimentConfig(seed, timestamp, git_commit, package_versions, collect(scenarios), scenario_source, shared, backend)
 end
 
 # ============================================================================
 # Checkpoint Saving/Loading
 # ============================================================================
 
-"""
-    save_checkpoint(filename, prob, optimizer_state; metadata="")
-
-Save optimization state for crash recovery or later analysis.
-"""
-function save_checkpoint(
-    filename::AbstractString,
-    prob::OptimizationProblem,
-    optimizer_state;
-    metadata::String="",
-)
-    JLD2.jldsave(
-        filename;
-        problem=prob,
-        optimizer_state=optimizer_state,
-        metadata=metadata,
-        timestamp=Dates.now(),
-        version=PACKAGE_VERSION,
-    )
+"""Save optimization state for crash recovery."""
+function save_checkpoint(filename::AbstractString, prob::OptimizationProblem, optimizer_state; metadata::String="")
+    JLD2.jldsave(filename; problem=prob, optimizer_state=optimizer_state, metadata=metadata, timestamp=Dates.now(), version=PACKAGE_VERSION)
     return nothing
 end
 
-"""
-    load_checkpoint(filename) -> NamedTuple
-
-Load a previously saved checkpoint.
-Returns a NamedTuple with :problem, :optimizer_state, :metadata, :timestamp, :version
-"""
+"""Load a previously saved checkpoint."""
 function load_checkpoint(filename::AbstractString)
-    data = JLD2.jldopen(filename, "r") do file
-        (;
-            problem=file["problem"],
-            optimizer_state=file["optimizer_state"],
-            metadata=file["metadata"],
-            timestamp=file["timestamp"],
-            version=file["version"],
-        )
+    JLD2.jldopen(filename, "r") do file
+        (; problem=file["problem"], optimizer_state=file["optimizer_state"], metadata=file["metadata"], timestamp=file["timestamp"], version=file["version"])
     end
-    return data
 end
 
 # ============================================================================
 # Experiment Saving/Loading
 # ============================================================================
 
-"""
-    save_experiment(filename, config, result)
-
-Save complete experiment configuration and results.
-"""
-function save_experiment(
-    filename::AbstractString, config::ExperimentConfig, result::OptimizationResult
-)
-    JLD2.jldsave(
-        filename;
-        config=config,
-        result=result,
-        timestamp=Dates.now(),
-        version=PACKAGE_VERSION,
-    )
+"""Save complete experiment configuration and results."""
+function save_experiment(filename::AbstractString, config::ExperimentConfig, result::OptimizationResult)
+    JLD2.jldsave(filename; config=config, result=result, timestamp=Dates.now(), version=PACKAGE_VERSION)
     return nothing
 end
 
-"""
-    load_experiment(filename) -> NamedTuple
-
-Load a saved experiment.
-"""
+"""Load a saved experiment."""
 function load_experiment(filename::AbstractString)
-    data = JLD2.jldopen(filename, "r") do file
-        (;
-            config=file["config"],
-            result=file["result"],
-            timestamp=file["timestamp"],
-            version=file["version"],
-        )
+    JLD2.jldopen(filename, "r") do file
+        (; config=file["config"], result=file["result"], timestamp=file["timestamp"], version=file["version"])
     end
-    return data
 end

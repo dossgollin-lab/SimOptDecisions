@@ -79,42 +79,38 @@ result = simulate(MyConfig(10), MyScenario(0.05), MyPolicy())
 
 ## Exploratory Modeling
 
-For systematic analysis across policies and scenarios, use typed parameters and `explore()`:
+For systematic analysis across policies and scenarios, use the definition macros:
 
 ```julia
 using SimOptDecisions
 using DataFrames
 
-# Define types with parameter fields for exploration
-Base.@kwdef struct MyConfig <: AbstractConfig
-    horizon::Int = 50
+# Define types with parameter fields
+MyConfig = @configdef begin
+    horizon::Int
 end
 
-struct MyScenario{T} <: AbstractScenario
-    growth_rate::ContinuousParameter{T}
-    climate::CategoricalParameter{Symbol}
+MyScenario = @scenariodef begin
+    @continuous growth_rate
+    @categorical climate [:low, :high]
 end
 
-struct MyPolicy{T} <: AbstractPolicy
-    threshold::ContinuousParameter{T}
-end
-
-struct MyOutcome{T}
-    final_value::ContinuousParameter{T}
+MyPolicy = @policydef begin
+    @continuous threshold 0.0 1.0
 end
 
 # Create scenarios and policies
 scenarios = [
-    MyScenario(ContinuousParameter(r), CategoricalParameter(s, [:low, :high]))
+    MyScenario(
+        growth_rate=ContinuousParameter(r),
+        climate=CategoricalParameter(s, [:low, :high])
+    )
     for r in 0.01:0.01:0.10, s in [:low, :high]
 ]
-policies = [MyPolicy(ContinuousParameter(t)) for t in 0.1:0.1:0.5]
-
-# Create config
-config = MyConfig(horizon=50)
+policies = [MyPolicy(threshold=ContinuousParameter(t, (0.0, 1.0))) for t in 0.1:0.1:0.5]
 
 # Run all combinations
-result = explore(config, vec(scenarios), policies)
+result = explore(MyConfig(horizon=50), vec(scenarios), policies)
 
 # Analyze as DataFrame
 df = DataFrame(result)

@@ -2,31 +2,17 @@
 # Result Sinks for Exploratory Modeling
 # ============================================================================
 
-"""
-    AbstractResultSink
-
-Base type for sinks that collect or stream exploration results.
-
-Implement `record!(sink, row::NamedTuple)` to store results.
-"""
+"""Base type for sinks that collect or stream exploration results."""
 abstract type AbstractResultSink end
 
-"""
-    record!(sink::AbstractResultSink, row::NamedTuple)
-
-Record a single result row to the sink.
-"""
+"""Record a single result row to the sink."""
 function record! end
 
 # ============================================================================
-# NoSink - Zero overhead (used during optimization)
+# NoSink - Zero overhead
 # ============================================================================
 
-"""
-    NoSink()
-
-A no-op sink that discards all results. Used as default when results aren't needed.
-"""
+"""A no-op sink that discards all results."""
 struct NoSink <: AbstractResultSink end
 
 record!(::NoSink, row) = nothing
@@ -36,11 +22,7 @@ finalize(::NoSink, n_policies, n_scenarios) = nothing
 # InMemorySink - Collect results in memory
 # ============================================================================
 
-"""
-    InMemorySink()
-
-Collects exploration results in memory. Returns `ExplorationResult` on finalize.
-"""
+"""Collects exploration results in memory. Returns ExplorationResult on finalize."""
 mutable struct InMemorySink <: AbstractResultSink
     results::Vector{NamedTuple}
     InMemorySink() = new(NamedTuple[])
@@ -51,45 +33,18 @@ function record!(sink::InMemorySink, row::NamedTuple)
     return nothing
 end
 
-# finalize implemented in exploration.jl after ExplorationResult is defined
-
 # ============================================================================
 # File Sink Infrastructure
 # ============================================================================
 
-"""
-    AbstractFileSink <: AbstractResultSink
-
-Base type for sinks that write to files. Extensions implement specific formats.
-
-Required methods for subtypes:
-- `write_header!(sink, columns)` - Write column headers
-- `write_rows!(sink, rows)` - Write data rows
-- `close!(sink)` - Close file handle
-"""
+"""Base type for sinks that write to files."""
 abstract type AbstractFileSink <: AbstractResultSink end
 
-"""Interface method for writing header row."""
 function write_header! end
-
-"""Interface method for writing data rows."""
 function write_rows! end
-
-"""Interface method for closing file."""
 function close! end
 
-"""
-    StreamingSink(file_sink; flush_every=100)
-
-Wraps a file sink with buffered writes. Flushes to disk every `flush_every` rows.
-
-# Example
-```julia
-using CSV  # load extension
-sink = StreamingSink(CSVSink("results.csv"); flush_every=100)
-explore(config, scenarios, policies; sink=sink)
-```
-"""
+"""Wraps a file sink with buffered writes."""
 mutable struct StreamingSink{F<:AbstractFileSink} <: AbstractResultSink
     file_sink::F
     buffer::Vector{NamedTuple}
@@ -98,12 +53,10 @@ mutable struct StreamingSink{F<:AbstractFileSink} <: AbstractResultSink
     header_written::Bool
 end
 
-function StreamingSink(file_sink::F; flush_every::Int=100) where {F<:AbstractFileSink}
+StreamingSink(file_sink::F; flush_every::Int=100) where {F<:AbstractFileSink} =
     StreamingSink(file_sink, NamedTuple[], flush_every, 0, false)
-end
 
 function record!(sink::StreamingSink, row::NamedTuple)
-    # Write header on first row
     if !sink.header_written
         write_header!(sink.file_sink, keys(row))
         sink.header_written = true
@@ -112,9 +65,7 @@ function record!(sink::StreamingSink, row::NamedTuple)
     push!(sink.buffer, row)
     sink.count += 1
 
-    if sink.count >= sink.flush_every
-        _flush!(sink)
-    end
+    sink.count >= sink.flush_every && _flush!(sink)
     return nothing
 end
 
@@ -136,54 +87,16 @@ end
 # Extension Sink Factory Functions
 # ============================================================================
 
-"""
-    csv_sink(filepath::String)
-
-Create a CSV file sink for streaming exploration results.
-Requires `using CSV` to load the extension.
-
-# Example
-```julia
-using SimOptDecisions
-using CSV
-
-sink = StreamingSink(csv_sink("results.csv"); flush_every=100)
-explore(config, scenarios, policies; sink=sink)
-```
-"""
+"""Create a CSV file sink. Requires `using CSV`."""
 function csv_sink end
 
-# Fallback with helpful error - uses AbstractString so String (from extension) takes precedence
 function csv_sink(filepath::AbstractString)
-    error(
-        "csv_sink requires the CSV package. Add it with:\n" *
-        "  using CSV\n" *
-        "Then call: csv_sink(\"$filepath\")",
-    )
+    error("csv_sink requires the CSV package. Add: using CSV")
 end
 
-"""
-    netcdf_sink(filepath::String; flush_every=100)
-
-Create a NetCDF file sink for streaming exploration results.
-Requires `using NCDatasets` to load the extension.
-
-# Example
-```julia
-using SimOptDecisions
-using NCDatasets
-
-sink = netcdf_sink("results.nc"; flush_every=100)
-explore(config, scenarios, policies; sink=sink)
-```
-"""
+"""Create a NetCDF file sink. Requires `using NCDatasets`."""
 function netcdf_sink end
 
-# Fallback with helpful error - uses AbstractString so String (from extension) takes precedence
 function netcdf_sink(filepath::AbstractString; kwargs...)
-    error(
-        "netcdf_sink requires the NCDatasets package. Add it with:\n" *
-        "  using NCDatasets\n" *
-        "Then call: netcdf_sink(\"$filepath\")",
-    )
+    error("netcdf_sink requires the NCDatasets package. Add: using NCDatasets")
 end

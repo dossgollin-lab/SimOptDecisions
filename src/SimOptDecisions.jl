@@ -38,9 +38,8 @@ export simulate, simulate_traced, get_action
 # Callbacks (users implement these)
 export initialize, run_timestep, time_axis, compute_outcome
 
-# Utility functions (direct exports)
+# Utility functions
 export discount_factor, is_first, is_last, timeindex
-export Utils  # Keep submodule for backward compatibility
 
 # TimeSeriesParameter
 export TimeSeriesParameter, TimeSeriesParameterBoundsError

@@ -355,7 +355,7 @@ function SimOptDecisions.compute_outcome(
 )
     # Discount using scenario's discount rate
     npv = sum(
-        damages[t] * SimOptDecisions.Utils.discount_factor(scenario.discount_rate, t) for
+        damages[t] * discount_factor(scenario.discount_rate, t) for
         t in eachindex(damages)
     )
     return (npv_damages=npv, annual_damages=damages)
