@@ -86,16 +86,16 @@ using SimOptDecisions
 using DataFrames
 
 # Define types with parameter fields
-MyConfig = @configdef begin
+@configdef MyConfig begin
     horizon::Int
 end
 
-MyScenario = @scenariodef begin
+@scenariodef MyScenario begin
     @continuous growth_rate
     @categorical climate [:low, :high]
 end
 
-MyPolicy = @policydef begin
+@policydef MyPolicy begin
     @continuous threshold 0.0 1.0
 end
 

@@ -50,7 +50,7 @@ Each Scenario represents one possible future. Use `@scenariodef` with `@continuo
 
 ```{julia}
 #| output: false
-HouseElevationScenario = @scenariodef begin
+@scenariodef HouseElevationScenario begin
     @continuous gev_μ        # GEV location (ft)
     @continuous gev_σ        # GEV scale (ft)
     @continuous gev_ξ        # GEV shape
@@ -106,14 +106,12 @@ Use `@policydef` for policies. The `@continuous` macro with bounds enables autom
 
 ```{julia}
 #| output: false
-ElevationPolicy = @policydef begin
+@policydef ElevationPolicy begin
     @continuous elevation_ft 0.0 14.0
 end
 
 # Constructor from parameter vector (required for optimization)
-function ElevationPolicy(params::AbstractVector)
-    ElevationPolicy(elevation_ft = ContinuousParameter(params[1], (0.0, 14.0)))
-end
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(elevation_ft = ContinuousParameter(params[1], (0.0, 14.0)))
 ```
 
 ## Mapping Policy to Action

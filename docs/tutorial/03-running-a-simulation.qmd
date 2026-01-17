@@ -31,7 +31,7 @@ Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
 end
 
 # Scenario
-HouseElevationScenario = @scenariodef begin
+@scenariodef HouseElevationScenario begin
     @continuous gev_μ
     @continuous gev_σ
     @continuous gev_ξ
@@ -61,7 +61,7 @@ struct ElevationAction{T<:AbstractFloat} <: AbstractAction
 end
 
 # Policy
-ElevationPolicy = @policydef begin
+@policydef ElevationPolicy begin
     @continuous elevation_ft 0.0 14.0
 end
 

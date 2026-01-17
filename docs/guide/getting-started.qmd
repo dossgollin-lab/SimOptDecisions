@@ -51,7 +51,7 @@ struct MyConfig <: AbstractConfig
     horizon::Int
 end
 
-MyScenario = @scenariodef begin
+@scenariodef MyScenario begin
     @continuous growth_rate
 end
 
@@ -61,7 +61,7 @@ end
 
 struct MyAction <: AbstractAction end
 
-MyPolicy = @policydef begin
+@policydef MyPolicy begin
     @continuous threshold 0.0 10.0
 end
 
@@ -129,7 +129,7 @@ end
 **Scenario** holds uncertain parameters. Use `@scenariodef` with `@continuous`, `@discrete`, etc.:
 
 ```julia
-MyScenario = @scenariodef begin
+@scenariodef MyScenario begin
     @continuous growth_rate  # uncertain: could be 3%, 5%, 7%...
 end
 ```
@@ -151,7 +151,7 @@ struct MyAction <: AbstractAction end
 **Policy** defines how decisions are made. Use `@policydef` with bounds for optimization:
 
 ```julia
-MyPolicy = @policydef begin
+@policydef MyPolicy begin
     @continuous threshold 0.0 10.0  # tunable parameter with bounds
 end
 ```
@@ -198,8 +198,8 @@ end
 With `@policydef`, bounds are already defined. Just add a vector constructor:
 
 ```julia
-# Policy already defined with @policydef (bounds included)
-OptimizablePolicy = @policydef begin
+# Use named form to enable adding methods
+@policydef OptimizablePolicy begin
     @continuous threshold 0.0 10.0
 end
 

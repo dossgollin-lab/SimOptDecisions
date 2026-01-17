@@ -26,12 +26,12 @@ All explorable parameters use typed wrappers:
 Use macros to define types with typed parameter fields:
 
 ```julia
-MyScenario = @scenariodef begin
+@scenariodef MyScenario begin
     @continuous growth_rate
     @categorical climate [:low, :high]
 end
 
-MyPolicy = @policydef begin
+@policydef MyPolicy begin
     @continuous threshold 0.0 1.0
 end
 ```
