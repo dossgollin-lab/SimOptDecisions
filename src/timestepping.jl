@@ -21,7 +21,9 @@ struct TimeSeriesParameterBoundsError <: Exception
 end
 
 function Base.showerror(io::IO, e::TimeSeriesParameterBoundsError)
-    print(io, "TimeSeriesParameterBoundsError: time value $(e.requested) not in time_axis. ")
+    print(
+        io, "TimeSeriesParameterBoundsError: time value $(e.requested) not in time_axis. "
+    )
     if length(e.available) <= 10
         print(io, "Available: $(e.available)")
     else
@@ -34,18 +36,28 @@ struct TimeSeriesParameter{T<:AbstractFloat,I}
     time_axis::Vector{I}
     values::Vector{T}
 
-    function TimeSeriesParameter(time_axis::Vector{I}, values::Vector{T}) where {T<:AbstractFloat,I}
+    function TimeSeriesParameter(
+        time_axis::Vector{I}, values::Vector{T}
+    ) where {T<:AbstractFloat,I}
         isempty(values) && throw(ArgumentError("TimeSeriesParameter cannot be empty"))
-        length(time_axis) != length(values) && throw(ArgumentError(
-            "time_axis length ($(length(time_axis))) must match values length ($(length(values)))"
-        ))
+        length(time_axis) != length(values) && throw(
+            ArgumentError(
+                "time_axis length ($(length(time_axis))) must match values length ($(length(values)))",
+            ),
+        )
         new{T,I}(time_axis, values)
     end
 end
 
-TimeSeriesParameter(time_axis, values::Vector{T}) where {T<:AbstractFloat} = TimeSeriesParameter(collect(time_axis), values)
-TimeSeriesParameter(time_axis, values) = TimeSeriesParameter(collect(time_axis), collect(Float64, values))
-TimeSeriesParameter(values::Vector{T}) where {T<:AbstractFloat} = TimeSeriesParameter(collect(1:length(values)), values)
+function TimeSeriesParameter(time_axis, values::Vector{T}) where {T<:AbstractFloat}
+    TimeSeriesParameter(collect(time_axis), values)
+end
+function TimeSeriesParameter(time_axis, values)
+    TimeSeriesParameter(collect(time_axis), collect(Float64, values))
+end
+function TimeSeriesParameter(values::Vector{T}) where {T<:AbstractFloat}
+    TimeSeriesParameter(collect(1:length(values)), values)
+end
 TimeSeriesParameter(values) = TimeSeriesParameter(collect(Float64, values))
 
 function Base.getindex(ts::TimeSeriesParameter{T,I}, t::TimeStep) where {T,I}
@@ -93,14 +105,27 @@ function initialize(config::AbstractConfig, scenario::AbstractScenario, ::Abstra
 end
 
 function initialize(config::AbstractConfig, ::AbstractScenario)
-    interface_not_implemented(:initialize, typeof(config), "scenario::AbstractScenario[, rng::AbstractRNG]")
+    interface_not_implemented(
+        :initialize, typeof(config), "scenario::AbstractScenario[, rng::AbstractRNG]"
+    )
 end
 
 """Execute one timestep transition. Required callback."""
 function run_timestep end
 
-function run_timestep(state::AbstractState, action, t::TimeStep, config::AbstractConfig, scenario::AbstractScenario, rng::AbstractRNG)
-    interface_not_implemented(:run_timestep, typeof(config), "state::AbstractState, action, t::TimeStep, scenario::AbstractScenario, rng::AbstractRNG")
+function run_timestep(
+    state::AbstractState,
+    action,
+    t::TimeStep,
+    config::AbstractConfig,
+    scenario::AbstractScenario,
+    rng::AbstractRNG,
+)
+    interface_not_implemented(
+        :run_timestep,
+        typeof(config),
+        "state::AbstractState, action, t::TimeStep, scenario::AbstractScenario, rng::AbstractRNG",
+    )
 end
 
 """Return time points iterable with defined `length()`. Required callback."""
@@ -114,7 +139,9 @@ end
 function compute_outcome end
 
 function compute_outcome(step_records, config::AbstractConfig, ::AbstractScenario)
-    interface_not_implemented(:compute_outcome, typeof(config), "step_records::Vector, scenario::AbstractScenario")
+    interface_not_implemented(
+        :compute_outcome, typeof(config), "step_records::Vector, scenario::AbstractScenario"
+    )
 end
 
 # ============================================================================
@@ -122,7 +149,13 @@ end
 # ============================================================================
 
 """Run time-stepped simulation using callbacks. Called automatically by `simulate()`."""
-function run_simulation(config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy, recorder::AbstractRecorder, rng::AbstractRNG)
+function run_simulation(
+    config::AbstractConfig,
+    scenario::AbstractScenario,
+    policy::AbstractPolicy,
+    recorder::AbstractRecorder,
+    rng::AbstractRNG,
+)
     times = time_axis(config, scenario)
     _validate_time_axis(times)
     n = length(times)
@@ -134,7 +167,9 @@ function run_simulation(config::AbstractConfig, scenario::AbstractScenario, poli
     first_ts, rest = Iterators.peel(timesteps)
 
     first_action = get_action(policy, state, first_ts, scenario)
-    state, first_step_record = run_timestep(state, first_action, first_ts, config, scenario, rng)
+    state, first_step_record = run_timestep(
+        state, first_action, first_ts, config, scenario, rng
+    )
     record!(recorder, state, first_step_record, first_ts.val, first_action)
 
     step_records = Vector{typeof(first_step_record)}(undef, n)
@@ -150,11 +185,26 @@ function run_simulation(config::AbstractConfig, scenario::AbstractScenario, poli
     return compute_outcome(step_records, config, scenario)
 end
 
-run_simulation(config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy, rng::AbstractRNG) =
+function run_simulation(
+    config::AbstractConfig,
+    scenario::AbstractScenario,
+    policy::AbstractPolicy,
+    rng::AbstractRNG,
+)
     run_simulation(config, scenario, policy, NoRecorder(), rng)
+end
 
-run_simulation(config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy, recorder::AbstractRecorder) =
+function run_simulation(
+    config::AbstractConfig,
+    scenario::AbstractScenario,
+    policy::AbstractPolicy,
+    recorder::AbstractRecorder,
+)
     run_simulation(config, scenario, policy, recorder, default_rng())
+end
 
-run_simulation(config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy) =
+function run_simulation(
+    config::AbstractConfig, scenario::AbstractScenario, policy::AbstractPolicy
+)
     run_simulation(config, scenario, policy, NoRecorder(), default_rng())
+end

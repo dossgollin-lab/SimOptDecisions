@@ -53,7 +53,16 @@ function ExperimentConfig(
     scenario_source::String="unspecified",
 )
     _validate_scenarios(scenarios)
-    return ExperimentConfig(seed, timestamp, git_commit, package_versions, collect(scenarios), scenario_source, shared, backend)
+    return ExperimentConfig(
+        seed,
+        timestamp,
+        git_commit,
+        package_versions,
+        collect(scenarios),
+        scenario_source,
+        shared,
+        backend,
+    )
 end
 
 # ============================================================================
@@ -61,15 +70,33 @@ end
 # ============================================================================
 
 """Save optimization state for crash recovery."""
-function save_checkpoint(filename::AbstractString, prob::OptimizationProblem, optimizer_state; metadata::String="")
-    JLD2.jldsave(filename; problem=prob, optimizer_state=optimizer_state, metadata=metadata, timestamp=Dates.now(), version=PACKAGE_VERSION)
+function save_checkpoint(
+    filename::AbstractString,
+    prob::OptimizationProblem,
+    optimizer_state;
+    metadata::String="",
+)
+    JLD2.jldsave(
+        filename;
+        problem=prob,
+        optimizer_state=optimizer_state,
+        metadata=metadata,
+        timestamp=Dates.now(),
+        version=PACKAGE_VERSION,
+    )
     return nothing
 end
 
 """Load a previously saved checkpoint."""
 function load_checkpoint(filename::AbstractString)
     JLD2.jldopen(filename, "r") do file
-        (; problem=file["problem"], optimizer_state=file["optimizer_state"], metadata=file["metadata"], timestamp=file["timestamp"], version=file["version"])
+        (;
+            problem=file["problem"],
+            optimizer_state=file["optimizer_state"],
+            metadata=file["metadata"],
+            timestamp=file["timestamp"],
+            version=file["version"],
+        )
     end
 end
 
@@ -78,14 +105,27 @@ end
 # ============================================================================
 
 """Save complete experiment configuration and results."""
-function save_experiment(filename::AbstractString, config::ExperimentConfig, result::OptimizationResult)
-    JLD2.jldsave(filename; config=config, result=result, timestamp=Dates.now(), version=PACKAGE_VERSION)
+function save_experiment(
+    filename::AbstractString, config::ExperimentConfig, result::OptimizationResult
+)
+    JLD2.jldsave(
+        filename;
+        config=config,
+        result=result,
+        timestamp=Dates.now(),
+        version=PACKAGE_VERSION,
+    )
     return nothing
 end
 
 """Load a saved experiment."""
 function load_experiment(filename::AbstractString)
     JLD2.jldopen(filename, "r") do file
-        (; config=file["config"], result=file["result"], timestamp=file["timestamp"], version=file["version"])
+        (;
+            config=file["config"],
+            result=file["result"],
+            timestamp=file["timestamp"],
+            version=file["version"],
+        )
     end
 end

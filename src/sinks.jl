@@ -53,8 +53,9 @@ mutable struct StreamingSink{F<:AbstractFileSink} <: AbstractResultSink
     header_written::Bool
 end
 
-StreamingSink(file_sink::F; flush_every::Int=100) where {F<:AbstractFileSink} =
+function StreamingSink(file_sink::F; flush_every::Int=100) where {F<:AbstractFileSink}
     StreamingSink(file_sink, NamedTuple[], flush_every, 0, false)
+end
 
 function record!(sink::StreamingSink, row::NamedTuple)
     if !sink.header_written

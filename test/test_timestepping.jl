@@ -29,7 +29,10 @@ function SimOptDecisions.initialize(::TSCounterConfig, ::TSCounterScenario, ::Ab
 end
 
 function SimOptDecisions.get_action(
-    policy::TSIncrementPolicy, state::TSCounterState, t::TimeStep, scenario::TSCounterScenario
+    policy::TSIncrementPolicy,
+    state::TSCounterState,
+    t::TimeStep,
+    scenario::TSCounterScenario,
 )
     return TSCounterAction(policy.increment)
 end
@@ -279,7 +282,9 @@ function SimOptDecisions.initialize(::TSTypeConfig, ::TSTypeScenario, ::Abstract
     return TSTypeState(0.0)
 end
 
-function SimOptDecisions.get_action(::TSTypePolicy, ::TSTypeState, ::TimeStep, ::TSTypeScenario)
+function SimOptDecisions.get_action(
+    ::TSTypePolicy, ::TSTypeState, ::TimeStep, ::TSTypeScenario
+)
     return TSTypeAction()
 end
 
@@ -299,7 +304,9 @@ function SimOptDecisions.time_axis(::TSTypeConfig, ::TSTypeScenario)
     return 1:5
 end
 
-function SimOptDecisions.compute_outcome(step_records::Vector, ::TSTypeConfig, ::TSTypeScenario)
+function SimOptDecisions.compute_outcome(
+    step_records::Vector, ::TSTypeConfig, ::TSTypeScenario
+)
     return (
         final=step_records[end].final_value, sum=sum(r.prev_value for r in step_records)
     )
@@ -350,8 +357,7 @@ function SimOptDecisions.compute_outcome(
 )
     # Discount using scenario's discount rate
     npv = sum(
-        damages[t] * discount_factor(scenario.discount_rate, t) for
-        t in eachindex(damages)
+        damages[t] * discount_factor(scenario.discount_rate, t) for t in eachindex(damages)
     )
     return (npv_damages=npv, annual_damages=damages)
 end

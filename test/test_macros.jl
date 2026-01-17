@@ -45,7 +45,8 @@
         @test fieldtype(TestConfig1, :horizon) == DiscreteParameter{Int}
 
         c = TestConfig1(
-            horizon=DiscreteParameter(50), num_samples=DiscreteParameter(500, [100, 500, 1000])
+            horizon=DiscreteParameter(50),
+            num_samples=DiscreteParameter(500, [100, 500, 1000]),
         )
         @test value(c.horizon) == 50
     end

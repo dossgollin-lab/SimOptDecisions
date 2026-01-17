@@ -24,15 +24,19 @@ function param_bounds(policy::AbstractPolicy)
         if field isa ContinuousParameter
             push!(bounds, (Float64(field.bounds[1]), Float64(field.bounds[2])))
         elseif field isa DiscreteParameter
-            throw(ArgumentError(
-                "Field :$fname is DiscreteParameter. " *
-                "Optimization backends like Metaheuristics only support continuous parameters."
-            ))
+            throw(
+                ArgumentError(
+                    "Field :$fname is DiscreteParameter. " *
+                    "Optimization backends like Metaheuristics only support continuous parameters.",
+                ),
+            )
         elseif field isa CategoricalParameter
-            throw(ArgumentError(
-                "Field :$fname is CategoricalParameter. " *
-                "Optimization backends like Metaheuristics only support continuous parameters."
-            ))
+            throw(
+                ArgumentError(
+                    "Field :$fname is CategoricalParameter. " *
+                    "Optimization backends like Metaheuristics only support continuous parameters.",
+                ),
+            )
         end
     end
 
@@ -69,7 +73,9 @@ struct OptimizationResult{T<:AbstractFloat}
 end
 
 """Iterate over the Pareto front (params, objectives) pairs."""
-pareto_front(result::OptimizationResult) = zip(result.pareto_params, result.pareto_objectives)
+function pareto_front(result::OptimizationResult)
+    zip(result.pareto_params, result.pareto_objectives)
+end
 
 """Return true if solution `a` dominates solution `b` (minimization assumed)."""
 function dominates(a::AbstractVector, b::AbstractVector)
@@ -120,9 +126,19 @@ function OptimizationProblem(
     scenarios_vec = collect(scenarios)
     obj_vec = collect(objectives)
     const_vec = collect(constraints)
-    bounds_vec = bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
+    bounds_vec =
+        bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
 
-    return OptimizationProblem(config, scenarios_vec, policy_type, metric_calculator, obj_vec, batch_size, const_vec, bounds_vec)
+    return OptimizationProblem(
+        config,
+        scenarios_vec,
+        policy_type,
+        metric_calculator,
+        obj_vec,
+        batch_size,
+        const_vec,
+        bounds_vec,
+    )
 end
 
 function OptimizationProblem(
@@ -139,14 +155,25 @@ function OptimizationProblem(
     for obj in objectives
         if obj.name ∉ metric_names
             available = join(sort(collect(metric_names)), ", ")
-            throw(ArgumentError(
-                "Objective references :$(obj.name) but no metric produces it. Available: $available"
-            ))
+            throw(
+                ArgumentError(
+                    "Objective references :$(obj.name) but no metric produces it. Available: $available",
+                ),
+            )
         end
     end
 
     metric_func = outcomes -> compute_metrics(metrics, outcomes)
-    return OptimizationProblem(config, scenarios, policy_type, metric_func, objectives; batch_size, constraints, bounds)
+    return OptimizationProblem(
+        config,
+        scenarios,
+        policy_type,
+        metric_func,
+        objectives;
+        batch_size,
+        constraints,
+        bounds,
+    )
 end
 
 # ============================================================================
@@ -155,12 +182,16 @@ end
 
 _select_batch(scenarios::Vector{S}, ::FullBatch, ::AbstractRNG) where {S} = scenarios
 
-function _select_batch(scenarios::Vector{S}, batch_size::FixedBatch, rng::AbstractRNG) where {S}
+function _select_batch(
+    scenarios::Vector{S}, batch_size::FixedBatch, rng::AbstractRNG
+) where {S}
     indices = randperm(rng, length(scenarios))[1:(batch_size.n)]
     return scenarios[indices]
 end
 
-function _select_batch(scenarios::Vector{S}, batch_size::FractionBatch, rng::AbstractRNG) where {S}
+function _select_batch(
+    scenarios::Vector{S}, batch_size::FractionBatch, rng::AbstractRNG
+) where {S}
     n = max(1, round(Int, length(scenarios) * batch_size.fraction))
     indices = randperm(rng, length(scenarios))[1:n]
     return scenarios[indices]
@@ -171,14 +202,17 @@ end
 # ============================================================================
 
 """Evaluate a policy across all (or a batch of) scenarios and return aggregated metrics."""
-function evaluate_policy(prob::OptimizationProblem, policy::AbstractPolicy, rng::AbstractRNG)
+function evaluate_policy(
+    prob::OptimizationProblem, policy::AbstractPolicy, rng::AbstractRNG
+)
     batch_scenarios = _select_batch(prob.scenarios, prob.batch_size, rng)
     outcomes = map(s -> simulate(prob.config, s, policy, rng), batch_scenarios)
     return prob.metric_calculator(outcomes)
 end
 
-evaluate_policy(prob::OptimizationProblem, policy::AbstractPolicy; seed::Int=1234) =
+function evaluate_policy(prob::OptimizationProblem, policy::AbstractPolicy; seed::Int=1234)
     evaluate_policy(prob, policy, Random.Xoshiro(seed))
+end
 
 # ============================================================================
 # Objective Extraction
@@ -187,9 +221,11 @@ evaluate_policy(prob::OptimizationProblem, policy::AbstractPolicy; seed::Int=123
 """Extract objective values from metrics, applying direction (negate for maximize)."""
 function _extract_objectives(metrics::NamedTuple, objectives::Vector{Objective})
     return map(objectives) do obj
-        haskey(metrics, obj.name) || throw(ArgumentError(
-            "Metric calculator did not return :$(obj.name). Available: $(keys(metrics))"
-        ))
+        haskey(metrics, obj.name) || throw(
+            ArgumentError(
+                "Metric calculator did not return :$(obj.name). Available: $(keys(metrics))",
+            ),
+        )
         val = Float64(metrics[obj.name])
         obj.direction == Maximize ? -val : val
     end
@@ -200,7 +236,12 @@ end
 # ============================================================================
 
 """Evaluate a policy and merge it into the result's Pareto front if non-dominated."""
-function merge_into_pareto!(result::OptimizationResult{T}, prob::OptimizationProblem, policy::AbstractPolicy; seed::Int=42) where {T}
+function merge_into_pareto!(
+    result::OptimizationResult{T},
+    prob::OptimizationProblem,
+    policy::AbstractPolicy;
+    seed::Int=42,
+) where {T}
     metrics = evaluate_policy(prob, policy; seed=seed)
 
     objectives = Vector{T}(undef, length(prob.objectives))
@@ -209,7 +250,10 @@ function merge_into_pareto!(result::OptimizationResult{T}, prob::OptimizationPro
     end
 
     function to_min_space(objs)
-        return [prob.objectives[i].direction == Maximize ? -objs[i] : objs[i] for i in eachindex(objs)]
+        return [
+            prob.objectives[i].direction == Maximize ? -objs[i] : objs[i] for
+            i in eachindex(objs)
+        ]
     end
 
     new_min = to_min_space(objectives)
@@ -253,5 +297,7 @@ end
 function optimize_backend end
 
 function optimize_backend(::OptimizationProblem, backend::AbstractOptimizationBackend)
-    error("No optimize_backend method for $(typeof(backend)). Run `using Metaheuristics` first.")
+    error(
+        "No optimize_backend method for $(typeof(backend)). Run `using Metaheuristics` first.",
+    )
 end

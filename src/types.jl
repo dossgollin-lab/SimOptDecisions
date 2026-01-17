@@ -18,7 +18,9 @@ struct ContinuousParameter{T<:AbstractFloat} <: AbstractParameter{T}
     value::T
     bounds::Tuple{T,T}
 end
-ContinuousParameter(value::T) where {T<:AbstractFloat} = ContinuousParameter(value, (T(-Inf), T(Inf)))
+function ContinuousParameter(value::T) where {T<:AbstractFloat}
+    ContinuousParameter(value, (T(-Inf), T(Inf)))
+end
 
 """Integer parameter with optional valid values constraint."""
 struct DiscreteParameter{T<:Integer} <: AbstractParameter{T}
@@ -66,10 +68,12 @@ end
 """Throw a helpful error for unimplemented interface methods."""
 function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
     hint = isempty(signature) ? "" : ", $signature"
-    throw(ArgumentError(
-        "Interface method `$fn` not implemented for $T.\n" *
-        "Add: `SimOptDecisions.$fn(::$T$hint) = ...`"
-    ))
+    throw(
+        ArgumentError(
+            "Interface method `$fn` not implemented for $T.\n" *
+            "Add: `SimOptDecisions.$fn(::$T$hint) = ...`",
+        ),
+    )
 end
 
 """Time information for callbacks: `t` (1-based index), `val` (actual time value)."""
@@ -83,17 +87,25 @@ end
 # ============================================================================
 
 """Map state + scenario to action. Called by framework before each `run_timestep`."""
-function get_action(p::AbstractPolicy, state::AbstractState, t::TimeStep, scenario::AbstractScenario)
-    interface_not_implemented(:get_action, typeof(p), "state::AbstractState, t::TimeStep, scenario::AbstractScenario")
+function get_action(
+    p::AbstractPolicy, state::AbstractState, t::TimeStep, scenario::AbstractScenario
+)
+    interface_not_implemented(
+        :get_action,
+        typeof(p),
+        "state::AbstractState, t::TimeStep, scenario::AbstractScenario",
+    )
 end
 
 function _validate_time_axis(times)
     T = eltype(times)
     if T === Any
-        throw(ArgumentError(
-            "time_axis must return a homogeneously-typed collection. " *
-            "Got eltype=Any. Use a concrete type like Vector{Int} or StepRange{Date}."
-        ))
+        throw(
+            ArgumentError(
+                "time_axis must return a homogeneously-typed collection. " *
+                "Got eltype=Any. Use a concrete type like Vector{Int} or StepRange{Date}.",
+            ),
+        )
     end
     return nothing
 end

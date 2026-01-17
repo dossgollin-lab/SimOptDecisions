@@ -56,16 +56,22 @@ end
 # Metric Computation
 # ============================================================================
 
-compute_metric(m::ExpectedValue, outcomes) = m.name => mean(getfield(o, m.field) for o in outcomes)
+function compute_metric(m::ExpectedValue, outcomes)
+    m.name => mean(getfield(o, m.field) for o in outcomes)
+end
 compute_metric(m::Probability, outcomes) = m.name => mean(m.predicate(o) for o in outcomes)
-compute_metric(m::Variance, outcomes) = m.name => var([getfield(o, m.field) for o in outcomes])
+function compute_metric(m::Variance, outcomes)
+    m.name => var([getfield(o, m.field) for o in outcomes])
+end
 
 function compute_metric(m::MeanAndVariance, outcomes)
     values = [getfield(o, m.field) for o in outcomes]
     return [m.mean_name => mean(values), m.var_name => var(values)]
 end
 
-compute_metric(m::Quantile, outcomes) = m.name => quantile([getfield(o, m.field) for o in outcomes], m.q)
+function compute_metric(m::Quantile, outcomes)
+    m.name => quantile([getfield(o, m.field) for o in outcomes], m.q)
+end
 compute_metric(m::CustomMetric, outcomes) = m.name => m.func(outcomes)
 
 """Compute all metrics and return as a NamedTuple."""

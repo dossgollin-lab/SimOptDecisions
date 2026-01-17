@@ -66,7 +66,9 @@ function _flatten_to_namedtuple(obj, prefix::Symbol)
     return NamedTuple{tuple(keys(result)...)}(values(result))
 end
 
-_format_field_error(T, fname, ftype) = "Field `$fname::$ftype` in `$T` is not a parameter type."
+function _format_field_error(T, fname, ftype)
+    "Field `$fname::$ftype` in `$T` is not a parameter type."
+end
 
 # ============================================================================
 # Validation
@@ -80,14 +82,16 @@ function _validate_exploratory_interface(::Type{S}, ::Type{P}, ::Type{O}) where 
     _collect_field_errors!(errors, O, "Outcome")
 
     if !isempty(errors)
-        throw(ExploratoryInterfaceError(
-            "Cannot use `explore()` with current types:\n\n" *
-            join(errors, "\n") *
-            "\n\n" *
-            "All fields must be: ContinuousParameter, DiscreteParameter, " *
-            "CategoricalParameter, TimeSeriesParameter, or GenericParameter.\n\n" *
-            "Note: `simulate()` and `evaluate_policy()` still work without this."
-        ))
+        throw(
+            ExploratoryInterfaceError(
+                "Cannot use `explore()` with current types:\n\n" *
+                join(errors, "\n") *
+                "\n\n" *
+                "All fields must be: ContinuousParameter, DiscreteParameter, " *
+                "CategoricalParameter, TimeSeriesParameter, or GenericParameter.\n\n" *
+                "Note: `simulate()` and `evaluate_policy()` still work without this.",
+            ),
+        )
     end
 end
 
@@ -113,15 +117,23 @@ end
 
 function ExplorationResult(rows::Vector{NamedTuple}, n_policies::Int, n_scenarios::Int)
     if isempty(rows)
-        return ExplorationResult(rows, n_policies, n_scenarios, Symbol[], Symbol[], Symbol[])
+        return ExplorationResult(
+            rows, n_policies, n_scenarios, Symbol[], Symbol[], Symbol[]
+        )
     end
 
     all_cols = collect(keys(first(rows)))
-    policy_cols = filter(c -> startswith(String(c), "policy_") && c != :policy_idx, all_cols)
-    scenario_cols = filter(c -> startswith(String(c), "scenario_") && c != :scenario_idx, all_cols)
+    policy_cols = filter(
+        c -> startswith(String(c), "policy_") && c != :policy_idx, all_cols
+    )
+    scenario_cols = filter(
+        c -> startswith(String(c), "scenario_") && c != :scenario_idx, all_cols
+    )
     outcome_cols = filter(c -> startswith(String(c), "outcome_"), all_cols)
 
-    ExplorationResult(rows, n_policies, n_scenarios, policy_cols, scenario_cols, outcome_cols)
+    ExplorationResult(
+        rows, n_policies, n_scenarios, policy_cols, scenario_cols, outcome_cols
+    )
 end
 
 function Base.getindex(r::ExplorationResult, p::Int, s::Int)
@@ -157,7 +169,14 @@ outcomes_for_scenario(r::ExplorationResult, s::Int) = [r[p, s] for p in 1:r.n_po
 
 function Base.filter(f, r::ExplorationResult)
     filtered = filter(f, r.rows)
-    ExplorationResult(filtered, r.n_policies, r.n_scenarios, r.policy_columns, r.scenario_columns, r.outcome_columns)
+    ExplorationResult(
+        filtered,
+        r.n_policies,
+        r.n_scenarios,
+        r.policy_columns,
+        r.scenario_columns,
+        r.outcome_columns,
+    )
 end
 
 function finalize(sink::InMemorySink, n_policies::Int, n_scenarios::Int)
@@ -185,7 +204,9 @@ function explore(
     isempty(policies) && throw(ArgumentError("policies cannot be empty"))
 
     first_outcome = simulate(config, first(scenarios), first(policies), rng)
-    _validate_exploratory_interface(eltype(scenarios), eltype(policies), typeof(first_outcome))
+    _validate_exploratory_interface(
+        eltype(scenarios), eltype(policies), typeof(first_outcome)
+    )
 
     n_policies = length(policies)
     n_scenarios = length(scenarios)
@@ -217,11 +238,21 @@ function explore(
     return finalize(sink, n_policies, n_scenarios)
 end
 
-explore(config::AbstractConfig, scenarios::AbstractVector{<:AbstractScenario}, policy::AbstractPolicy; kwargs...) =
+function explore(
+    config::AbstractConfig,
+    scenarios::AbstractVector{<:AbstractScenario},
+    policy::AbstractPolicy;
+    kwargs...,
+)
     explore(config, scenarios, [policy]; kwargs...)
+end
 
-explore(prob::OptimizationProblem, policies::AbstractVector{<:AbstractPolicy}; kwargs...) =
+function explore(
+    prob::OptimizationProblem, policies::AbstractVector{<:AbstractPolicy}; kwargs...
+)
     explore(prob.config, prob.scenarios, policies; kwargs...)
+end
 
-explore(prob::OptimizationProblem, policy::AbstractPolicy; kwargs...) =
+function explore(prob::OptimizationProblem, policy::AbstractPolicy; kwargs...)
     explore(prob.config, prob.scenarios, [policy]; kwargs...)
+end
