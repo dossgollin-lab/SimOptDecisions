@@ -46,21 +46,11 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
     body.head === :block || throw(ArgumentError("Expected begin...end block"))
 
     fields = Expr[]
-    has_generic = false
-    generic_fields = Symbol[]
-
     for expr in body.args
         expr isa LineNumberNode && continue
-
         if expr isa Expr && expr.head === :macrocall
-            field_expr, _, is_generic = _parse_field_macro(expr, mod)
-            if field_expr !== nothing
-                push!(fields, field_expr)
-                if is_generic
-                    has_generic = true
-                    push!(generic_fields, field_expr.args[1])
-                end
-            end
+            field_expr, _, _ = _parse_field_macro(expr, mod)
+            field_expr !== nothing && push!(fields, field_expr)
         elseif expr isa Expr && expr.head === :(::)
             push!(fields, expr)
         end
@@ -68,19 +58,9 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
 
     isempty(fields) && throw(ArgumentError("No fields defined in block"))
 
-    warning_expr = if has_generic
-        field_names = join(generic_fields, ", ")
-        quote
-            @warn "GenericParameter fields ($($field_names)) will be skipped in explore/flatten"
-        end
-    else
-        :()
-    end
-
     struct_expr = if name === nothing
         gensym_name = gensym("DefType")
         quote
-            $warning_expr
             Base.@kwdef struct $gensym_name <: SimOptDecisions.$supertype
                 $(fields...)
             end
@@ -88,7 +68,6 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
         end
     else
         quote
-            $warning_expr
             Base.@kwdef struct $name <: SimOptDecisions.$supertype
                 $(fields...)
             end

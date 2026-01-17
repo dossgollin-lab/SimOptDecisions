@@ -75,8 +75,7 @@
         @test fieldtype(TestScenario2, :demand) == TimeSeriesParameter{Float64,Int}
     end
 
-    @testset "GenericParameter with warning" begin
-        # This should emit a warning about GenericParameter
+    @testset "GenericParameter" begin
         TestScenario3 = @scenariodef begin
             @continuous x
             @generic model
