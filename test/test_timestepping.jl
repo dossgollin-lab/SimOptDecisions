@@ -579,12 +579,12 @@ end
         # Mismatched lengths not allowed
         @test_throws ArgumentError TimeSeriesParameter(1:3, [1.0, 2.0])
 
-        # Legacy constructor (integer-indexed 1:n)
-        ts_legacy = TimeSeriesParameter([10.0, 20.0, 30.0])
-        @test length(ts_legacy) == 3
-        @test time_axis(ts_legacy) == [1, 2, 3]
-        @test ts_legacy[TimeStep(1, 1)] == 10.0
-        @test ts_legacy[TimeStep(2, 2)] == 20.0
+        # Values-only constructor (auto-generates 1:n time axis)
+        ts_auto = TimeSeriesParameter([10.0, 20.0, 30.0])
+        @test length(ts_auto) == 3
+        @test time_axis(ts_auto) == [1, 2, 3]
+        @test ts_auto[TimeStep(1, 1)] == 10.0
+        @test ts_auto[TimeStep(2, 2)] == 20.0
 
         # Construction from range values
         ts2 = TimeSeriesParameter(1:3, 1.0:3.0)
