@@ -50,6 +50,19 @@ end
 Base.getindex(p::AbstractParameter) = p.value
 Base.getindex(p::GenericParameter) = p.value
 
+"""Check if a type is a valid parameter type."""
+function _is_parameter_type(ftype)
+    ftype <: AbstractParameter && return true
+    ftype <: TimeSeriesParameter && return true
+    ftype <: GenericParameter && return true
+    if ftype isa UnionAll
+        ftype <: AbstractParameter && return true
+        ftype <: TimeSeriesParameter && return true
+        ftype <: GenericParameter && return true
+    end
+    return false
+end
+
 """Throw a helpful error for unimplemented interface methods."""
 function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
     hint = isempty(signature) ? "" : ", $signature"

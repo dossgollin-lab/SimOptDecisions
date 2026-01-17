@@ -66,23 +66,7 @@ function _flatten_to_namedtuple(obj, prefix::Symbol)
     return NamedTuple{tuple(keys(result)...)}(values(result))
 end
 
-function _format_field_error(T, fname, ftype)
-    """
-Cannot flatten `$T` for exploratory analysis.
-
-Problem: Field `$fname` has type `$ftype`, which is not a parameter type.
-
-All fields must be one of:
-  - ContinuousParameter{T}  -- continuous real values
-  - DiscreteParameter{T}    -- integer values
-  - CategoricalParameter{T} -- categorical/enum values
-  - TimeSeriesParameter{T}  -- time series data
-  - GenericParameter{T}     -- complex objects (skipped in flattening)
-
-Note: `simulate()` and `evaluate_policy()` work without this requirement.
-Only `explore()` requires parameter types for structured output.
-"""
-end
+_format_field_error(T, fname, ftype) = "Field `$fname::$ftype` in `$T` is not a parameter type."
 
 # ============================================================================
 # Validation
@@ -109,13 +93,7 @@ end
 
 function _collect_field_errors!(errors, T, label)
     for (fname, ftype) in zip(fieldnames(T), fieldtypes(T))
-        is_param = ftype <: AbstractParameter || ftype <: TimeSeriesParameter || ftype <: GenericParameter
-        if !is_param && ftype isa UnionAll
-            is_param = ftype <: AbstractParameter || ftype <: TimeSeriesParameter || ftype <: GenericParameter
-        end
-        if !is_param
-            push!(errors, "  - $label.$fname :: $ftype")
-        end
+        _is_parameter_type(ftype) || push!(errors, "  - $label.$fname :: $ftype")
     end
 end
 
@@ -176,8 +154,6 @@ outcomes_for_policy(r::ExplorationResult, p::Int) = [r[p, s] for s in 1:r.n_scen
 
 """Get all outcomes for a specific scenario across all policies."""
 outcomes_for_scenario(r::ExplorationResult, s::Int) = [r[p, s] for p in 1:r.n_policies]
-
-const outcomes_for_sow = outcomes_for_scenario
 
 function Base.filter(f, r::ExplorationResult)
     filtered = filter(f, r.rows)

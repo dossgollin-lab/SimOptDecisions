@@ -9,21 +9,6 @@ end
 
 Base.showerror(io::IO, e::ParameterTypeError) = print(io, e.msg)
 
-"""Check if a field type is a valid parameter type."""
-function _is_parameter_type(ftype)
-    ftype <: AbstractParameter && return true
-    ftype <: TimeSeriesParameter && return true
-    ftype <: GenericParameter && return true
-
-    if ftype isa UnionAll
-        ftype <: AbstractParameter && return true
-        ftype <: TimeSeriesParameter && return true
-        ftype <: GenericParameter && return true
-    end
-
-    return false
-end
-
 const _VALIDATED_TYPES = Set{Type}()
 
 """Validate that all fields in type T are parameter types."""

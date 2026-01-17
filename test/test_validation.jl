@@ -1,6 +1,6 @@
-# Test types for "SOW validation"
-struct OptTestSOW1 <: AbstractScenario end
-struct OptTestSOW2 <: AbstractScenario end
+# Test types for "Scenario validation"
+struct OptTestScenario1 <: AbstractScenario end
+struct OptTestScenario2 <: AbstractScenario end
 
 # Test types for "Policy interface validation"
 struct BadOptPolicy <: AbstractPolicy end
@@ -28,12 +28,12 @@ struct ValidatablePolicy <: AbstractPolicy end
 # ============================================================================
 
 @testset "Validation" begin
-    @testset "SOW validation" begin
-        @test SimOptDecisions._validate_scenarios([OptTestSOW1(), OptTestSOW1()]) ===
+    @testset "Scenario validation" begin
+        @test SimOptDecisions._validate_scenarios([OptTestScenario1(), OptTestScenario1()]) ===
             nothing
         @test_throws ArgumentError SimOptDecisions._validate_scenarios([])
         @test_throws ArgumentError SimOptDecisions._validate_scenarios([
-            OptTestSOW1(), OptTestSOW2()
+            OptTestScenario1(), OptTestScenario2()
         ])
     end
 
