@@ -1,6 +1,7 @@
 module SimOptMakieExt
 
 using SimOptDecisions
+using YAXArrays
 
 import SimOptDecisions:
     plot_trace,
@@ -12,7 +13,6 @@ import SimOptDecisions:
     to_scalars,
     SimulationTrace,
     OptimizationResult,
-    ExplorationResult,
     AbstractState
 
 using Makie: Figure, Axis, Colorbar, lines!, scatter!, heatmap!, axislegend
@@ -176,33 +176,27 @@ function SimOptDecisions.plot_parallel(
 end
 
 # ============================================================================
-# Exploration Plotting Implementations
+# Exploration Plotting Implementations (YAXArray Dataset)
 # ============================================================================
 
-"""Plot exploration results as heatmap."""
+"""Plot exploration results as heatmap from YAXArray Dataset."""
 function SimOptDecisions.plot_exploration(
-    result::ExplorationResult;
+    result::Dataset;
     outcome_field::Symbol,
     policy_param::Union{Symbol,Nothing}=nothing,
-    sow_param::Union{Symbol,Nothing}=nothing,
+    scenario_param::Union{Symbol,Nothing}=nothing,
     figure_kwargs::NamedTuple=NamedTuple(),
     axis_kwargs::NamedTuple=NamedTuple(),
     heatmap_kwargs::NamedTuple=NamedTuple(),
 )
-    # Find the outcome column (with or without prefix)
-    outcome_col = Symbol(:outcome_, outcome_field)
-    first_row = first(result.rows)
-    if outcome_col ∉ keys(first_row)
-        # Try without prefix
-        if outcome_field ∈ keys(first_row)
-            outcome_col = outcome_field
-        else
-            error("Outcome field `$outcome_field` not found. Available: $(keys(first_row))")
-        end
+    if outcome_field ∉ keys(result.cubes)
+        error("Outcome field `$outcome_field` not found. Available: $(keys(result.cubes))")
     end
 
-    n_p, n_s = size(result)
-    values = [Float64(result[p, s][outcome_col]) for p in 1:n_p, s in 1:n_s]
+    outcome_arr = result[outcome_field]
+    values = Matrix{Float64}(outcome_arr.data)
+
+    n_p, n_s = size(values)
 
     # Determine axis labels
     if isnothing(policy_param)
@@ -210,23 +204,29 @@ function SimOptDecisions.plot_exploration(
         x_title = "Policy Index"
     else
         policy_col = Symbol(:policy_, policy_param)
-        if policy_col ∉ keys(first_row)
-            policy_col = policy_param
+        if policy_col ∈ keys(result.cubes)
+            x_labels = string.(result[policy_col].data)
+        elseif policy_param ∈ keys(result.cubes)
+            x_labels = string.(result[policy_param].data)
+        else
+            x_labels = string.(1:n_p)
         end
-        x_labels = [string(result[p, 1][policy_col]) for p in 1:n_p]
         x_title = String(policy_param)
     end
 
-    if isnothing(sow_param)
+    if isnothing(scenario_param)
         y_labels = string.(1:n_s)
-        y_title = "SOW Index"
+        y_title = "Scenario Index"
     else
-        sow_col = Symbol(:sow_, sow_param)
-        if sow_col ∉ keys(first_row)
-            sow_col = sow_param
+        scenario_col = Symbol(:scenario_, scenario_param)
+        if scenario_col ∈ keys(result.cubes)
+            y_labels = string.(result[scenario_col].data)
+        elseif scenario_param ∈ keys(result.cubes)
+            y_labels = string.(result[scenario_param].data)
+        else
+            y_labels = string.(1:n_s)
         end
-        y_labels = [string(result[1, s][sow_col]) for s in 1:n_s]
-        y_title = String(sow_param)
+        y_title = String(scenario_param)
     end
 
     fig = Figure(; figure_kwargs...)
@@ -246,18 +246,20 @@ function SimOptDecisions.plot_exploration(
     return (fig, ax)
 end
 
-"""Parallel coordinates for exploration results."""
+"""Parallel coordinates for exploration results (YAXArray Dataset)."""
 function SimOptDecisions.plot_exploration_parallel(
-    result::ExplorationResult;
+    result::Dataset;
     columns::Vector{Symbol}=Symbol[],
     figure_kwargs::NamedTuple=NamedTuple(),
     axis_kwargs::NamedTuple=NamedTuple(),
     line_kwargs::NamedTuple=NamedTuple(),
     color_by::Union{Symbol,Nothing}=nothing,
 )
-    # Default: use all policy params + outcome columns
+    available = keys(result.cubes)
+
+    # Default: use 2D arrays (policy × scenario outcomes)
     if isempty(columns)
-        columns = vcat(result.policy_columns, result.outcome_columns)
+        columns = Symbol[k for k in available if ndims(result[k]) == 2]
     end
 
     n_axes = length(columns)
@@ -265,8 +267,18 @@ function SimOptDecisions.plot_exploration_parallel(
         error("No columns specified for parallel coordinates plot")
     end
 
-    # Extract and normalize data
-    all_data = [[Float64(row[c]) for c in columns] for row in result.rows]
+    # Get first array dimensions to determine data structure
+    first_arr = result[columns[1]]
+    n_p, n_s = size(first_arr)
+
+    # Extract and flatten data (policy × scenario → rows)
+    all_data = Vector{Vector{Float64}}()
+    for p in 1:n_p
+        for s in 1:n_s
+            row = [Float64(result[c][p, s]) for c in columns]
+            push!(all_data, row)
+        end
+    end
 
     mins = [minimum(d[j] for d in all_data) for j in 1:n_axes]
     maxs = [maximum(d[j] for d in all_data) for j in 1:n_axes]
@@ -287,8 +299,9 @@ function SimOptDecisions.plot_exploration_parallel(
     )
 
     # Color by outcome or parameter if specified
-    if !isnothing(color_by) && color_by ∈ keys(first(result.rows))
-        color_vals = [Float64(row[color_by]) for row in result.rows]
+    if !isnothing(color_by) && color_by ∈ available
+        color_arr = result[color_by]
+        color_vals = vec(color_arr.data)
         color_min, color_max = extrema(color_vals)
         color_range = color_max - color_min
         if color_range ≈ 0
@@ -298,7 +311,6 @@ function SimOptDecisions.plot_exploration_parallel(
 
         for (i, data) in enumerate(all_data)
             norm_data = normalize(data)
-            # Use color based on normalized value
             c = color_norm[i]
             lines!(ax, 1:n_axes, norm_data; color=(c, c, 1 - c, 0.5), line_kwargs...)
         end
@@ -312,9 +324,9 @@ function SimOptDecisions.plot_exploration_parallel(
     return (fig, ax)
 end
 
-"""Scatter plot for exploration results."""
+"""Scatter plot for exploration results (YAXArray Dataset)."""
 function SimOptDecisions.plot_exploration_scatter(
-    result::ExplorationResult;
+    result::Dataset;
     x::Symbol,
     y::Symbol,
     color_by::Union{Symbol,Nothing}=nothing,
@@ -322,14 +334,16 @@ function SimOptDecisions.plot_exploration_scatter(
     axis_kwargs::NamedTuple=NamedTuple(),
     scatter_kwargs::NamedTuple=NamedTuple(),
 )
-    first_row = first(result.rows)
+    available = keys(result.cubes)
 
-    # Resolve column names (handle prefixed vs unprefixed)
-    x_col = x ∈ keys(first_row) ? x : Symbol(:outcome_, x)
-    y_col = y ∈ keys(first_row) ? y : Symbol(:outcome_, y)
+    x_col = x ∈ available ? x : Symbol(:outcome_, x)
+    y_col = y ∈ available ? y : Symbol(:outcome_, y)
 
-    x_vals = [Float64(row[x_col]) for row in result.rows]
-    y_vals = [Float64(row[y_col]) for row in result.rows]
+    x_arr = result[x_col]
+    y_arr = result[y_col]
+
+    x_vals = vec(Float64.(x_arr.data))
+    y_vals = vec(Float64.(y_arr.data))
 
     fig = Figure(; figure_kwargs...)
     ax = Axis(
@@ -341,9 +355,10 @@ function SimOptDecisions.plot_exploration_scatter(
     )
 
     if !isnothing(color_by)
-        color_col = color_by ∈ keys(first_row) ? color_by : Symbol(:outcome_, color_by)
-        if color_col ∈ keys(first_row)
-            color_vals = [Float64(row[color_col]) for row in result.rows]
+        color_col = color_by ∈ available ? color_by : Symbol(:outcome_, color_by)
+        if color_col ∈ available
+            color_arr = result[color_col]
+            color_vals = vec(Float64.(color_arr.data))
             sc = scatter!(ax, x_vals, y_vals; color=color_vals, scatter_kwargs...)
             Colorbar(fig[1, 2], sc; label=String(color_by))
         else

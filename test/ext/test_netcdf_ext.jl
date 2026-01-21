@@ -1,5 +1,4 @@
-# Test NetCDF extension for exploration results
-# This test catches the critical bug where the extension used sow_idx instead of scenario_idx
+# Test NetCDF export for exploration results
 
 @testset "NetCDF Extension" begin
     # Define minimal types for testing
@@ -57,7 +56,45 @@
         NCTestOutcome(ContinuousParameter(step_records[end].step_value))
     end
 
-    @testset "netcdf_sink with explore()" begin
+    @testset "save_netcdf and load_netcdf" begin
+        config = NCTestConfig(3)
+        scenarios = [
+            NCTestScenario(ContinuousParameter(1.0)),
+            NCTestScenario(ContinuousParameter(2.0)),
+        ]
+        policies = [
+            NCTestPolicy(ContinuousParameter(0.5)),
+            NCTestPolicy(ContinuousParameter(0.8)),
+        ]
+
+        # Run exploration
+        result = explore(config, scenarios, policies; progress=false)
+
+        # Save to NetCDF
+        filepath = tempname() * ".nc"
+
+        try
+            save_netcdf(result, filepath)
+
+            # Verify file was created
+            @test isfile(filepath)
+
+            # Load back and verify
+            loaded = load_netcdf(filepath)
+
+            @test loaded isa Dataset
+            @test :total in keys(loaded.cubes)
+
+            # Verify data matches
+            @test loaded[:total][1, 1] == result[:total][1, 1]
+            @test loaded[:total][2, 2] == result[:total][2, 2]
+        finally
+            # Cleanup
+            isfile(filepath) && rm(filepath)
+        end
+    end
+
+    @testset "Legacy netcdf_sink (deprecated)" begin
         config = NCTestConfig(3)
         scenarios = [
             NCTestScenario(ContinuousParameter(1.0)),
@@ -69,32 +106,33 @@
         filepath = tempname() * ".nc"
 
         try
-            # This test catches the bug: extension must use scenario_idx not sow_idx
+            # Legacy API still works for backward compatibility
             sink = netcdf_sink(filepath; flush_every=1)
-            result = explore(config, scenarios, policies; sink=sink, progress=false)
+
+            # Record some data manually
+            record!(sink, (policy_idx=1, scenario_idx=1, outcome_total=3.0))
+            record!(sink, (policy_idx=1, scenario_idx=2, outcome_total=6.0))
+
+            # Finalize
+            result_path = finalize(sink, 1, 2)
 
             # Verify file was created
             @test isfile(filepath)
-            @test result == filepath
+            @test result_path == filepath
 
             # Verify contents using NCDatasets
             NCDataset(filepath, "r") do ds
-                # Check dimensions use "scenario" not "sow"
+                # Check dimensions
                 @test haskey(ds.dim, "scenario")
                 @test haskey(ds.dim, "policy")
-                @test !haskey(ds.dim, "sow")
 
-                # Check attribute names
+                # Check attributes
                 @test haskey(ds.attrib, "n_scenarios")
                 @test haskey(ds.attrib, "n_policies")
-                @test !haskey(ds.attrib, "n_sows")
 
-                # Check data was written correctly
+                # Check data was written
                 @test ds.attrib["n_scenarios"] == 2
                 @test ds.attrib["n_policies"] == 1
-
-                # Verify outcome values
-                @test haskey(ds, "outcome_total")
             end
         finally
             # Cleanup

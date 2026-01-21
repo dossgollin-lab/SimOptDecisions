@@ -3,6 +3,8 @@ using Test
 using Random
 using Tables
 using Dates
+using YAXArrays
+using Zarr
 
 # Load extensions at the start so they're available for all tests
 using Metaheuristics

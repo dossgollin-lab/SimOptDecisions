@@ -62,6 +62,27 @@
         @test fieldtype(TestState1, :count) == DiscreteParameter{Int}
     end
 
+    @testset "@outcomedef" begin
+        TestOutcome1 = @outcomedef begin
+            @continuous total_cost 0.0 Inf
+            @continuous reliability 0.0 1.0
+            @discrete failures
+        end
+
+        @test TestOutcome1 <: AbstractOutcome
+        @test fieldtype(TestOutcome1, :total_cost) == ContinuousParameter{Float64}
+        @test fieldtype(TestOutcome1, :reliability) == ContinuousParameter{Float64}
+        @test fieldtype(TestOutcome1, :failures) == DiscreteParameter{Int}
+
+        o = TestOutcome1(
+            total_cost=ContinuousParameter(1000.0),
+            reliability=ContinuousParameter(0.95),
+            failures=DiscreteParameter(2),
+        )
+        @test value(o.total_cost) == 1000.0
+        @test value(o.reliability) == 0.95
+    end
+
     @testset "Mixed field types" begin
         TestScenario2 = @scenariodef begin
             @continuous x

@@ -5,6 +5,7 @@ abstract type AbstractConfig end
 abstract type AbstractScenario end
 abstract type AbstractRecorder end
 abstract type AbstractAction end
+abstract type AbstractOutcome end
 
 # ============================================================================
 # Parameter Types for Exploratory Modeling

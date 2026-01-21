@@ -1,28 +1,31 @@
 # ============================================================================
-# Result Sinks for Exploratory Modeling
+# Legacy Result Sinks (Deprecated - Use Storage Backends Instead)
 # ============================================================================
 
-"""Base type for sinks that collect or stream exploration results."""
+# Note: This file is kept for backward compatibility during the transition.
+# New code should use InMemoryBackend or ZarrBackend from exploration.jl.
+
+"""Base type for sinks that collect or stream exploration results (deprecated)."""
 abstract type AbstractResultSink end
 
-"""Record a single result row to the sink."""
+"""Record a single result row to the sink (deprecated)."""
 function record! end
 
 # ============================================================================
 # NoSink - Zero overhead
 # ============================================================================
 
-"""A no-op sink that discards all results."""
+"""A no-op sink that discards all results (deprecated)."""
 struct NoSink <: AbstractResultSink end
 
 record!(::NoSink, row) = nothing
 finalize(::NoSink, n_policies, n_scenarios) = nothing
 
 # ============================================================================
-# InMemorySink - Collect results in memory
+# InMemorySink - Collect results in memory (deprecated)
 # ============================================================================
 
-"""Collects exploration results in memory. Returns ExplorationResult on finalize."""
+"""Collects exploration results in memory (deprecated - use InMemoryBackend)."""
 mutable struct InMemorySink <: AbstractResultSink
     results::Vector{NamedTuple}
     InMemorySink() = new(NamedTuple[])
@@ -34,17 +37,17 @@ function record!(sink::InMemorySink, row::NamedTuple)
 end
 
 # ============================================================================
-# File Sink Infrastructure
+# File Sink Infrastructure (deprecated)
 # ============================================================================
 
-"""Base type for sinks that write to files."""
+"""Base type for sinks that write to files (deprecated)."""
 abstract type AbstractFileSink <: AbstractResultSink end
 
 function write_header! end
 function write_rows! end
 function close! end
 
-"""Wraps a file sink with buffered writes."""
+"""Wraps a file sink with buffered writes (deprecated)."""
 mutable struct StreamingSink{F<:AbstractFileSink} <: AbstractResultSink
     file_sink::F
     buffer::Vector{NamedTuple}
@@ -85,15 +88,8 @@ function finalize(sink::StreamingSink, n_policies, n_scenarios)
 end
 
 # ============================================================================
-# Extension Sink Factory Functions
+# NetCDF sink (via extension)
 # ============================================================================
-
-"""Create a CSV file sink. Requires `using CSV`."""
-function csv_sink end
-
-function csv_sink(filepath::AbstractString)
-    error("csv_sink requires the CSV package. Add: using CSV")
-end
 
 """Create a NetCDF file sink. Requires `using NCDatasets`."""
 function netcdf_sink end

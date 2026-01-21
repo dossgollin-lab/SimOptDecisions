@@ -18,6 +18,7 @@ include("optimization.jl")
 include("persistence.jl")
 include("plotting.jl")
 include("sinks.jl")
+include("executors.jl")
 include("exploration.jl")
 include("macros.jl")
 
@@ -27,7 +28,8 @@ include("macros.jl")
 
 # Abstract types (users subtype these)
 export AbstractState,
-    AbstractPolicy, AbstractConfig, AbstractScenario, AbstractRecorder, AbstractAction
+    AbstractPolicy, AbstractConfig, AbstractScenario, AbstractRecorder, AbstractAction,
+    AbstractOutcome
 
 # TimeStep struct and accessors
 export TimeStep, index
@@ -96,18 +98,27 @@ export GenericParameter
 export value
 
 # Definition macros
-export @scenariodef, @policydef, @configdef, @statedef
+export @scenariodef, @policydef, @configdef, @statedef, @outcomedef
 
-# Sinks
+# Executors
+export AbstractExecutor, SequentialExecutor, ThreadedExecutor, DistributedExecutor
+export CRNConfig, create_scenario_rng
+
+# Storage backends
+export AbstractStorageBackend, InMemoryBackend, ZarrBackend
+
+# Exploration (YAXArray-based)
+export explore, explore_traced
+export outcomes_for_policy, outcomes_for_scenario
+export zarr_sink, load_zarr_results
+export save_netcdf, load_netcdf
+export ExploratoryInterfaceError
+
+# Legacy sinks (deprecated)
 export AbstractResultSink, NoSink, InMemorySink
 export AbstractFileSink, StreamingSink
 export write_header!, write_rows!, close!
-export csv_sink, netcdf_sink  # Factory functions (require extensions)
-
-# Exploration
-export ExplorationResult, explore
-export outcomes_for_policy, outcomes_for_scenario
-export ExploratoryInterfaceError, ParameterTypeError
+export netcdf_sink
 
 # Exploration plotting (requires Makie extension)
 export plot_exploration, plot_exploration_parallel, plot_exploration_scatter

@@ -135,15 +135,17 @@ SimOptDecisions.jl/
 │   ├── validation.jl         # _validate_* functions, constraints
 │   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
 │   ├── metrics.jl            # Declarative metrics (ExpectedValue, Probability, etc.)
-│   ├── exploration.jl        # explore(), ExplorationResult
-│   ├── macros.jl             # @scenariodef, @policydef, etc.
-│   ├── sinks.jl              # Result sinks (InMemorySink, StreamingSink)
+│   ├── executors.jl          # AbstractExecutor, CRN, Sequential/Threaded/Distributed
+│   ├── exploration.jl        # explore(), YAXArray Dataset, storage backends
+│   ├── macros.jl             # @scenariodef, @policydef, @outcomedef, etc.
+│   ├── sinks.jl              # Legacy sinks (deprecated)
 │   ├── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
 │   ├── utils.jl              # discount_factor, timeindex, is_first, is_last
 │   └── plotting.jl           # Plotting interface declarations
 ├── ext/
 │   ├── SimOptMetaheuristicsExt.jl
-│   └── SimOptMakieExt.jl
+│   ├── SimOptMakieExt.jl
+│   └── SimOptNetCDFExt.jl
 ├── test/
 │   ├── runtests.jl
 │   ├── test_types.jl
@@ -152,6 +154,8 @@ SimOptDecisions.jl/
 │   ├── test_recorders.jl
 │   ├── test_validation.jl
 │   ├── test_optimization.jl
+│   ├── test_exploration.jl
+│   ├── test_macros.jl
 │   ├── test_persistence.jl
 │   ├── test_aqua.jl
 │   └── ext/                  # Extension tests

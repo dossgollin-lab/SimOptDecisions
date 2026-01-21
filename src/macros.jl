@@ -38,6 +38,15 @@ macro statedef(name, body)
     _defmacro_impl(:AbstractState, body, __module__; name=name)
 end
 
+"""Define an outcome type for exploration results. Same field syntax as @scenariodef."""
+macro outcomedef(body)
+    _defmacro_impl(:AbstractOutcome, body, __module__)
+end
+
+macro outcomedef(name, body)
+    _defmacro_impl(:AbstractOutcome, body, __module__; name=name)
+end
+
 # ============================================================================
 # Implementation
 # ============================================================================
