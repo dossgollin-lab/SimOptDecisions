@@ -11,9 +11,6 @@ using Metaheuristics
 using CairoMakie
 using NCDatasets
 
-# Import finalize for sinks (shadows Base.finalize)
-import SimOptDecisions: finalize
-
 @testset "SimOptDecisions.jl" begin
     include("test_types.jl")
     include("test_recorders.jl")

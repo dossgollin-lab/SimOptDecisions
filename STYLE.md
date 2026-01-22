@@ -138,7 +138,6 @@ SimOptDecisions.jl/
 │   ├── executors.jl          # AbstractExecutor, CRN, Sequential/Threaded/Distributed
 │   ├── exploration.jl        # explore(), YAXArray Dataset, storage backends
 │   ├── macros.jl             # @scenariodef, @policydef, @outcomedef, etc.
-│   ├── sinks.jl              # Legacy sinks (deprecated)
 │   ├── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
 │   ├── utils.jl              # discount_factor, timeindex, is_first, is_last
 │   └── plotting.jl           # Plotting interface declarations

@@ -17,7 +17,6 @@ include("metrics.jl")
 include("optimization.jl")
 include("persistence.jl")
 include("plotting.jl")
-include("sinks.jl")
 include("executors.jl")
 include("exploration.jl")
 include("macros.jl")
@@ -110,15 +109,9 @@ export AbstractStorageBackend, InMemoryBackend, ZarrBackend
 # Exploration (YAXArray-based)
 export explore, explore_traced
 export outcomes_for_policy, outcomes_for_scenario
-export zarr_sink, load_zarr_results
+export load_zarr_results
 export save_netcdf, load_netcdf
 export ExploratoryInterfaceError
-
-# Legacy sinks (deprecated)
-export AbstractResultSink, NoSink, InMemorySink
-export AbstractFileSink, StreamingSink
-export write_header!, write_rows!, close!
-export netcdf_sink
 
 # Exploration plotting (requires Makie extension)
 export plot_exploration, plot_exploration_parallel, plot_exploration_scatter

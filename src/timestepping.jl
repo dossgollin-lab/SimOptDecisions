@@ -98,8 +98,6 @@ Base.iterate(ts::TimeSeriesParameter, state) = iterate(ts.values, state)
 """Create initial state for simulation. Required callback."""
 function initialize end
 
-struct _DummyRNG <: AbstractRNG end
-
 function initialize(config::AbstractConfig, scenario::AbstractScenario, ::AbstractRNG)
     return initialize(config, scenario)
 end

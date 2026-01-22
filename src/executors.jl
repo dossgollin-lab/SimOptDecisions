@@ -2,6 +2,8 @@
 # Executor Abstraction for Simulation Execution
 # ============================================================================
 
+using ProgressMeter: Progress, next!
+
 """Base type for execution strategies."""
 abstract type AbstractExecutor end
 

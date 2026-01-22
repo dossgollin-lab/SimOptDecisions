@@ -6,7 +6,6 @@ using OrderedCollections: OrderedDict
 using ProgressMeter: Progress, next!
 using YAXArrays
 using Zarr
-using DiskArrays
 
 # ============================================================================
 # Error Types

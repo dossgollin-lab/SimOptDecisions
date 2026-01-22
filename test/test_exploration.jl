@@ -313,21 +313,6 @@ end
         @test size(scenario1_outcomes[:total]) == (2,)  # 2 policies
     end
 
-    @testset "Legacy Sinks (deprecated)" begin
-        @testset "InMemorySink" begin
-            sink = InMemorySink()
-            record!(sink, (a=1, b=2))
-            record!(sink, (a=3, b=4))
-            @test length(sink.results) == 2
-        end
-
-        @testset "NoSink" begin
-            sink = NoSink()
-            record!(sink, (a=1,))
-            @test finalize(sink, 1, 1) === nothing
-        end
-    end
-
     @testset "Single policy convenience" begin
         config = ExploreTestConfig(3)
         scenarios = [
