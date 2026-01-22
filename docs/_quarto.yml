@@ -19,12 +19,12 @@ website:
         contents:
           - href: tutorial/01-the-problem.qmd
             text: "1. The Problem"
-          - href: tutorial/02-defining-your-model.qmd
-            text: "2. Defining Your Model"
-          - href: tutorial/03-running-a-simulation.qmd
-            text: "3. Running a Simulation"
-          - href: tutorial/04-evaluating-a-policy.qmd
-            text: "4. Evaluating a Policy"
+          - href: tutorial/02-system-model.qmd
+            text: "2. The System Model"
+          - href: tutorial/03-adding-time.qmd
+            text: "3. Adding Time"
+          - href: tutorial/04-outcomes-metrics.qmd
+            text: "4. Outcomes and Metrics"
           - href: tutorial/05-exploratory-modeling.qmd
             text: "5. Exploratory Modeling"
           - href: tutorial/06-policy-search.qmd

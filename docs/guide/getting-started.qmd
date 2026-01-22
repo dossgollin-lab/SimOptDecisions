@@ -1,10 +1,10 @@
 ---
-title: "Getting Started"
+title: "Quick Reference"
 ---
 
 This guide shows you exactly what to implement to use SimOptDecisions.
 
-## Checklist: What You Need to Implement
+## Checklist: What You Implement
 
 ### Types (5 required)
 
@@ -26,7 +26,19 @@ This guide shows you exactly what to implement to use SimOptDecisions.
 | `time_axis` | `(config, scenario)` | Iterable with `length()` |
 | `compute_outcome` | `(step_records, config, scenario)` | `Outcome` |
 
-### For Optimization (2 additional)
+### For `explore()` (parameter wrappers required)
+
+Scenario, Policy, and Outcome fields must use parameter types:
+
+| Type | Use Case |
+|------|----------|
+| `ContinuousParameter{T}` | Real values |
+| `DiscreteParameter{T}` | Integer values |
+| `CategoricalParameter{T}` | Categorical values |
+| `TimeSeriesParameter{T}` | Time-indexed data |
+| `GenericParameter{T}` | Complex objects (skipped in flattening) |
+
+### For Optimization (2 additional methods)
 
 | Method | Signature | Returns |
 |--------|-----------|---------|

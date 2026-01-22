@@ -1,0 +1,253 @@
+---
+title: "2. The System Model"
+subtitle: "What happens in a single year?"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+
+Before we think about time loops or uncertainty, let's understand the core physics: **what happens in a single year when a storm hits?**
+
+## Setup
+
+```{julia}
+#| output: false
+using CairoMakie
+using Distributions
+using Random
+```
+
+## The Depth-Damage Function
+
+When floodwater enters a house, it causes damage. The relationship between water depth and damage is called a **depth-damage function**.
+
+We model this as a logistic curve with two parameters:
+
+- **threshold**: depth below which no damage occurs (water hasn't reached damageable contents)
+- **saturation**: depth at which damage reaches 100% (total loss)
+
+```{julia}
+#| output: false
+function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
+    depth <= threshold && return zero(T)
+    depth >= saturation && return one(T)
+    midpoint = (threshold + saturation) / 2
+    steepness = T(6) / (saturation - threshold)
+    return one(T) / (one(T) + exp(-steepness * (depth - midpoint)))
+end
+```
+
+```{julia}
+#| label: fig-depth-damage
+#| fig-cap: "Depth-damage function: fractional damage as a function of flood depth"
+#| code-fold: true
+let
+    depths = range(-1, 10; length=200)
+    fig = Figure(; size=(600, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Flood depth at house (ft)",
+        ylabel="Damage (fraction of house value)",
+        title="Depth-Damage Function")
+
+    damages = [depth_damage(d, 0.0, 8.0) for d in depths]
+    lines!(ax, depths, damages; linewidth=2, label="Nominal (threshold=0, sat=8)")
+
+    # Show uncertainty in the curve
+    for (thresh, sat) in [(-0.5, 7.5), (0.5, 8.5)]
+        damages_alt = [depth_damage(d, thresh, sat) for d in depths]
+        lines!(ax, depths, damages_alt; linewidth=1, linestyle=:dash, alpha=0.5)
+    end
+
+    axislegend(ax; position=:rb)
+    fig
+end
+```
+
+The dashed lines show how uncertainty in the threshold and saturation parameters affects the curve. This uncertainty will be represented by different **scenarios**.
+
+## The Construction Cost Function
+
+Elevating a house costs money. The cost increases with height and depends on house size. We use a cost model based on [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/2022-elevation-robustness):
+
+```{julia}
+#| output: false
+function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
+    Δh <= 0 && return 0.0
+    Δh > 14 && error("Cannot elevate more than 14 ft")
+
+    base_cost = 10_000 + 300 + 470 + 4_300 + 2_175 + 3_500  # = $20,745
+    thresholds = [0.0, 5.0, 8.5, 12.0, 14.0]
+    rates = [80.36, 82.5, 86.25, 103.75, 113.75]  # $/ft²
+
+    rate = rates[1]
+    for i in 1:(length(thresholds) - 1)
+        if Δh <= thresholds[i + 1]
+            t = (Δh - thresholds[i]) / (thresholds[i + 1] - thresholds[i])
+            rate = rates[i] + t * (rates[i + 1] - rates[i])
+            break
+        end
+        rate = rates[i + 1]
+    end
+
+    cost_dollars = base_cost + area_ft2 * rate
+    return cost_dollars / house_value  # Return as fraction of house value
+end
+
+# Convenience: default house size
+elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
+```
+
+```{julia}
+#| label: fig-elevation-cost
+#| fig-cap: "Construction cost as a function of elevation height"
+#| code-fold: true
+let
+    heights = 0:14
+    costs = [elevation_cost(h) for h in heights]
+
+    fig = Figure(; size=(600, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Elevation height (ft)",
+        ylabel="Cost (fraction of house value)",
+        title="Elevation Cost Function (1500 ft², \$200k house)")
+    scatterlines!(ax, heights, costs; markersize=10)
+    fig
+end
+```
+
+## Storm Surge: The Random Element
+
+Each year, the ocean produces a maximum storm surge. We model annual maximum surges using the Generalized Extreme Value (GEV) distribution:
+
+```{julia}
+#| label: fig-surge-dist
+#| fig-cap: "Distribution of annual maximum storm surge"
+#| code-fold: true
+let
+    surge_dist = GeneralizedExtremeValue(2.8, 1.0, 0.15)
+    surges = range(0, 12; length=200)
+
+    fig = Figure(; size=(600, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Annual maximum surge at gauge (ft)",
+        ylabel="Probability density",
+        title="Storm Surge Distribution (GEV)")
+    lines!(ax, surges, pdf.(surge_dist, surges); linewidth=2)
+
+    # Mark some quantiles
+    for q in [0.5, 0.9, 0.99]
+        surge_q = quantile(surge_dist, q)
+        vlines!(ax, [surge_q]; linestyle=:dash, alpha=0.5)
+        text!(ax, surge_q, 0.02; text="$(Int(q*100))%", align=(:center, :bottom))
+    end
+
+    fig
+end
+```
+
+The GEV parameters (μ, σ, ξ) are uncertain—different scenarios will have different storm climates.
+
+## Putting It Together: One Year
+
+Now let's simulate what happens in a single year. Given:
+
+- A storm surge realization
+- A house elevation choice
+- Depth-damage parameters
+
+We compute the damage:
+
+```{julia}
+function simulate_one_year(;
+    surge_at_gauge::Float64,      # Sampled from GEV
+    elevation_ft::Float64,        # Policy choice
+    house_height::Float64=4.0,    # Height above reference
+    gauge_height::Float64=0.0,    # Gauge height above reference
+    dd_threshold::Float64=0.0,    # Depth-damage parameter
+    dd_saturation::Float64=8.0,   # Depth-damage parameter
+)
+    # Water level at house location
+    water_level = gauge_height + surge_at_gauge
+
+    # House floor level with elevation
+    floor_level = house_height + elevation_ft
+
+    # Flood depth (negative means no flooding)
+    flood_depth = water_level - floor_level
+
+    # Compute damage
+    damage = depth_damage(flood_depth, dd_threshold, dd_saturation)
+
+    return (flood_depth=flood_depth, damage=damage)
+end
+```
+
+Let's see how different elevations perform against a moderate surge:
+
+```{julia}
+surge = 6.0  # A moderate-to-severe surge
+
+for elev in [0, 3, 6, 9]
+    result = simulate_one_year(; surge_at_gauge=surge, elevation_ft=Float64(elev))
+    println("Elevation $(elev)ft: flood depth = $(round(result.flood_depth, digits=1))ft, damage = $(round(result.damage * 100, digits=1))%")
+end
+```
+
+## The Trade-off Emerges
+
+Now we can see the core trade-off:
+
+```{julia}
+#| label: fig-tradeoff-simple
+#| fig-cap: "Cost and expected damage for different elevations (single storm scenario)"
+#| code-fold: true
+let
+    elevations = 0:14
+    surge_dist = GeneralizedExtremeValue(2.8, 1.0, 0.15)
+
+    # Monte Carlo estimate of expected annual damage
+    rng = Random.Xoshiro(42)
+    n_samples = 10_000
+
+    construction = [elevation_cost(e) for e in elevations]
+    expected_damage = Float64[]
+
+    for elev in elevations
+        damages = Float64[]
+        for _ in 1:n_samples
+            surge = rand(rng, surge_dist)
+            result = simulate_one_year(; surge_at_gauge=surge, elevation_ft=Float64(elev))
+            push!(damages, result.damage)
+        end
+        push!(expected_damage, mean(damages))
+    end
+
+    fig = Figure(; size=(700, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Elevation (ft)",
+        ylabel="Value (fraction of house)",
+        title="Single-Year Trade-off")
+
+    barplot!(ax, collect(elevations), construction; label="Construction cost", color=:steelblue)
+    scatter!(ax, collect(elevations), expected_damage; label="Expected annual damage", color=:red, markersize=12)
+
+    axislegend(ax; position=:rt)
+    fig
+end
+```
+
+Construction cost increases linearly with elevation. Expected damage decreases—but not linearly. The optimal single-year choice isn't obvious, and becomes even less obvious when we consider:
+
+1. **Multiple years**: Damages accumulate over time
+2. **Discounting**: Future damages are worth less than present costs
+3. **Uncertainty**: The storm distribution parameters are themselves uncertain
+
+## Summary
+
+We've built the core physics:
+
+- **Depth-damage function**: converts flood depth to fractional damage
+- **Construction cost**: cost of elevating to a given height
+- **Single-year simulation**: combines surge, elevation, and depth-damage
+
+But this is just one year with fixed parameters. In the [next section](03-adding-time.qmd), we'll extend this to multi-year simulations with proper time structure and uncertainty.

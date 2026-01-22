@@ -10,13 +10,13 @@ execute:
 
 This tutorial teaches SimOptDecisions.jl through a realistic example: **deciding how high to elevate a house in a flood-prone area**.
 
-You'll learn:
+You'll learn by building from the inside out:
 
-1. **Defining your model** - Types for config, uncertainty, state, actions, and policies
-2. **Running simulations** - The five-callback pattern for time-stepped models
-3. **Evaluating policies** - Testing a single policy across many uncertain futures
-4. **Exploratory modeling** - Systematically comparing policies across scenarios
-5. **Policy search** - Multi-objective optimization to find Pareto-optimal solutions
+1. **The System Model** — What happens in a single year? (depth-damage, construction costs)
+2. **Adding Time** — Extending to multi-year simulations with types and callbacks
+3. **Outcomes and Metrics** — Aggregating results and comparing across uncertain futures
+4. **Exploratory Modeling** — Systematically comparing policies across scenarios
+5. **Policy Search** — Multi-objective optimization to find Pareto-optimal solutions
 
 Each section builds on the previous, using the same house elevation context throughout.
 
@@ -43,46 +43,6 @@ This is a classic decision under uncertainty:
 
 But what's "optimal" depends on assumptions about the uncertain future. Different assumptions lead to different recommendations.
 
-## Code Patterns You'll See
-
-Before diving into the code, here are a few Julia patterns the framework uses:
-
-### Abstract Supertypes
-
-Types inherit from abstract types like `<:AbstractConfig`, `<:AbstractScenario`, `<:AbstractPolicy`, etc. This tells the framework how to handle your types—which callbacks to call and how to validate.
-
-### Parameter Types
-
-Scenario, Policy, and Outcome fields use **parameter wrappers**:
-
-| Type | Use Case |
-|------|----------|
-| `ContinuousParameter{T}` | Real values with optional bounds |
-| `DiscreteParameter{T}` | Integer values with optional constraints |
-| `CategoricalParameter{T}` | Categorical values with defined levels |
-| `TimeSeriesParameter{T,I}` | Time-indexed data (e.g., sea level trajectories) |
-| `GenericParameter{T}` | Complex objects (skipped in flattening) |
-
-These enable automatic flattening for analysis, bounds derivation for optimization, and consistent visualization. Use `value(param)` to extract the underlying value.
-
-```julia
-struct ElevationPolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::ContinuousParameter{T}
-end
-
-# Access the value
-policy = ElevationPolicy(ContinuousParameter(5.0, (0.0, 14.0)))
-value(policy.elevation_ft)  # returns 5.0
-```
-
-::: {.callout-note}
-## When Are Parameter Types Required?
-
-- `simulate()`: Plain types work fine by default
-- `explore()`: Parameter types **required** for all Scenario, Policy, and Outcome fields
-- Optimization: Parameter types enable automatic `param_bounds` derivation
-:::
-
 ## Next Steps
 
-In the [next section](02-defining-your-model.qmd), we'll define the Julia types that represent this problem: configuration, uncertainty, state, actions, and policies.
+In the [next section](02-system-model.qmd), we'll start building the model from the inside: what happens in a single year when a storm hits?

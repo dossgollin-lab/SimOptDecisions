@@ -1,0 +1,284 @@
+---
+title: "4. Outcomes and Metrics"
+subtitle: "Aggregating across uncertain futures"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+
+A single simulation gives us one **outcome**. But we need to evaluate a policy across *many* scenarios and summarize the results. This is where **metrics** come in.
+
+## Setup
+
+```{julia}
+#| output: false
+#| code-fold: true
+#| code-summary: "Type definitions and callbacks (click to expand)"
+using SimOptDecisions
+using Distributions
+using Random
+using CairoMakie
+using Statistics
+
+# Physics functions
+function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
+    depth <= threshold && return zero(T)
+    depth >= saturation && return one(T)
+    midpoint = (threshold + saturation) / 2
+    steepness = T(6) / (saturation - threshold)
+    return one(T) / (one(T) + exp(-steepness * (depth - midpoint)))
+end
+
+function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
+    Δh <= 0 && return 0.0
+    base_cost = 20_745.0
+    thresholds = [0.0, 5.0, 8.5, 12.0, 14.0]
+    rates = [80.36, 82.5, 86.25, 103.75, 113.75]
+    rate = rates[1]
+    for i in 1:(length(thresholds) - 1)
+        if Δh <= thresholds[i + 1]
+            t = (Δh - thresholds[i]) / (thresholds[i + 1] - thresholds[i])
+            rate = rates[i] + t * (rates[i + 1] - rates[i])
+            break
+        end
+        rate = rates[i + 1]
+    end
+    return (base_cost + area_ft2 * rate) / house_value
+end
+elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
+
+# Types
+Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int = 70
+    gauge_height_above_ref::T = 0.0
+    house_height_above_ref::T = 4.0
+    house_area_ft2::T = 1500.0
+    house_value::T = 200_000.0
+end
+
+@scenariodef HouseElevationScenario begin
+    @continuous gev_μ
+    @continuous gev_σ
+    @continuous gev_ξ
+    @continuous dd_threshold
+    @continuous dd_saturation
+    @continuous discount_rate
+end
+
+function sample_scenario(rng::AbstractRNG)
+    HouseElevationScenario(
+        gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3))),
+        gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))),
+        gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))),
+        dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25))),
+        dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5))),
+        discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))),
+    )
+end
+
+struct SeaLevelState{T<:AbstractFloat} <: AbstractState
+    msl::T
+end
+
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T
+end
+
+@policydef ElevationPolicy begin
+    @continuous elevation_ft 0.0 14.0
+end
+
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(elevation_ft = ContinuousParameter(params[1], (0.0, 14.0)))
+
+# Callbacks
+SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationScenario, ::AbstractRNG) = SeaLevelState(0.0)
+SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationScenario) = 1:(config.horizon)
+SimOptDecisions.get_action(policy::ElevationPolicy, ::SeaLevelState, ::TimeStep, ::HouseElevationScenario) = ElevationAction(value(policy.elevation_ft))
+
+function SimOptDecisions.run_timestep(
+    state::SeaLevelState, action::ElevationAction, t::TimeStep,
+    config::HouseElevationConfig, scenario::HouseElevationScenario, rng::AbstractRNG
+)
+    construction_cost = is_first(t) ?
+        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
+    surge_dist = GeneralizedExtremeValue(value(scenario.gev_μ), value(scenario.gev_σ), value(scenario.gev_ξ))
+    surge_at_gauge = rand(rng, surge_dist)
+    water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
+    floor_level = config.house_height_above_ref + action.elevation_ft
+    flood_depth = water_level - floor_level
+    damage = depth_damage(flood_depth, value(scenario.dd_threshold), value(scenario.dd_saturation))
+    return (state, (construction_cost=construction_cost, damage_fraction=damage))
+end
+
+function SimOptDecisions.compute_outcome(
+    step_records::Vector, ::HouseElevationConfig, scenario::HouseElevationScenario
+)
+    construction_cost = step_records[1].construction_cost
+    npv_damages = sum(
+        step_records[t].damage_fraction * discount_factor(value(scenario.discount_rate), t)
+        for t in eachindex(step_records)
+    )
+    return (construction_cost=construction_cost, npv_damages=npv_damages, total_cost=construction_cost + npv_damages)
+end
+```
+
+## From Outcomes to Metrics
+
+An **outcome** is the result of one simulation:
+
+```{julia}
+config = HouseElevationConfig()
+scenario = sample_scenario(Random.Xoshiro(42))
+policy = ElevationPolicy(ContinuousParameter(5.0, (0.0, 14.0)))
+
+outcome = simulate(config, scenario, policy)
+outcome
+```
+
+A **metric** summarizes outcomes across many scenarios. Common metrics include:
+
+| Metric | What it answers |
+|--------|-----------------|
+| Expected value | What's the average outcome? |
+| Variance | How much does the outcome vary? |
+| Probability | How likely is an event (e.g., damage > 50%)? |
+| Quantile | What's the worst-case at a given confidence level? |
+
+## Evaluating a Policy Across Scenarios
+
+Let's run one policy against many scenarios:
+
+```{julia}
+n_scenarios = 500
+rng = Random.Xoshiro(123)
+scenarios = [sample_scenario(rng) for _ in 1:n_scenarios]
+
+# Evaluate one policy across all scenarios
+policy = ElevationPolicy(ContinuousParameter(5.0, (0.0, 14.0)))
+outcomes = [simulate(config, s, policy) for s in scenarios]
+
+# Extract total costs
+total_costs = [o.total_cost for o in outcomes]
+
+println("Mean total cost: $(round(mean(total_costs), digits=3))")
+println("Std deviation: $(round(std(total_costs), digits=3))")
+println("5th percentile: $(round(quantile(total_costs, 0.05), digits=3))")
+println("95th percentile: $(round(quantile(total_costs, 0.95), digits=3))")
+```
+
+```{julia}
+#| label: fig-outcome-distribution
+#| fig-cap: "Distribution of total costs across scenarios (5ft elevation)"
+#| code-fold: true
+let
+    fig = Figure(; size=(700, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Total cost (fraction of house value)",
+        ylabel="Count",
+        title="Outcome Distribution (5ft elevation, $(n_scenarios) scenarios)")
+
+    hist!(ax, total_costs; bins=30, color=:steelblue)
+
+    vlines!(ax, [mean(total_costs)]; color=:red, linewidth=2, label="Mean")
+    vlines!(ax, [quantile(total_costs, 0.95)]; color=:orange, linewidth=2, linestyle=:dash, label="95th percentile")
+
+    axislegend(ax; position=:rt)
+    fig
+end
+```
+
+## The `calculate_metrics` Function
+
+For optimization, we need a function that takes outcomes and returns metrics. This is `calculate_metrics`:
+
+```{julia}
+#| output: false
+function calculate_metrics(outcomes)
+    total_costs = [o.total_cost for o in outcomes]
+    return (
+        expected_cost = mean(total_costs),
+        cost_variance = var(total_costs),
+        worst_5pct = quantile(total_costs, 0.95),  # 95th percentile = worst 5%
+    )
+end
+```
+
+```{julia}
+metrics = calculate_metrics(outcomes)
+metrics
+```
+
+## Comparing Policies with Metrics
+
+Now we can compare policies using consistent metrics:
+
+```{julia}
+#| label: fig-policy-comparison
+#| fig-cap: "Expected cost vs worst-case cost for different elevations"
+#| code-fold: true
+let
+    elevations = 0:14
+    expected_costs = Float64[]
+    worst_5pcts = Float64[]
+
+    for elev in elevations
+        policy = ElevationPolicy(ContinuousParameter(Float64(elev), (0.0, 14.0)))
+        outcomes = [simulate(config, s, policy) for s in scenarios]
+        metrics = calculate_metrics(outcomes)
+        push!(expected_costs, metrics.expected_cost)
+        push!(worst_5pcts, metrics.worst_5pct)
+    end
+
+    fig = Figure(; size=(700, 500))
+    ax = Axis(fig[1, 1];
+        xlabel="Expected cost (fraction of house value)",
+        ylabel="Worst 5% cost (fraction of house value)",
+        title="Trade-off: Expected vs Worst-Case Cost")
+
+    scatter!(ax, expected_costs, worst_5pcts; markersize=15)
+
+    for (i, elev) in enumerate(elevations)
+        text!(ax, expected_costs[i], worst_5pcts[i];
+            text=string(elev), align=(:left, :bottom), offset=(5, 5))
+    end
+
+    fig
+end
+```
+
+This reveals a **Pareto frontier**: no policy can improve on expected cost without worsening worst-case cost (or vice versa).
+
+## Risk Attitudes and Metric Choice
+
+Different stakeholders may care about different metrics:
+
+- **Risk-neutral**: Minimize expected cost
+- **Risk-averse**: Minimize worst-case (or high quantile)
+- **Regret-averse**: Minimize maximum regret across scenarios
+
+The `calculate_metrics` function lets you define whatever aggregations are relevant for your problem.
+
+## Built-in Metric Types
+
+SimOptDecisions provides declarative metric types for common cases:
+
+```{julia}
+#| eval: false
+# These are equivalent to what we computed manually:
+ExpectedValue(:total_cost)           # mean(outcomes.total_cost)
+Variance(:total_cost)                # var(outcomes.total_cost)
+Quantile(:total_cost, 0.95)          # quantile(outcomes.total_cost, 0.95)
+Probability(:total_cost, >, 0.5)     # fraction where total_cost > 0.5
+```
+
+These are used with `compute_metrics(metric, outcomes)` for convenience, but for optimization you'll typically write a custom `calculate_metrics` function.
+
+## Summary
+
+- **Outcome**: Result of one `simulate()` call
+- **Metric**: Summary statistic across many outcomes
+- **`calculate_metrics(outcomes)`**: Your function that aggregates outcomes into named metrics
+
+The choice of metrics reflects your values and risk attitude. Different metrics lead to different "optimal" policies.
+
+In the [next section](05-exploratory-modeling.qmd), we'll use `explore()` to systematically run all policy×scenario combinations and analyze the results.
