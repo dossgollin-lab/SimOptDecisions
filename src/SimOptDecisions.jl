@@ -7,18 +7,20 @@ using Dates
 using JLD2
 
 # Include source files in dependency order
-include("types.jl")
+include("types.jl")        # Abstract types, TimeStep, optimization types
+include("parameters.jl")   # Parameter types (ContinuousParameter, etc.)
 include("recorders.jl")
 include("validation.jl")
 include("utils.jl")
-include("timestepping.jl")
+include("timestepping.jl") # User callbacks, run_simulation
 include("simulation.jl")
 include("metrics.jl")
 include("optimization.jl")
 include("persistence.jl")
 include("plotting.jl")
-include("executors.jl")
-include("exploration.jl")
+include("executors.jl")    # AbstractExecutor, CRN support
+include("backends.jl")     # Storage backends (InMemory, Zarr)
+include("exploration.jl")  # explore(), YAXArray results
 include("macros.jl")
 
 # ============================================================================
@@ -42,15 +44,17 @@ export initialize, run_timestep, time_axis, compute_outcome
 # Utility functions
 export discount_factor, is_first, is_last, timeindex
 
-# TimeSeriesParameter
-export TimeSeriesParameter, TimeSeriesParameterBoundsError
-
 # Recorders and traces
 export NoRecorder, TraceRecorderBuilder, SimulationTrace, record!, build_trace
 
-# ---------- Phase 2 Exports ----------
+# ---------- Parameter Types ----------
 
-# Optimization direction and objectives
+export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
+export GenericParameter, TimeSeriesParameter, TimeSeriesParameterBoundsError
+export value
+
+# ---------- Optimization ----------
+
 export OptimizationDirection, Minimize, Maximize
 export Objective, minimize, maximize
 
@@ -84,17 +88,10 @@ export SharedParameters, ExperimentConfig
 export save_checkpoint, load_checkpoint
 export save_experiment, load_experiment
 
-# ---------- Phase 3 Exports ----------
-
 # Plotting (requires Makie extension)
 export to_scalars, plot_trace, plot_pareto, plot_parallel
 
-# ---------- Phase 4 Exports: Exploratory Modeling ----------
-
-# Parameter types
-export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
-export GenericParameter
-export value
+# ---------- Exploratory Modeling ----------
 
 # Definition macros
 export @scenariodef, @policydef, @configdef, @statedef, @outcomedef

@@ -83,10 +83,12 @@ CRN ensures identical random streams for each scenario across policies, reducing
 
 ## Core Files
 
-- `types.jl` — Abstract types, TimeStep, parameter types
+- `types.jl` — Abstract types, TimeStep, optimization types (Objective, BatchSize)
+- `parameters.jl` — Parameter types (Continuous, Discrete, Categorical, TimeSeries, Generic)
+- `timestepping.jl` — User callbacks (initialize, run_timestep, time_axis, compute_outcome)
 - `simulation.jl` — simulate() entry point
-- `timestepping.jl` — TimeSeriesParameter, time_axis callbacks
 - `executors.jl` — AbstractExecutor, CRN support, Sequential/Threaded/Distributed
-- `exploration.jl` — explore(), YAXArray result building, storage backends
+- `backends.jl` — Storage backends (InMemory, Zarr), NetCDF I/O
+- `exploration.jl` — explore(), YAXArray result building, flattening
 - `macros.jl` — Definition macros (@scenariodef, @outcomedef, etc.)
 - `utils.jl` — discount_factor, timeindex, is_first, is_last

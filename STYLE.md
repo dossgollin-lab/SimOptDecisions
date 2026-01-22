@@ -128,19 +128,21 @@ execute:
 SimOptDecisions.jl/
 ├── src/
 │   ├── SimOptDecisions.jl    # Main module, exports
-│   ├── types.jl              # Abstract types, TimeStep, Objective, parameter types
-│   ├── simulation.jl         # simulate() entry point
-│   ├── timestepping.jl       # Callbacks: initialize, run_timestep, time_axis, compute_outcome
+│   ├── types.jl              # Abstract types, TimeStep, optimization types
+│   ├── parameters.jl         # Parameter types (Continuous, Discrete, Categorical, TimeSeries, Generic)
 │   ├── recorders.jl          # NoRecorder, SimulationTrace, Tables.jl
 │   ├── validation.jl         # _validate_* functions, constraints
-│   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
-│   ├── metrics.jl            # Declarative metrics (ExpectedValue, Probability, etc.)
-│   ├── executors.jl          # AbstractExecutor, CRN, Sequential/Threaded/Distributed
-│   ├── exploration.jl        # explore(), YAXArray Dataset, storage backends
-│   ├── macros.jl             # @scenariodef, @policydef, @outcomedef, etc.
-│   ├── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
 │   ├── utils.jl              # discount_factor, timeindex, is_first, is_last
-│   └── plotting.jl           # Plotting interface declarations
+│   ├── timestepping.jl       # Callbacks: initialize, run_timestep, time_axis, compute_outcome
+│   ├── simulation.jl         # simulate() entry point
+│   ├── metrics.jl            # Declarative metrics (ExpectedValue, Probability, etc.)
+│   ├── optimization.jl       # OptimizationProblem, evaluate_policy, optimize
+│   ├── persistence.jl        # SharedParameters, ExperimentConfig, checkpoints
+│   ├── plotting.jl           # Plotting interface declarations
+│   ├── executors.jl          # AbstractExecutor, CRN, Sequential/Threaded/Distributed
+│   ├── backends.jl           # Storage backends (InMemory, Zarr), NetCDF I/O
+│   ├── exploration.jl        # explore(), YAXArray Dataset building
+│   └── macros.jl             # @scenariodef, @policydef, @outcomedef, etc.
 ├── ext/
 │   ├── SimOptMetaheuristicsExt.jl
 │   ├── SimOptMakieExt.jl
@@ -148,6 +150,7 @@ SimOptDecisions.jl/
 ├── test/
 │   ├── runtests.jl
 │   ├── test_types.jl
+│   ├── test_parameters.jl
 │   ├── test_simulation.jl
 │   ├── test_timestepping.jl
 │   ├── test_recorders.jl
