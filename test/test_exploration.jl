@@ -167,10 +167,10 @@ end
         # Check outcome values make sense
         # policy 1, scenario 1 (x=1.0): 3 steps → total = 3.0
         # YAXArrays returns 0-dim arrays for single-element selection
-        @test only(total_arr[policy=1, scenario=1]) == 3.0
+        @test only(total_arr[policy = 1, scenario = 1]) == 3.0
 
         # policy 1, scenario 2 (x=2.0): 3 steps → total = 6.0
-        @test only(total_arr[policy=1, scenario=2]) == 6.0
+        @test only(total_arr[policy = 1, scenario = 2]) == 6.0
 
         # Check count values
         count_arr = result[:count]
@@ -233,8 +233,12 @@ end
             executor1 = SequentialExecutor(; crn=true, seed=12345)
             executor2 = SequentialExecutor(; crn=true, seed=12345)
 
-            result1 = explore(config, scenarios, policies; executor=executor1, progress=false)
-            result2 = explore(config, scenarios, policies; executor=executor2, progress=false)
+            result1 = explore(
+                config, scenarios, policies; executor=executor1, progress=false
+            )
+            result2 = explore(
+                config, scenarios, policies; executor=executor2, progress=false
+            )
 
             @test result1[:total][1, 1] == result2[:total][1, 1]
         end
@@ -251,9 +255,7 @@ end
             policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
             result = explore(
-                config, scenarios, policies;
-                backend=InMemoryBackend(),
-                progress=false
+                config, scenarios, policies; backend=InMemoryBackend(), progress=false
             )
             @test result isa YAXArrays.Dataset
         end
@@ -268,15 +270,15 @@ end
                     ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])
                 ),
             ]
-            policies = [
-                ExploreTestPolicy(ContinuousParameter(0.5)),
-            ]
+            policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
             zarr_path = mktempdir()
             result = explore(
-                config, scenarios, policies;
+                config,
+                scenarios,
+                policies;
                 backend=ZarrBackend(joinpath(zarr_path, "results.zarr")),
-                progress=false
+                progress=false,
             )
 
             @test result isa YAXArrays.Dataset
@@ -371,9 +373,7 @@ end
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
         @test_throws ArgumentError explore_traced(
-            config, scenarios, policies;
-            executor=DistributedExecutor(),
-            progress=false
+            config, scenarios, policies; executor=DistributedExecutor(), progress=false
         )
     end
 end

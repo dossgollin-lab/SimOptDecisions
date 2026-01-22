@@ -258,14 +258,27 @@ function explore(
 
     if backend isa InMemoryBackend
         return _explore_inmemory(
-            config, scenarios, policies, executor,
-            outcome_names, outcome_types, is_timeseries, time_axes;
+            config,
+            scenarios,
+            policies,
+            executor,
+            outcome_names,
+            outcome_types,
+            is_timeseries,
+            time_axes;
             progress,
         )
     elseif backend isa ZarrBackend
         return _explore_zarr(
-            config, scenarios, policies, executor, backend,
-            outcome_names, outcome_types, is_timeseries, time_axes;
+            config,
+            scenarios,
+            policies,
+            executor,
+            backend,
+            outcome_names,
+            outcome_types,
+            is_timeseries,
+            time_axes;
             progress,
         )
     else
@@ -273,7 +286,9 @@ function explore(
     end
 end
 
-function _extract_time_axes(outcome, outcome_names::Vector{Symbol}, is_timeseries::Vector{Bool})
+function _extract_time_axes(
+    outcome, outcome_names::Vector{Symbol}, is_timeseries::Vector{Bool}
+)
     time_axes = Dict{Symbol,Vector}()
 
     for (i, name) in enumerate(outcome_names)
@@ -311,8 +326,15 @@ function _explore_inmemory(
     execute_exploration(executor, config, scenarios, policies, callback; progress)
 
     return _build_yaxarray_result(
-        outcomes, outcome_names, outcome_types, is_timeseries,
-        n_policies, n_scenarios, time_axes, policies, scenarios
+        outcomes,
+        outcome_names,
+        outcome_types,
+        is_timeseries,
+        n_policies,
+        n_scenarios,
+        time_axes,
+        policies,
+        scenarios,
     )
 end
 
@@ -330,8 +352,14 @@ function _explore_zarr(
 )
     # Build in-memory first, then save to Zarr
     result = _explore_inmemory(
-        config, scenarios, policies, executor,
-        outcome_names, outcome_types, is_timeseries, time_axes;
+        config,
+        scenarios,
+        policies,
+        executor,
+        outcome_names,
+        outcome_types,
+        is_timeseries,
+        time_axes;
         progress,
     )
 
@@ -381,8 +409,15 @@ function explore_traced(
     execute_traced_exploration(executor, config, scenarios, policies, callback; progress)
 
     result = _build_yaxarray_result(
-        outcomes, outcome_names, outcome_types, is_timeseries,
-        n_policies, n_scenarios, time_axes, policies, scenarios
+        outcomes,
+        outcome_names,
+        outcome_types,
+        is_timeseries,
+        n_policies,
+        n_scenarios,
+        time_axes,
+        policies,
+        scenarios,
     )
 
     return result, traces
@@ -420,10 +455,16 @@ _dim_names(arr) = [typeof(d).parameters[1] for d in arr.axes]
 
 """Get outcomes for a specific policy (returns Dataset slice)."""
 function outcomes_for_policy(ds::Dataset, p::Int)
-    Dict(name => ds[name][policy=p] for name in keys(ds.cubes) if :policy in _dim_names(ds[name]))
+    Dict(
+        name => ds[name][policy = p] for
+        name in keys(ds.cubes) if :policy in _dim_names(ds[name])
+    )
 end
 
 """Get outcomes for a specific scenario (returns Dataset slice)."""
 function outcomes_for_scenario(ds::Dataset, s::Int)
-    Dict(name => ds[name][scenario=s] for name in keys(ds.cubes) if :scenario in _dim_names(ds[name]))
+    Dict(
+        name => ds[name][scenario = s] for
+        name in keys(ds.cubes) if :scenario in _dim_names(ds[name])
+    )
 end

@@ -63,8 +63,7 @@
             NCTestScenario(ContinuousParameter(2.0)),
         ]
         policies = [
-            NCTestPolicy(ContinuousParameter(0.5)),
-            NCTestPolicy(ContinuousParameter(0.8)),
+            NCTestPolicy(ContinuousParameter(0.5)), NCTestPolicy(ContinuousParameter(0.8))
         ]
 
         # Run exploration

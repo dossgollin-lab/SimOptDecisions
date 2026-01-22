@@ -56,7 +56,9 @@ struct TimeSeriesParameterBoundsError <: Exception
 end
 
 function Base.showerror(io::IO, e::TimeSeriesParameterBoundsError)
-    print(io, "TimeSeriesParameterBoundsError: time value $(e.requested) not in time_axis. ")
+    print(
+        io, "TimeSeriesParameterBoundsError: time value $(e.requested) not in time_axis. "
+    )
     if length(e.available) <= 10
         print(io, "Available: $(e.available)")
     else

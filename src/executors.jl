@@ -30,8 +30,9 @@ struct SequentialExecutor <: AbstractExecutor
     crn::CRNConfig
 end
 
-SequentialExecutor(; crn::Bool=true, seed::Integer=1234) =
+function SequentialExecutor(; crn::Bool=true, seed::Integer=1234)
     SequentialExecutor(CRNConfig(; enabled=crn, seed))
+end
 
 function execute_exploration(
     executor::SequentialExecutor,
@@ -75,7 +76,8 @@ function execute_traced_exploration(
     n_scenarios = length(scenarios)
     n_total = n_policies * n_scenarios
 
-    prog = progress ? Progress(n_total; desc="Exploring (traced): ", showspeed=true) : nothing
+    prog =
+        progress ? Progress(n_total; desc="Exploring (traced): ", showspeed=true) : nothing
 
     for (p_idx, policy) in enumerate(policies)
         for (s_idx, scenario) in enumerate(scenarios)
@@ -103,7 +105,9 @@ struct ThreadedExecutor <: AbstractExecutor
     ntasks::Int
 end
 
-function ThreadedExecutor(; crn::Bool=true, seed::Integer=1234, ntasks::Int=Threads.nthreads())
+function ThreadedExecutor(;
+    crn::Bool=true, seed::Integer=1234, ntasks::Int=Threads.nthreads()
+)
     ThreadedExecutor(CRNConfig(; enabled=crn, seed), ntasks)
 end
 
@@ -119,7 +123,11 @@ function execute_exploration(
     n_scenarios = length(scenarios)
     n_total = n_policies * n_scenarios
 
-    prog = progress ? Progress(n_total; desc="Exploring (threaded): ", showspeed=true) : nothing
+    prog = if progress
+        Progress(n_total; desc="Exploring (threaded): ", showspeed=true)
+    else
+        nothing
+    end
     lock = ReentrantLock()
 
     work_items = [(p_idx, s_idx) for p_idx in 1:n_policies for s_idx in 1:n_scenarios]
@@ -155,7 +163,11 @@ function execute_traced_exploration(
     n_scenarios = length(scenarios)
     n_total = n_policies * n_scenarios
 
-    prog = progress ? Progress(n_total; desc="Exploring (threaded, traced): ", showspeed=true) : nothing
+    prog = if progress
+        Progress(n_total; desc="Exploring (threaded, traced): ", showspeed=true)
+    else
+        nothing
+    end
     lock = ReentrantLock()
 
     work_items = [(p_idx, s_idx) for p_idx in 1:n_policies for s_idx in 1:n_scenarios]
@@ -188,8 +200,9 @@ struct DistributedExecutor <: AbstractExecutor
     crn::CRNConfig
 end
 
-DistributedExecutor(; crn::Bool=true, seed::Integer=1234) =
+function DistributedExecutor(; crn::Bool=true, seed::Integer=1234)
     DistributedExecutor(CRNConfig(; enabled=crn, seed))
+end
 
 function execute_exploration(
     executor::DistributedExecutor,
@@ -203,10 +216,16 @@ function execute_exploration(
     n_scenarios = length(scenarios)
     n_total = n_policies * n_scenarios
 
-    prog = progress ? Progress(n_total; desc="Exploring (distributed): ", showspeed=true) : nothing
+    prog = if progress
+        Progress(n_total; desc="Exploring (distributed): ", showspeed=true)
+    else
+        nothing
+    end
 
-    work_items = [(p_idx, s_idx, policies[p_idx], scenarios[s_idx])
-                  for p_idx in 1:n_policies for s_idx in 1:n_scenarios]
+    work_items = [
+        (p_idx, s_idx, policies[p_idx], scenarios[s_idx]) for p_idx in 1:n_policies for
+        s_idx in 1:n_scenarios
+    ]
 
     crn_config = executor.crn
     results = asyncmap(work_items; ntasks=n_total) do (p_idx, s_idx, policy, scenario)
@@ -233,9 +252,11 @@ function execute_traced_exploration(
     ::Function;
     progress::Bool=true,
 )
-    throw(ArgumentError(
-        "DistributedExecutor does not support traced exploration. " *
-        "Traces contain complex state that cannot be efficiently serialized across workers. " *
-        "Use SequentialExecutor or ThreadedExecutor for traced exploration."
-    ))
+    throw(
+        ArgumentError(
+            "DistributedExecutor does not support traced exploration. " *
+            "Traces contain complex state that cannot be efficiently serialized across workers. " *
+            "Use SequentialExecutor or ThreadedExecutor for traced exploration.",
+        ),
+    )
 end

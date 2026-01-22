@@ -29,7 +29,11 @@ include("macros.jl")
 
 # Abstract types (users subtype these)
 export AbstractState,
-    AbstractPolicy, AbstractConfig, AbstractScenario, AbstractRecorder, AbstractAction,
+    AbstractPolicy,
+    AbstractConfig,
+    AbstractScenario,
+    AbstractRecorder,
+    AbstractAction,
     AbstractOutcome
 
 # TimeStep struct and accessors
