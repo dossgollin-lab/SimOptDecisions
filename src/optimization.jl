@@ -135,7 +135,9 @@ function evaluate_policy(
     batch_size::AbstractBatchSize=FullBatch(),
     seed::Int=1234,
 )
-    evaluate_policy(config, scenarios, policy, metric_calculator, Random.Xoshiro(seed); batch_size)
+    evaluate_policy(
+        config, scenarios, policy, metric_calculator, Random.Xoshiro(seed); batch_size
+    )
 end
 
 # ============================================================================
@@ -170,7 +172,9 @@ function merge_into_pareto!(
     batch_size::AbstractBatchSize=FullBatch(),
     seed::Int=42,
 ) where {T}
-    metrics = evaluate_policy(config, scenarios, policy, metric_calculator; batch_size, seed)
+    metrics = evaluate_policy(
+        config, scenarios, policy, metric_calculator; batch_size, seed
+    )
 
     obj_values = Vector{T}(undef, length(objectives))
     for (i, obj) in enumerate(objectives)
@@ -241,7 +245,8 @@ function optimize(
     scenarios_vec = collect(scenarios)
     obj_vec = collect(objectives)
     const_vec = collect(constraints)
-    bounds_vec = bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
+    bounds_vec =
+        bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
 
     return optimize_backend(
         backend,

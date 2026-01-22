@@ -71,8 +71,12 @@ end
         )
 
         result = SimOptDecisions.optimize(
-            config, scenarios, MHCounterPolicy, metric_calculator, [minimize(:mean_value)];
-            backend=backend
+            config,
+            scenarios,
+            MHCounterPolicy,
+            metric_calculator,
+            [minimize(:mean_value)];
+            backend=backend,
         )
 
         # Check result structure
@@ -116,9 +120,12 @@ end
         )
 
         result = SimOptDecisions.optimize(
-            config, scenarios, MHMultiPolicy, multi_metric_calculator,
+            config,
+            scenarios,
+            MHMultiPolicy,
+            multi_metric_calculator,
             [minimize(:mean_value), minimize(:variance)];
-            backend=backend
+            backend=backend,
         )
 
         # Check result structure
@@ -149,9 +156,12 @@ end
         )
 
         result = SimOptDecisions.optimize(
-            config, scenarios, MHCounterPolicy, max_metric_calculator,
+            config,
+            scenarios,
+            MHCounterPolicy,
+            max_metric_calculator,
             [maximize(:value)];  # Maximize instead of minimize
-            backend=backend
+            backend=backend,
         )
 
         # With maximize, objectives should be positive (un-negated)
@@ -176,9 +186,13 @@ end
         )
 
         result = SimOptDecisions.optimize(
-            config, scenarios, MHCounterPolicy, fc_metric_calculator, [minimize(:value)];
+            config,
+            scenarios,
+            MHCounterPolicy,
+            fc_metric_calculator,
+            [minimize(:value)];
             backend=backend,
-            constraints=AbstractConstraint[constraint]
+            constraints=AbstractConstraint[constraint],
         )
 
         # Best solution should respect constraint (increment >= 2.0)
@@ -207,9 +221,13 @@ end
         )
 
         result = SimOptDecisions.optimize(
-            config, scenarios, MHCounterPolicy, pc_metric_calculator, [minimize(:value)];
+            config,
+            scenarios,
+            MHCounterPolicy,
+            pc_metric_calculator,
+            [minimize(:value)];
             backend=backend,
-            constraints=AbstractConstraint[penalty_constraint]
+            constraints=AbstractConstraint[penalty_constraint],
         )
 
         # Result should exist and be valid

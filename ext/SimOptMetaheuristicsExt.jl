@@ -104,9 +104,7 @@ end
 
 """Apply constraints to objective values."""
 function _apply_constraints(
-    objectives::Vector{Float64},
-    policy::AbstractPolicy,
-    constraints,
+    objectives::Vector{Float64}, policy::AbstractPolicy, constraints
 )
     for c in constraints
         if c isa FeasibilityConstraint
@@ -129,9 +127,7 @@ end
 
 """Convert Metaheuristics result to OptimizationResult."""
 function _wrap_result(
-    mh_result,
-    objectives::Vector{Objective},
-    bounds_vec::Vector{Tuple{Float64,Float64}},
+    mh_result, objectives::Vector{Objective}, bounds_vec::Vector{Tuple{Float64,Float64}}
 )
     n_objectives = length(objectives)
 
@@ -205,7 +201,11 @@ function SimOptDecisions.optimize_backend(
     n_objectives = length(objectives)
 
     # Get bounds (custom or from policy type)
-    bounds_vec = bounds !== nothing ? bounds : [(Float64(lo), Float64(hi)) for (lo, hi) in param_bounds(policy_type)]
+    bounds_vec = if bounds !== nothing
+        bounds
+    else
+        [(Float64(lo), Float64(hi)) for (lo, hi) in param_bounds(policy_type)]
+    end
     n_params = length(bounds_vec)
 
     # Optimizer works in normalized [0,1] space
@@ -220,7 +220,9 @@ function SimOptDecisions.optimize_backend(
         x_real = _denormalize(x_normalized, bounds_vec)
         policy = P(x_real)
         rng = Random.Xoshiro(sim_seed)
-        metrics = evaluate_policy(config, scenarios, policy, metric_calculator, rng; batch_size)
+        metrics = evaluate_policy(
+            config, scenarios, policy, metric_calculator, rng; batch_size
+        )
         obj_values = _extract_objectives(metrics, objectives)
         return _apply_constraints(obj_values, policy, constraints)
     end

@@ -193,4 +193,3 @@ struct PenaltyConstraint{T<:AbstractFloat,F} <: AbstractConstraint
         new{T,F}(name, func, weight)
     end
 end
-

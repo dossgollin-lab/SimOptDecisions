@@ -88,7 +88,9 @@ end
         end
 
         policy = EvalCounterPolicy(5.0)
-        metrics = evaluate_policy(config, scenarios, policy, eval_metric_calculator; seed=42)
+        metrics = evaluate_policy(
+            config, scenarios, policy, eval_metric_calculator; seed=42
+        )
 
         @test haskey(metrics, :mean_value)
         @test metrics.mean_value == 50.0  # 10 steps * 5.0 increment

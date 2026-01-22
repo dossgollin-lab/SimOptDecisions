@@ -373,7 +373,12 @@ end
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
         @test_throws ArgumentError explore(
-            config, scenarios, policies; executor=DistributedExecutor(), trace=true, progress=false
+            config,
+            scenarios,
+            policies;
+            executor=DistributedExecutor(),
+            trace=true,
+            progress=false,
         )
     end
 
@@ -388,10 +393,12 @@ end
 
         zarr_path = mktempdir()
         @test_throws ArgumentError explore(
-            config, scenarios, policies;
+            config,
+            scenarios,
+            policies;
             backend=ZarrBackend(joinpath(zarr_path, "results.zarr")),
             trace=true,
-            progress=false
+            progress=false,
         )
     end
 end

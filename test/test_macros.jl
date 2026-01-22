@@ -8,8 +8,10 @@
 
         @test TestScenario1 <: AbstractScenario
         # Parametric types: check concrete instantiation
-        @test fieldtype(TestScenario1{Float64}, :temperature) == ContinuousParameter{Float64}
-        @test fieldtype(TestScenario1{Float64}, :precipitation) == ContinuousParameter{Float64}
+        @test fieldtype(TestScenario1{Float64}, :temperature) ==
+            ContinuousParameter{Float64}
+        @test fieldtype(TestScenario1{Float64}, :precipitation) ==
+            ContinuousParameter{Float64}
 
         # Can construct instances with auto-wrapping
         s = TestScenario1(temperature=25.0, precipitation=50.0)

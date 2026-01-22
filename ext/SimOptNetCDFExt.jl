@@ -44,7 +44,9 @@ function SimOptDecisions.load_netcdf(path::String)
             isempty(dnames) && continue
 
             data = Array(v)
-            dims = tuple([Dim{Symbol(d)}(1:size(data, i)) for (i, d) in enumerate(dnames)]...)
+            dims = tuple(
+                [Dim{Symbol(d)}(1:size(data, i)) for (i, d) in enumerate(dnames)]...
+            )
             cubes[Symbol(varname)] = YAXArray(dims, data)
         end
         return Dataset(; cubes...)

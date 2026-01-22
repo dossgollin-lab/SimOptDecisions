@@ -80,8 +80,13 @@ end
         try
             optimizer_state = Dict(:iteration => 50, :best_x => [0.5])
             save_checkpoint(
-                tmpfile, config, scenarios, CheckpointPolicy, objectives, optimizer_state;
-                metadata="test checkpoint"
+                tmpfile,
+                config,
+                scenarios,
+                CheckpointPolicy,
+                objectives,
+                optimizer_state;
+                metadata="test checkpoint",
             )
 
             loaded = load_checkpoint(tmpfile)

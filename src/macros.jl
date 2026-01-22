@@ -78,7 +78,10 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
             # Plain typed field - no wrapping
             fname = expr.args[1]
             ftype = expr.args[2]
-            push!(field_infos, FieldInfo(fname, :($fname::$ftype), false, :none, nothing, nothing))
+            push!(
+                field_infos,
+                FieldInfo(fname, :($fname::$ftype), false, :none, nothing, nothing),
+            )
         end
     end
 
@@ -242,9 +245,13 @@ function _parse_continuous(args)
     name = args[1]
     if length(args) == 3
         lo, hi = args[2], args[3]
-        FieldInfo(name, :($name::ContinuousParameter{T}), true, :continuous, (lo, hi), nothing)
+        FieldInfo(
+            name, :($name::ContinuousParameter{T}), true, :continuous, (lo, hi), nothing
+        )
     else
-        FieldInfo(name, :($name::ContinuousParameter{T}), true, :continuous, nothing, nothing)
+        FieldInfo(
+            name, :($name::ContinuousParameter{T}), true, :continuous, nothing, nothing
+        )
     end
 end
 
@@ -257,13 +264,17 @@ end
 function _parse_categorical(args)
     length(args) == 2 || throw(ArgumentError("@categorical expects 2 arguments"))
     name, levels = args[1], args[2]
-    FieldInfo(name, :($name::CategoricalParameter{Symbol}), false, :categorical, nothing, levels)
+    FieldInfo(
+        name, :($name::CategoricalParameter{Symbol}), false, :categorical, nothing, levels
+    )
 end
 
 function _parse_timeseries(args)
     length(args) in (1, 2) || throw(ArgumentError("@timeseries expects 1 or 2 arguments"))
     name = args[1]
-    FieldInfo(name, :($name::TimeSeriesParameter{T,Int}), true, :timeseries, nothing, nothing)
+    FieldInfo(
+        name, :($name::TimeSeriesParameter{T,Int}), true, :timeseries, nothing, nothing
+    )
 end
 
 function _parse_generic(args)
