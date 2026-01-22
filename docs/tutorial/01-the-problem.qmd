@@ -1,5 +1,5 @@
 ---
-title: "1. The Problem"
+title: "1. Problem Setup"
 subtitle: "House elevation under flood risk"
 engine: julia
 execute:

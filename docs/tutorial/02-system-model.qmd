@@ -1,6 +1,6 @@
 ---
-title: "2. The System Model"
-subtitle: "What happens in a single year?"
+title: "2. Single-Year Physics"
+subtitle: "Depth-damage and construction cost"
 engine: julia
 execute:
   exeflags: ["--project=.."]

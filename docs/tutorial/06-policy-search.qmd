@@ -1,6 +1,6 @@
 ---
-title: "6. Policy Search"
-subtitle: "Multi-objective optimization to find the best trade-offs"
+title: "6. optimize()"
+subtitle: "Multi-objective Pareto search"
 engine: julia
 execute:
   exeflags: ["--project=.."]

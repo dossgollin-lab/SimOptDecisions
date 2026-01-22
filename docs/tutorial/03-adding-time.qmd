@@ -1,6 +1,6 @@
 ---
-title: "3. Adding Time"
-subtitle: "Types, callbacks, and your first simulation"
+title: "3. Types and simulate()"
+subtitle: "Multi-year simulation with callbacks"
 engine: julia
 execute:
   exeflags: ["--project=.."]

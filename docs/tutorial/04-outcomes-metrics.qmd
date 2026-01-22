@@ -1,6 +1,6 @@
 ---
-title: "4. Outcomes and Metrics"
-subtitle: "Aggregating across uncertain futures"
+title: "4. Aggregating with Metrics"
+subtitle: "Summarizing outcomes across scenarios"
 engine: julia
 execute:
   exeflags: ["--project=.."]

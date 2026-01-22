@@ -1,6 +1,6 @@
 ---
-title: "5. Exploratory Modeling"
-subtitle: "Systematically comparing policies across scenarios"
+title: "5. explore()"
+subtitle: "Run all policy×scenario combinations"
 engine: julia
 execute:
   exeflags: ["--project=.."]
