@@ -155,7 +155,7 @@ end
         result = explore(config, scenarios, policies; progress=false)
 
         # Result should be a Dataset
-        @test result isa Dataset
+        @test result isa YAXArrays.Dataset
 
         # Check dimensions of outcome arrays
         @test :total in keys(result.cubes)
@@ -166,10 +166,11 @@ end
 
         # Check outcome values make sense
         # policy 1, scenario 1 (x=1.0): 3 steps → total = 3.0
-        @test total_arr[policy=1, scenario=1] == 3.0
+        # YAXArrays returns 0-dim arrays for single-element selection
+        @test only(total_arr[policy=1, scenario=1]) == 3.0
 
         # policy 1, scenario 2 (x=2.0): 3 steps → total = 6.0
-        @test total_arr[policy=1, scenario=2] == 6.0
+        @test only(total_arr[policy=1, scenario=2]) == 6.0
 
         # Check count values
         count_arr = result[:count]
@@ -193,7 +194,7 @@ end
             executor = SequentialExecutor(; crn=true, seed=42)
             result = explore(config, scenarios, policies; executor, progress=false)
 
-            @test result isa Dataset
+            @test result isa YAXArrays.Dataset
             @test result[:total][1, 1] == 3.0
         end
 
@@ -215,7 +216,7 @@ end
             executor = ThreadedExecutor(; crn=true, seed=42)
             result = explore(config, scenarios, policies; executor, progress=false)
 
-            @test result isa Dataset
+            @test result isa YAXArrays.Dataset
             @test size(result[:total]) == (2, 2)
         end
 
@@ -254,7 +255,7 @@ end
                 backend=InMemoryBackend(),
                 progress=false
             )
-            @test result isa Dataset
+            @test result isa YAXArrays.Dataset
         end
 
         @testset "ZarrBackend" begin
@@ -278,7 +279,7 @@ end
                 progress=false
             )
 
-            @test result isa Dataset
+            @test result isa YAXArrays.Dataset
             @test isdir(joinpath(zarr_path, "results.zarr"))
             @test result[:total][1, 1] == 3.0
             @test result[:total][1, 2] == 6.0
@@ -355,7 +356,7 @@ end
 
         result, traces = explore_traced(config, scenarios, policies; progress=false)
 
-        @test result isa Dataset
+        @test result isa YAXArrays.Dataset
         @test size(traces) == (1, 1)
         @test traces[1, 1] isa SimulationTrace
     end

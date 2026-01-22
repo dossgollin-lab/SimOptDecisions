@@ -111,7 +111,7 @@ end
         total_data = [1.0 2.0 3.0; 4.0 5.0 6.0]
         total = YAXArray((policy_axis, scenario_axis), total_data)
 
-        ds = Dataset(; total)
+        ds = YAXArrays.Dataset(; total)
 
         fig, ax = plot_exploration(ds; outcome_field=:total)
 
@@ -127,7 +127,7 @@ end
         cost_data = rand(3, 4)
         benefit_data = rand(3, 4)
 
-        ds = Dataset(;
+        ds = YAXArrays.Dataset(;
             cost=YAXArray((policy_axis, scenario_axis), cost_data),
             benefit=YAXArray((policy_axis, scenario_axis), benefit_data),
         )

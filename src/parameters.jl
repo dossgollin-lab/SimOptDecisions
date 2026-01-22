@@ -142,3 +142,14 @@ function _is_parameter_type(ftype)
     end
     return false
 end
+
+"""Get the value from an outcome field (used by exploration and backends)."""
+function _get_outcome_value(field)
+    if field isa AbstractParameter
+        return field.value
+    elseif field isa TimeSeriesParameter
+        return field.values
+    else
+        return field
+    end
+end

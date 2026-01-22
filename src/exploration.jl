@@ -103,16 +103,7 @@ function _extract_outcome_info(outcome)
     return names, types, is_timeseries
 end
 
-"""Get the value from an outcome field."""
-function _get_outcome_value(field)
-    if field isa AbstractParameter
-        return field.value
-    elseif field isa TimeSeriesParameter
-        return field.values
-    else
-        return field
-    end
-end
+# _get_outcome_value is defined in parameters.jl
 
 # ============================================================================
 # Validation
@@ -214,7 +205,7 @@ function _add_coordinate_metadata!(
         policy_flat = _flatten_to_namedtuple(first(policies), :policy)
         for (key, _) in pairs(policy_flat)
             vals = [_flatten_to_namedtuple(p, :policy)[key] for p in policies]
-            arrays[key] = YAXArray((policy_axis,), vals)
+            arrays[key] = YAXArray((policy_axis,), _make_zarr_compatible(vals))
         end
     end
 
@@ -222,10 +213,14 @@ function _add_coordinate_metadata!(
         scenario_flat = _flatten_to_namedtuple(first(scenarios), :scenario)
         for (key, _) in pairs(scenario_flat)
             vals = [_flatten_to_namedtuple(s, :scenario)[key] for s in scenarios]
-            arrays[key] = YAXArray((scenario_axis,), vals)
+            arrays[key] = YAXArray((scenario_axis,), _make_zarr_compatible(vals))
         end
     end
 end
+
+"""Convert values to Zarr-compatible types (Symbols -> Strings)."""
+_make_zarr_compatible(vals::Vector{Symbol}) = String.(vals)
+_make_zarr_compatible(vals) = vals
 
 # ============================================================================
 # Main explore() Function
@@ -333,21 +328,14 @@ function _explore_zarr(
     time_axes::Union{Nothing,Dict{Symbol,Vector}};
     progress::Bool=true,
 )
-    n_policies = length(policies)
-    n_scenarios = length(scenarios)
-
-    g, arrays = zarr_sink(
-        backend.path, outcome_names, outcome_types, is_timeseries,
-        n_policies, n_scenarios, time_axes;
-        overwrite=backend.overwrite,
+    # Build in-memory first, then save to Zarr
+    result = _explore_inmemory(
+        config, scenarios, policies, executor,
+        outcome_names, outcome_types, is_timeseries, time_axes;
+        progress,
     )
 
-    callback = (p_idx, s_idx, outcome) -> begin
-        _write_to_zarr!(arrays, outcome, p_idx, s_idx, outcome_names, is_timeseries)
-    end
-
-    execute_exploration(executor, config, scenarios, policies, callback; progress)
-
+    save_zarr(result, backend.path; overwrite=backend.overwrite)
     return load_zarr_results(backend.path)
 end
 
@@ -427,12 +415,15 @@ end
 # Result Utilities
 # ============================================================================
 
+"""Get dimension names from a YAXArray."""
+_dim_names(arr) = [typeof(d).parameters[1] for d in arr.axes]
+
 """Get outcomes for a specific policy (returns Dataset slice)."""
 function outcomes_for_policy(ds::Dataset, p::Int)
-    Dict(name => ds[name][policy=p] for name in keys(ds.cubes) if :policy in dimnames(ds[name]))
+    Dict(name => ds[name][policy=p] for name in keys(ds.cubes) if :policy in _dim_names(ds[name]))
 end
 
 """Get outcomes for a specific scenario (returns Dataset slice)."""
 function outcomes_for_scenario(ds::Dataset, s::Int)
-    Dict(name => ds[name][scenario=s] for name in keys(ds.cubes) if :scenario in dimnames(ds[name]))
+    Dict(name => ds[name][scenario=s] for name in keys(ds.cubes) if :scenario in _dim_names(ds[name]))
 end

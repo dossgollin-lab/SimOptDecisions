@@ -376,28 +376,29 @@ explore_policies = [ExplorePolicy(ContinuousParameter(Float64(e))) for e in 0:2:
 
 result = explore(config, explore_scenarios, explore_policies; progress=false)
 
-println("Exploration result: $(size(result))")
-println("Columns: policy_idx, scenario_idx, plus flattened parameters and outcomes")
+# Result is a YAXArray Dataset with dimensions :policy and :scenario
+println("Result type: $(typeof(result))")
+println("Cubes: $(keys(result.cubes))")
+println("Outcomes shape: $(size(result[:npv_damages]))")
 ```
 
 ### Accessing Results
 
 ```{julia}
-# Access specific result
-r = result[1, 1]
+# Access specific outcome (policy 1, scenario 1)
+damages_p1_s1 = only(result[:npv_damages][policy=1, scenario=1])
+cost_p1_s1 = only(result[:construction_cost][policy=1, scenario=1])
 println("Policy 1, Scenario 1:")
-println("  Elevation: $(r.policy_elevation_ft) ft")
-println("  Discount rate: $(round(r.scenario_discount_rate, digits=3))")
-println("  NPV damages: $(round(r.outcome_npv_damages, digits=3))")
+println("  Construction cost: $(round(cost_p1_s1, digits=3))")
+println("  NPV damages: $(round(damages_p1_s1, digits=3))")
 ```
 
 ```{julia}
-# All outcomes for one policy
-pol1_outcomes = outcomes_for_policy(result, 1)
-damages = [r.outcome_npv_damages for r in pol1_outcomes]
+# All outcomes for one policy across all scenarios
+pol1_damages = result[:npv_damages].data[1, :]  # First policy, all scenarios
 println("\nPolicy 1 (0 ft elevation):")
-println("  Mean damage: $(round(mean(damages), digits=3))")
-println("  Max damage: $(round(maximum(damages), digits=3))")
+println("  Mean damage: $(round(mean(pol1_damages), digits=3))")
+println("  Max damage: $(round(maximum(pol1_damages), digits=3))")
 ```
 
 ## When to Use Each Approach
@@ -405,14 +406,15 @@ println("  Max damage: $(round(maximum(damages), digits=3))")
 | Approach | Best For |
 |----------|----------|
 | **Manual loops** | Quick exploration, custom analysis, non-wrapped types |
-| **`explore()`** | Systematic analysis, tabular export, large experiments |
+| **`explore()`** | Systematic analysis, YAXArray Dataset output, large experiments |
 
 The manual approach (like we used for the grid search) is often simpler and sufficient.
 Use `explore()` when you need:
 
-- Automatic tabular output for analysis tools
-- Streaming to CSV/NetCDF for large experiments
-- Standardized structure for reproducibility
+- Multi-dimensional array output (YAXArray Dataset)
+- Easy slicing by policy/scenario dimensions
+- Export to Zarr or NetCDF for large experiments
+- Integration with YAXArrays ecosystem for analysis
 
 ## Summary
 
@@ -421,7 +423,7 @@ We've learned:
 1. **Grid search** systematically evaluates all elevation levels
 2. **Trade-off curves** visualize cost vs damage relationships
 3. **Sensitivity analysis** shows how results depend on assumptions
-4. **`explore()`** provides structured tabular output (requires parameter types)
+4. **`explore()`** returns a YAXArray Dataset with policy/scenario dimensions (requires parameter types)
 
 ## Next Steps
 
