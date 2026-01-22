@@ -166,11 +166,11 @@ end
 
         # Check outcome values make sense
         # policy 1, scenario 1 (x=1.0): 3 steps → total = 3.0
-        # YAXArrays returns 0-dim arrays for single-element selection
-        @test only(total_arr[policy = 1, scenario = 1]) == 3.0
+        # Use first() for compatibility across Julia/YAXArrays versions
+        @test first(total_arr[policy = 1, scenario = 1]) == 3.0
 
         # policy 1, scenario 2 (x=2.0): 3 steps → total = 6.0
-        @test only(total_arr[policy = 1, scenario = 2]) == 6.0
+        @test first(total_arr[policy = 1, scenario = 2]) == 6.0
 
         # Check count values
         count_arr = result[:count]
