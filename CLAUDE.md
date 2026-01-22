@@ -92,3 +92,19 @@ CRN ensures identical random streams for each scenario across policies, reducing
 - `exploration.jl` — explore(), YAXArray result building, flattening
 - `macros.jl` — Definition macros (@scenariodef, @outcomedef, etc.)
 - `utils.jl` — discount_factor, timeindex, is_first, is_last
+
+## Documentation (Quarto)
+
+All `.qmd` files **must** use `engine: julia`, not IJulia/Jupyter:
+
+```yaml
+---
+title: "Your Title"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+```
+
+This uses `QuartoNotebookRunner.jl` which is simpler and more reliable in CI than IJulia.
+Do **not** add IJulia to `docs/Project.toml`.
