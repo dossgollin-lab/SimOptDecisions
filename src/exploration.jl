@@ -239,12 +239,21 @@ function explore(
     executor::AbstractExecutor=SequentialExecutor(),
     backend::AbstractStorageBackend=InMemoryBackend(),
     progress::Bool=true,
+    trace::Bool=false,
 )
     isempty(scenarios) && throw(ArgumentError("scenarios cannot be empty"))
     isempty(policies) && throw(ArgumentError("policies cannot be empty"))
 
+    if trace && backend isa ZarrBackend
+        throw(ArgumentError("trace=true not supported with ZarrBackend"))
+    end
+
     rng = create_scenario_rng(executor.crn, 1)
-    first_outcome = simulate(config, first(scenarios), first(policies), rng)
+    first_outcome = if trace
+        simulate_traced(config, first(scenarios), first(policies), rng)[1]
+    else
+        simulate(config, first(scenarios), first(policies), rng)
+    end
     _validate_exploratory_interface(
         eltype(scenarios), eltype(policies), typeof(first_outcome)
     )
@@ -256,7 +265,19 @@ function explore(
 
     time_axes = _extract_time_axes(first_outcome, outcome_names, is_timeseries)
 
-    if backend isa InMemoryBackend
+    if trace
+        return _explore_traced_inmemory(
+            config,
+            scenarios,
+            policies,
+            executor,
+            outcome_names,
+            outcome_types,
+            is_timeseries,
+            time_axes;
+            progress,
+        )
+    elseif backend isa InMemoryBackend
         return _explore_inmemory(
             config,
             scenarios,
@@ -367,36 +388,19 @@ function _explore_zarr(
     return load_zarr_results(backend.path)
 end
 
-# ============================================================================
-# Traced Exploration
-# ============================================================================
-
-"""
-Run traced simulations for all combinations. Returns (Dataset, traces::Matrix).
-
-Only supported with SequentialExecutor and ThreadedExecutor.
-"""
-function explore_traced(
+function _explore_traced_inmemory(
     config::AbstractConfig,
     scenarios::AbstractVector{<:AbstractScenario},
-    policies::AbstractVector{<:AbstractPolicy};
-    executor::AbstractExecutor=SequentialExecutor(),
+    policies::AbstractVector{<:AbstractPolicy},
+    executor::AbstractExecutor,
+    outcome_names::Vector{Symbol},
+    outcome_types::Vector{Type},
+    is_timeseries::Vector{Bool},
+    time_axes::Union{Nothing,Dict{Symbol,Vector}};
     progress::Bool=true,
 )
-    isempty(scenarios) && throw(ArgumentError("scenarios cannot be empty"))
-    isempty(policies) && throw(ArgumentError("policies cannot be empty"))
-
-    rng = create_scenario_rng(executor.crn, 1)
-    first_outcome, _ = simulate_traced(config, first(scenarios), first(policies), rng)
-    _validate_exploratory_interface(
-        eltype(scenarios), eltype(policies), typeof(first_outcome)
-    )
-
     n_policies = length(policies)
     n_scenarios = length(scenarios)
-
-    outcome_names, outcome_types, is_timeseries = _extract_outcome_info(first_outcome)
-    time_axes = _extract_time_axes(first_outcome, outcome_names, is_timeseries)
 
     outcomes = Matrix{Any}(undef, n_policies, n_scenarios)
     traces = Matrix{Any}(undef, n_policies, n_scenarios)
@@ -424,6 +428,29 @@ function explore_traced(
 end
 
 # ============================================================================
+# Traced Exploration (deprecated)
+# ============================================================================
+
+"""
+Run traced simulations for all combinations. Returns (Dataset, traces::Matrix).
+
+Deprecated: use `explore(...; trace=true)` instead.
+"""
+function explore_traced(
+    config::AbstractConfig,
+    scenarios::AbstractVector{<:AbstractScenario},
+    policies::AbstractVector{<:AbstractPolicy};
+    executor::AbstractExecutor=SequentialExecutor(),
+    progress::Bool=true,
+)
+    Base.depwarn(
+        "`explore_traced(...)` is deprecated, use `explore(...; trace=true)` instead",
+        :explore_traced,
+    )
+    return explore(config, scenarios, policies; executor, progress, trace=true)
+end
+
+# ============================================================================
 # Convenience Overloads
 # ============================================================================
 
@@ -434,16 +461,6 @@ function explore(
     kwargs...,
 )
     explore(config, scenarios, [policy]; kwargs...)
-end
-
-function explore(
-    prob::OptimizationProblem, policies::AbstractVector{<:AbstractPolicy}; kwargs...
-)
-    explore(prob.config, prob.scenarios, policies; kwargs...)
-end
-
-function explore(prob::OptimizationProblem, policy::AbstractPolicy; kwargs...)
-    explore(prob.config, prob.scenarios, [policy]; kwargs...)
 end
 
 # ============================================================================

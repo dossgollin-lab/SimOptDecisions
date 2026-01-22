@@ -1,20 +1,21 @@
 ---
-title: "2. Single-Year Physics"
-subtitle: "Depth-damage and construction cost"
+title: "2. Running a Time Step"
+subtitle: "Building the physics for run_timestep()"
 engine: julia
 execute:
   exeflags: ["--project=.."]
 ---
 
-Before we think about time loops or uncertainty, let's understand the core physics: **what happens in a single year when a storm hits?**
+Before we connect to the framework, let's understand the core physics: **what happens in a single time step?**
+
+In SimOptDecisions, you implement a `run_timestep()` function that the framework calls repeatedly. This function receives inputs (water level, policy choices, etc.) and returns outputs (damage, costs). Let's build that physics.
 
 ## Setup
 
 ```{julia}
 #| output: false
 using CairoMakie
-using Distributions
-using Random
+using Statistics
 ```
 
 ## The Depth-Damage Function
@@ -115,132 +116,129 @@ let
 end
 ```
 
-## Storm Surge: The Random Element
+## Water Levels as Input
 
-Each year, the ocean produces a maximum storm surge. We model annual maximum surges using the Generalized Extreme Value (GEV) distribution:
+In a `run_timestep()` function, we don't generate the water level ourselves—it comes from the **scenario**. The scenario contains a pre-generated time series of water levels for each year of the simulation.
 
-```{julia}
-#| label: fig-surge-dist
-#| fig-cap: "Distribution of annual maximum storm surge"
-#| code-fold: true
-let
-    surge_dist = GeneralizedExtremeValue(2.8, 1.0, 0.15)
-    surges = range(0, 12; length=200)
+This separation is important:
 
-    fig = Figure(; size=(600, 400))
-    ax = Axis(fig[1, 1];
-        xlabel="Annual maximum surge at gauge (ft)",
-        ylabel="Probability density",
-        title="Storm Surge Distribution (GEV)")
-    lines!(ax, surges, pdf.(surge_dist, surges); linewidth=2)
+- **Scenarios** define what might happen (uncertain inputs like water levels, economic parameters)
+- **Physics** defines how the system responds (damage given water level and elevation)
 
-    # Mark some quantiles
-    for q in [0.5, 0.9, 0.99]
-        surge_q = quantile(surge_dist, q)
-        vlines!(ax, [surge_q]; linestyle=:dash, alpha=0.5)
-        text!(ax, surge_q, 0.02; text="$(Int(q*100))%", align=(:center, :bottom))
-    end
-
-    fig
-end
-```
-
-The GEV parameters (μ, σ, ξ) are uncertain—different scenarios will have different storm climates.
-
-## Putting It Together: One Year
-
-Now let's simulate what happens in a single year. Given:
-
-- A storm surge realization
-- A house elevation choice
-- Depth-damage parameters
-
-We compute the damage:
+For now, let's write a function that computes flood damage given a water level:
 
 ```{julia}
-function simulate_one_year(;
-    surge_at_gauge::Float64,      # Sampled from GEV
-    elevation_ft::Float64,        # Policy choice
-    house_height::Float64=4.0,    # Height above reference
-    gauge_height::Float64=0.0,    # Gauge height above reference
-    dd_threshold::Float64=0.0,    # Depth-damage parameter
-    dd_saturation::Float64=8.0,   # Depth-damage parameter
-)
-    # Water level at house location
-    water_level = gauge_height + surge_at_gauge
-
-    # House floor level with elevation
+#| output: false
+function compute_flood_damage(
+    water_level::T, elevation_ft::T, house_height::T,
+    dd_threshold::T, dd_saturation::T
+) where {T<:AbstractFloat}
     floor_level = house_height + elevation_ft
-
-    # Flood depth (negative means no flooding)
     flood_depth = water_level - floor_level
-
-    # Compute damage
     damage = depth_damage(flood_depth, dd_threshold, dd_saturation)
-
     return (flood_depth=flood_depth, damage=damage)
 end
 ```
 
-Let's see how different elevations perform against a moderate surge:
+Notice:
+
+- `water_level` is an **input** (from the scenario), not generated here
+- All arguments are positional for performance (no keyword argument overhead)
+- We use `T<:AbstractFloat` for type stability—Julia infers `T` from the arguments
+- The function is pure physics: inputs → outputs
+
+Let's see how different elevations perform against various water levels:
 
 ```{julia}
-surge = 6.0  # A moderate-to-severe surge
+water_level = 6.0  # A moderate-to-severe water level
+house_height = 4.0
+dd_threshold = 0.0
+dd_saturation = 8.0
 
 for elev in [0, 3, 6, 9]
-    result = simulate_one_year(; surge_at_gauge=surge, elevation_ft=Float64(elev))
+    result = compute_flood_damage(water_level, Float64(elev), house_height, dd_threshold, dd_saturation)
     println("Elevation $(elev)ft: flood depth = $(round(result.flood_depth, digits=1))ft, damage = $(round(result.damage * 100, digits=1))%")
 end
 ```
 
 ## The Trade-off Emerges
 
-Now we can see the core trade-off:
+Let's visualize the trade-off between construction cost and flood damage across a range of water levels:
 
 ```{julia}
 #| label: fig-tradeoff-simple
-#| fig-cap: "Cost and expected damage for different elevations (single storm scenario)"
+#| fig-cap: "Cost and average damage for different elevations across water level scenarios"
 #| code-fold: true
 let
     elevations = 0:14
-    surge_dist = GeneralizedExtremeValue(2.8, 1.0, 0.15)
+    house_height = 4.0
+    dd_threshold = 0.0
+    dd_saturation = 8.0
 
-    # Monte Carlo estimate of expected annual damage
-    rng = Random.Xoshiro(42)
-    n_samples = 10_000
+    # Sample some water levels to represent uncertainty
+    water_levels = [2.0, 4.0, 6.0, 8.0, 10.0]
 
     construction = [elevation_cost(e) for e in elevations]
-    expected_damage = Float64[]
+    avg_damage = Float64[]
 
     for elev in elevations
-        damages = Float64[]
-        for _ in 1:n_samples
-            surge = rand(rng, surge_dist)
-            result = simulate_one_year(; surge_at_gauge=surge, elevation_ft=Float64(elev))
-            push!(damages, result.damage)
-        end
-        push!(expected_damage, mean(damages))
+        damages = [compute_flood_damage(wl, Float64(elev), house_height, dd_threshold, dd_saturation).damage
+                   for wl in water_levels]
+        push!(avg_damage, mean(damages))
     end
 
     fig = Figure(; size=(700, 400))
     ax = Axis(fig[1, 1];
         xlabel="Elevation (ft)",
         ylabel="Value (fraction of house)",
-        title="Single-Year Trade-off")
+        title="Trade-off: Construction Cost vs. Average Damage")
 
     barplot!(ax, collect(elevations), construction; label="Construction cost", color=:steelblue)
-    scatter!(ax, collect(elevations), expected_damage; label="Expected annual damage", color=:red, markersize=12)
+    scatter!(ax, collect(elevations), avg_damage; label="Avg damage (5 water levels)", color=:red, markersize=12)
 
     axislegend(ax; position=:rt)
     fig
 end
 ```
 
-Construction cost increases linearly with elevation. Expected damage decreases—but not linearly. The optimal single-year choice isn't obvious, and becomes even less obvious when we consider:
+Construction cost increases with elevation. Damage decreases—but not linearly. The optimal choice isn't obvious, and becomes even less obvious when we consider:
 
 1. **Multiple years**: Damages accumulate over time
 2. **Discounting**: Future damages are worth less than present costs
-3. **Uncertainty**: The storm distribution parameters are themselves uncertain
+3. **Uncertainty**: The water level distribution parameters are themselves uncertain
+
+## Preview: The run_timestep Function
+
+In the next section, we'll connect these physics to SimOptDecisions. The `run_timestep()` function you implement will look like this:
+
+```julia
+function SimOptDecisions.run_timestep(
+    state::HouseState,
+    action::ElevationAction,
+    t::TimeStep,
+    config::HouseConfig,
+    scenario::HouseScenario,
+    rng::AbstractRNG,
+)
+    # Get water level from scenario (pre-generated time series)
+    water_level = scenario.water_levels[t]
+
+    # Apply physics
+    result = compute_flood_damage(;
+        water_level = water_level,
+        elevation_ft = action.elevation_ft,
+        house_height = config.house_height,
+        dd_threshold = value(scenario.dd_threshold),
+        dd_saturation = value(scenario.dd_saturation),
+    )
+
+    # Record what happened this time step
+    step_record = (damage_fraction = result.damage, flood_depth = result.flood_depth)
+    return (state, step_record)
+end
+```
+
+The framework calls this for each time step. You implement the physics; the framework handles the loop.
 
 ## Summary
 
@@ -248,6 +246,6 @@ We've built the core physics:
 
 - **Depth-damage function**: converts flood depth to fractional damage
 - **Construction cost**: cost of elevating to a given height
-- **Single-year simulation**: combines surge, elevation, and depth-damage
+- **Flood damage computation**: combines water level, elevation, and depth-damage
 
-But this is just one year with fixed parameters. In the [next section](03-adding-time.qmd), we'll extend this to multi-year simulations with proper time structure and uncertainty.
+In the [next section](03-adding-time.qmd), we'll define the types (Config, Scenario, State, Policy) and connect to `simulate()`.

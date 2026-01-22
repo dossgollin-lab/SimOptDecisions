@@ -1,52 +1,3 @@
-# Test types for "OptimizationProblem construction"
-struct OptCounterAction <: AbstractAction end
-
-struct OptCounterPolicy <: AbstractPolicy
-    increment::Float64
-end
-
-struct OptCounterConfig <: AbstractConfig
-    n_steps::Int
-end
-
-struct OptEmptyScenario <: AbstractScenario end
-
-function SimOptDecisions.initialize(::OptCounterConfig, ::OptEmptyScenario, ::AbstractRNG)
-    return 0.0  # state is just a Float64 counter
-end
-
-function SimOptDecisions.get_action(
-    ::OptCounterPolicy, ::Float64, ::TimeStep, ::OptEmptyScenario
-)
-    return OptCounterAction()
-end
-
-function SimOptDecisions.run_timestep(
-    state::Float64,
-    ::OptCounterAction,
-    ::TimeStep,
-    ::OptCounterConfig,
-    ::OptEmptyScenario,
-    ::AbstractRNG,
-)
-    new_state = state + 1.0
-    return (new_state, new_state)  # increment state, record new value for compute_outcome
-end
-
-function SimOptDecisions.time_axis(config::OptCounterConfig, ::OptEmptyScenario)
-    return 1:config.n_steps
-end
-
-function SimOptDecisions.compute_outcome(
-    step_records::Vector, config::OptCounterConfig, ::OptEmptyScenario
-)
-    return (final_value=step_records[end],)
-end
-
-SimOptDecisions.param_bounds(::Type{OptCounterPolicy}) = [(0.0, 10.0)]
-OptCounterPolicy(x::AbstractVector) = OptCounterPolicy(x[1])
-SimOptDecisions.params(p::OptCounterPolicy) = [p.increment]
-
 # Test types for "evaluate_policy"
 struct EvalCounterAction <: AbstractAction end
 
@@ -79,7 +30,7 @@ function SimOptDecisions.run_timestep(
     ::AbstractRNG,
 )
     new_state = state + 5.0
-    return (new_state, new_state)  # Fixed increment of 5.0, record new value for compute_outcome
+    return (new_state, new_state)
 end
 
 function SimOptDecisions.time_axis(config::EvalCounterConfig, ::EvalEmptyScenario)
@@ -94,6 +45,7 @@ end
 
 SimOptDecisions.param_bounds(::Type{EvalCounterPolicy}) = [(0.0, 10.0)]
 EvalCounterPolicy(x::AbstractVector) = EvalCounterPolicy(x[1])
+SimOptDecisions.params(p::EvalCounterPolicy) = [p.increment]
 
 # Test types for "Batch selection"
 struct BatchTestScenario <: AbstractScenario
@@ -110,55 +62,6 @@ end
 # ============================================================================
 
 @testset "Optimization" begin
-    @testset "OptimizationProblem construction" begin
-        # Create optimization problem
-        config = OptCounterConfig(10)
-        scenarios = [OptEmptyScenario() for _ in 1:5]
-
-        function metric_calculator(outcomes)
-            return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
-        end
-
-        prob = OptimizationProblem(
-            config, scenarios, OptCounterPolicy, metric_calculator, [minimize(:mean_value)]
-        )
-
-        @test prob.config === config
-        @test length(prob.scenarios) == 5
-        @test prob.policy_type === OptCounterPolicy
-        @test length(prob.objectives) == 1
-        @test prob.batch_size isa FullBatch
-        @test isempty(prob.constraints)
-
-        # Test with options
-        prob2 = OptimizationProblem(
-            config,
-            scenarios,
-            OptCounterPolicy,
-            metric_calculator,
-            [minimize(:mean_value)];
-            batch_size=FixedBatch(3),
-        )
-        @test prob2.batch_size isa FixedBatch
-        @test prob2.batch_size.n == 3
-
-        # Test with custom bounds
-        prob3 = OptimizationProblem(
-            config,
-            scenarios,
-            OptCounterPolicy,
-            metric_calculator,
-            [minimize(:mean_value)];
-            bounds=[(3.0, 7.0)],
-        )
-        @test prob3.bounds == [(3.0, 7.0)]
-        @test get_bounds(prob3) == [(3.0, 7.0)]
-
-        # Default bounds come from param_bounds
-        @test prob.bounds === nothing
-        @test get_bounds(prob) == [(0.0, 10.0)]
-    end
-
     @testset "dominates" begin
         # a dominates b: all <= and at least one <
         @test dominates([1.0, 1.0], [2.0, 2.0])
@@ -184,16 +87,8 @@ end
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
-        prob = OptimizationProblem(
-            config,
-            scenarios,
-            EvalCounterPolicy,
-            eval_metric_calculator,
-            [minimize(:mean_value)],
-        )
-
         policy = EvalCounterPolicy(5.0)
-        metrics = evaluate_policy(prob, policy; seed=42)
+        metrics = evaluate_policy(config, scenarios, policy, eval_metric_calculator; seed=42)
 
         @test haskey(metrics, :mean_value)
         @test metrics.mean_value == 50.0  # 10 steps * 5.0 increment

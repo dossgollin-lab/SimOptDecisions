@@ -74,25 +74,6 @@
         @test haskey(result, :var_loss)
     end
 
-    @testset "OptimizationProblem with declarative metrics" begin
-        # Use existing test types from test_optimization.jl
-        config = OptCounterConfig(5)
-        scenarios = [OptEmptyScenario() for _ in 1:3]
-
-        metrics = [ExpectedValue(:mean_value, :final_value)]
-
-        # Valid: objective references existing metric
-        prob = OptimizationProblem(
-            config, scenarios, OptCounterPolicy, metrics, [minimize(:mean_value)]
-        )
-        @test prob.policy_type === OptCounterPolicy
-
-        # Invalid: objective references non-existent metric
-        @test_throws ArgumentError OptimizationProblem(
-            config, scenarios, OptCounterPolicy, metrics, [minimize(:nonexistent)]
-        )
-    end
-
     @testset "_all_metric_names" begin
         metrics = [
             ExpectedValue(:mean_cost, :cost),

@@ -194,27 +194,3 @@ struct PenaltyConstraint{T<:AbstractFloat,F} <: AbstractConstraint
     end
 end
 
-# ============================================================================
-# Full Problem Validation
-# ============================================================================
-
-"""Validate an OptimizationProblem before running optimization."""
-function _validate_problem(prob)
-    _validate_scenarios(prob.scenarios)
-    _validate_policy_interface(prob.policy_type)
-    _validate_objectives(prob.objectives)
-
-    validate(prob.config) || throw(ArgumentError("Config validation failed"))
-
-    n_scenarios = length(prob.scenarios)
-    batch = prob.batch_size
-    if batch isa FixedBatch && batch.n > n_scenarios
-        throw(
-            ArgumentError(
-                "FixedBatch size $(batch.n) exceeds number of scenarios ($n_scenarios)"
-            ),
-        )
-    end
-
-    return nothing
-end

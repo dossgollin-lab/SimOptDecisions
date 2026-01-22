@@ -23,36 +23,40 @@ using Statistics
 
 # === All type definitions (self-contained) ===
 
-Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
+Base.@kwdef struct HouseConfig{T<:AbstractFloat} <: AbstractConfig
     horizon::Int = 70
-    gauge_height_above_ref::T = 0.0
-    house_height_above_ref::T = 4.0
+    house_height::T = 4.0
     house_area_ft2::T = 1500.0
     house_value::T = 200_000.0
 end
 
-@scenariodef HouseElevationScenario begin
-    @continuous gev_μ
-    @continuous gev_σ
-    @continuous gev_ξ
+@scenariodef HouseScenario begin
+    @timeseries water_levels
     @continuous dd_threshold
     @continuous dd_saturation
     @continuous discount_rate
 end
 
-function sample_scenario(rng::AbstractRNG)
-    HouseElevationScenario(
-        gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3))),
-        gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))),
-        gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))),
-        dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25))),
-        dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5))),
-        discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))),
+function sample_scenario(rng::AbstractRNG, horizon::Int)
+    # Draw GEV parameters from prior distributions
+    μ = rand(rng, Normal(2.8, 0.3))
+    σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
+    ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
+
+    # Generate water level time series from GEV
+    surge_dist = GeneralizedExtremeValue(μ, σ, ξ)
+    water_levels = [rand(rng, surge_dist) for _ in 1:horizon]
+
+    HouseScenario(
+        water_levels = water_levels,
+        dd_threshold = rand(rng, Normal(0.0, 0.25)),
+        dd_saturation = rand(rng, Normal(8.0, 0.5)),
+        discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)),
     )
 end
 
-struct SeaLevelState{T<:AbstractFloat} <: AbstractState
-    msl::T
+struct HouseState{T<:AbstractFloat} <: AbstractState
+    placeholder::T
 end
 
 struct ElevationAction{T<:AbstractFloat} <: AbstractAction
@@ -64,12 +68,12 @@ end
 end
 
 # Required for optimization
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(elevation_ft = ContinuousParameter(params[1], (0.0, 14.0)))
+ElevationPolicy(params::AbstractVector) = ElevationPolicy(elevation_ft=params[1])
 SimOptDecisions.params(p::ElevationPolicy) = [value(p.elevation_ft)]
 SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
 
 function SimOptDecisions.get_action(
-    policy::ElevationPolicy, state::SeaLevelState, t::TimeStep, scenario::HouseElevationScenario
+    policy::ElevationPolicy, state::HouseState, t::TimeStep, scenario::HouseScenario
 )
     return ElevationAction(value(policy.elevation_ft))
 end
@@ -100,34 +104,33 @@ function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
 end
 elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
 
-function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationScenario, ::AbstractRNG)
-    return SeaLevelState(0.0)
+function SimOptDecisions.initialize(::HouseConfig, ::HouseScenario, ::AbstractRNG)
+    return HouseState(0.0)
 end
 
-function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationScenario)
+function SimOptDecisions.time_axis(config::HouseConfig, ::HouseScenario)
     return 1:(config.horizon)
 end
 
 function SimOptDecisions.run_timestep(
-    state::SeaLevelState, action::ElevationAction, t::TimeStep,
-    config::HouseElevationConfig, scenario::HouseElevationScenario, rng::AbstractRNG
+    state::HouseState, action::ElevationAction, t::TimeStep,
+    config::HouseConfig, scenario::HouseScenario, rng::AbstractRNG
 )
     construction_cost = is_first(t) ?
         elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
 
-    surge_dist = GeneralizedExtremeValue(value(scenario.gev_μ), value(scenario.gev_σ), value(scenario.gev_ξ))
-    surge_at_gauge = rand(rng, surge_dist)
-    water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
-    house_floor_level = config.house_height_above_ref + action.elevation_ft
-    flood_depth_at_house = water_level - house_floor_level
-    damage_fraction = depth_damage(flood_depth_at_house, value(scenario.dd_threshold), value(scenario.dd_saturation))
+    # Get water level from scenario (pre-generated)
+    water_level = scenario.water_levels[t]
+    floor_level = config.house_height + action.elevation_ft
+    flood_depth = water_level - floor_level
+    damage = depth_damage(flood_depth, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
-    return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
+    return (state, (construction_cost=construction_cost, damage_fraction=damage))
 end
 
 function SimOptDecisions.compute_outcome(
     step_records::Vector,
-    config::HouseElevationConfig, scenario::HouseElevationScenario
+    config::HouseConfig, scenario::HouseScenario
 )
     construction_cost = step_records[1].construction_cost
     npv_damages = sum(
@@ -169,10 +172,10 @@ end
 ## Setting Up the Problem
 
 ```{julia}
-config = HouseElevationConfig()
+config = HouseConfig()
 n_scenarios = 1000
 rng = Random.Xoshiro(42)
-scenarios = [sample_scenario(rng) for _ in 1:n_scenarios]
+scenarios = [sample_scenario(rng, config.horizon) for _ in 1:n_scenarios]
 
 println("Config: $(config.horizon)-year horizon, \$$(Int(config.house_value)) house")
 println("Scenarios: $(n_scenarios) sampled futures")
@@ -185,16 +188,8 @@ We trade off **construction cost** against **expected damage**—conflicting obj
 ```{julia}
 import Metaheuristics  # loads the optimization extension
 
-# Optimize over [3, 14] ft (continuous range)
-# We'll add 0 ft separately to handle the discrete gap
-prob = OptimizationProblem(
-    config,
-    scenarios,
-    ElevationPolicy,
-    calculate_metrics,
-    [minimize(:construction_cost), minimize(:expected_damage)];
-    bounds=[(3.0, 14.0)],  # custom bounds for smooth optimization
-)
+# Define objectives for optimization
+objectives = [minimize(:construction_cost), minimize(:expected_damage)]
 ```
 
 ::: {.callout-tip}
@@ -222,10 +217,18 @@ backend = MetaheuristicsBackend(;
 ```
 
 ```{julia}
-opt_result = SimOptDecisions.optimize(prob, backend)
+# Use flat API: config, scenarios, policy_type, metric_calculator, objectives
+opt_result = optimize(
+    config, scenarios, ElevationPolicy, calculate_metrics, objectives;
+    backend=backend,
+    bounds=[(3.0, 14.0)]  # custom bounds for smooth optimization
+)
 
 # Add the "no elevation" baseline to the Pareto front
-merge_into_pareto!(opt_result, prob, ElevationPolicy(ContinuousParameter(0.0, (0.0, 14.0))))
+merge_into_pareto!(
+    opt_result, config, scenarios, ElevationPolicy(elevation_ft=0.0),
+    calculate_metrics, objectives
+)
 
 println("Found $(length(opt_result.pareto_params)) Pareto-optimal solutions")
 ```

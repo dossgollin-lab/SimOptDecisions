@@ -10,6 +10,7 @@ Before making code changes, read [STYLE.md](STYLE.md) for project conventions.
 4. **No backward compatibility** — This is a breaking release; remove deprecated code, don't add aliases
 5. **No over-engineering** — Avoid abstractions unless clearly needed
 6. **Git commits** — Keep messages short; no coauthors or email addresses
+7. **NEVER touch `Project.toml` manually.** Always use `Pkg`.
 
 ## Parameter Types
 

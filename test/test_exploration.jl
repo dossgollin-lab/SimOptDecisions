@@ -347,7 +347,7 @@ end
         )
     end
 
-    @testset "explore_traced" begin
+    @testset "explore with trace=true" begin
         config = ExploreTestConfig(3)
         scenarios = [
             ExploreTestScenario(
@@ -356,14 +356,14 @@ end
         ]
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
-        result, traces = explore_traced(config, scenarios, policies; progress=false)
+        result, traces = explore(config, scenarios, policies; trace=true, progress=false)
 
         @test result isa YAXArrays.Dataset
         @test size(traces) == (1, 1)
         @test traces[1, 1] isa SimulationTrace
     end
 
-    @testset "DistributedExecutor traced throws" begin
+    @testset "DistributedExecutor trace=true throws" begin
         config = ExploreTestConfig(3)
         scenarios = [
             ExploreTestScenario(
@@ -372,8 +372,26 @@ end
         ]
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
-        @test_throws ArgumentError explore_traced(
-            config, scenarios, policies; executor=DistributedExecutor(), progress=false
+        @test_throws ArgumentError explore(
+            config, scenarios, policies; executor=DistributedExecutor(), trace=true, progress=false
+        )
+    end
+
+    @testset "trace=true with ZarrBackend throws" begin
+        config = ExploreTestConfig(3)
+        scenarios = [
+            ExploreTestScenario(
+                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+            ),
+        ]
+        policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
+
+        zarr_path = mktempdir()
+        @test_throws ArgumentError explore(
+            config, scenarios, policies;
+            backend=ZarrBackend(joinpath(zarr_path, "results.zarr")),
+            trace=true,
+            progress=false
         )
     end
 end

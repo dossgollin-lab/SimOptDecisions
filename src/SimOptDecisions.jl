@@ -72,9 +72,9 @@ export AbstractOptimizationBackend, MetaheuristicsBackend
 export params, param_bounds
 
 # Optimization problem and execution
-export OptimizationProblem, OptimizationResult
+export OptimizationResult
 export evaluate_policy, optimize, optimize_backend, pareto_front
-export merge_into_pareto!, dominates, get_bounds
+export merge_into_pareto!, dominates
 
 # Validation hooks
 export validate

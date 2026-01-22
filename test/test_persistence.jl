@@ -1,9 +1,3 @@
-# Module-level metric calculator to avoid JLD2 serialization warnings
-# (functions defined inside @testset are closures that JLD2 can't serialize properly)
-function _checkpoint_metric_calc(outcomes)
-    (mean=sum(o.final for o in outcomes) / length(outcomes),)
-end
-
 # Test types for "ExperimentConfig construction"
 struct PersistTestSOW <: AbstractScenario
     id::Int
@@ -77,26 +71,27 @@ end
     end
 
     @testset "Checkpoint save/load" begin
-        prob = OptimizationProblem(
-            CheckpointParams(),
-            [CheckpointSOW()],
-            CheckpointPolicy,
-            _checkpoint_metric_calc,
-            [minimize(:mean)],
-        )
+        config = CheckpointParams()
+        scenarios = [CheckpointSOW()]
+        objectives = [minimize(:mean)]
 
         # Test save and load
         tmpfile = tempname() * ".jld2"
         try
             optimizer_state = Dict(:iteration => 50, :best_x => [0.5])
-            save_checkpoint(tmpfile, prob, optimizer_state; metadata="test checkpoint")
+            save_checkpoint(
+                tmpfile, config, scenarios, CheckpointPolicy, objectives, optimizer_state;
+                metadata="test checkpoint"
+            )
 
             loaded = load_checkpoint(tmpfile)
             @test loaded.optimizer_state[:iteration] == 50
             @test loaded.optimizer_state[:best_x] == [0.5]
             @test loaded.metadata == "test checkpoint"
             @test loaded.version == "0.1.0"
-            @test loaded.problem isa OptimizationProblem
+            @test loaded.config isa CheckpointParams
+            @test loaded.policy_type === CheckpointPolicy
+            @test length(loaded.objectives) == 1
         finally
             rm(tmpfile; force=true)
         end
