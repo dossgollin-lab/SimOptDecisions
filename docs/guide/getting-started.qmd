@@ -225,6 +225,7 @@ Then set up and run optimization:
 
 ```julia
 using Metaheuristics
+using Statistics
 
 # Aggregate outcomes across scenarios into metrics
 function calculate_metrics(outcomes)
@@ -235,17 +236,12 @@ end
 # Sample many possible futures
 scenarios = [MyScenario(growth_rate = ContinuousParameter(rand() * 0.1)) for _ in 1:100]
 
-# Set up the problem
-prob = OptimizationProblem(
-    config,
-    scenarios,
-    OptimizablePolicy,
-    calculate_metrics,
-    [maximize(:expected_value)],
+# Run optimization (flat API)
+result = optimize(
+    config, scenarios, OptimizablePolicy, calculate_metrics,
+    [maximize(:expected_value)];
+    backend=MetaheuristicsBackend()
 )
-
-# Run optimization
-result = SimOptDecisions.optimize(prob, MetaheuristicsBackend())
 
 # Get the best policy
 best_params = result.pareto_params[1]
