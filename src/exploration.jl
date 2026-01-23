@@ -428,29 +428,6 @@ function _explore_traced_inmemory(
 end
 
 # ============================================================================
-# Traced Exploration (deprecated)
-# ============================================================================
-
-"""
-Run traced simulations for all combinations. Returns (Dataset, traces::Matrix).
-
-Deprecated: use `explore(...; trace=true)` instead.
-"""
-function explore_traced(
-    config::AbstractConfig,
-    scenarios::AbstractVector{<:AbstractScenario},
-    policies::AbstractVector{<:AbstractPolicy};
-    executor::AbstractExecutor=SequentialExecutor(),
-    progress::Bool=true,
-)
-    Base.depwarn(
-        "`explore_traced(...)` is deprecated, use `explore(...; trace=true)` instead",
-        :explore_traced,
-    )
-    return explore(config, scenarios, policies; executor, progress, trace=true)
-end
-
-# ============================================================================
 # Convenience Overloads
 # ============================================================================
 

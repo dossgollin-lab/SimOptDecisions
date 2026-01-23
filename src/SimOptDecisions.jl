@@ -108,7 +108,7 @@ export CRNConfig, create_scenario_rng
 export AbstractStorageBackend, InMemoryBackend, ZarrBackend
 
 # Exploration (YAXArray-based)
-export explore, explore_traced
+export explore
 export outcomes_for_policy, outcomes_for_scenario
 export load_zarr_results
 export save_netcdf, load_netcdf
