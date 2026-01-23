@@ -9,12 +9,8 @@ end
 
 Base.showerror(io::IO, e::ParameterTypeError) = print(io, e.msg)
 
-const _VALIDATED_TYPES = Set{Type}()
-
 """Validate that all fields in type T are parameter types."""
 function _validate_parameter_fields(::Type{T}, label::String) where {T}
-    T in _VALIDATED_TYPES && return nothing
-
     errors = String[]
 
     for (fname, ftype) in zip(fieldnames(T), fieldtypes(T))
@@ -36,32 +32,6 @@ function _validate_parameter_fields(::Type{T}, label::String) where {T}
         )
     end
 
-    push!(_VALIDATED_TYPES, T)
-    return nothing
-end
-
-const _STRICT_VALIDATION = Ref{Union{Nothing,Bool}}(nothing)
-
-function _is_strict_validation()::Bool
-    if isnothing(_STRICT_VALIDATION[])
-        _STRICT_VALIDATION[] =
-            lowercase(get(ENV, "SIMOPT_STRICT_VALIDATION", "false")) in ("true", "1", "yes")
-    end
-    return _STRICT_VALIDATION[]
-end
-
-"""Validate Scenario and Policy types (only when SIMOPT_STRICT_VALIDATION=true)."""
-function _validate_simulation_types(scenario::AbstractScenario, policy::AbstractPolicy)
-    _is_strict_validation() || return nothing
-    _validate_parameter_fields(typeof(scenario), "Scenario")
-    _validate_parameter_fields(typeof(policy), "Policy")
-    return nothing
-end
-
-"""Validate Outcome type (only when SIMOPT_STRICT_VALIDATION=true)."""
-function _validate_outcome_type(outcome)
-    _is_strict_validation() || return nothing
-    _validate_parameter_fields(typeof(outcome), "Outcome")
     return nothing
 end
 

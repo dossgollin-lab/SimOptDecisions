@@ -14,10 +14,7 @@ function simulate(
     recorder::AbstractRecorder,
     rng::AbstractRNG,
 )
-    _validate_simulation_types(scenario, policy)
-    outcome = run_simulation(config, scenario, policy, recorder, rng)
-    _validate_outcome_type(outcome)
-    return outcome
+    return run_simulation(config, scenario, policy, recorder, rng)
 end
 
 function simulate(
