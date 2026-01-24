@@ -12,66 +12,59 @@ This package is under active development and the API may change.
 
 ## What is SimOptDecisions?
 
-SimOptDecisions is a Julia framework for conducting exploratory modeling and simulation-optimization under uncertainty.
+SimOptDecisions is a Julia framework for simulation-based decision analysis under deep uncertainty.
 
-You provide a simulation model and a parameterized policy. The framework runs your model, aggregates the results, and facilitates visualization and policy search.
-
-Designed to be flexible but imposes just enough structure to enable type stability, fast execution, and ergonomic APIs.
-
-## Key Vocabulary
-
-| Term | What it means |
-|------|---------------|
-| **Config** | Fixed parameters that don't change across scenarios |
-| **Scenario** | One possible future (your uncertain parameters)^[Also called "State of the World" (SOW) in some decision analysis literature] |
-| **Policy** | A decision rule with tunable parameters |
-| **Action** | What the policy decides at each timestep |
-| **State** | Your model's internal state that evolves over time |
-| **Outcome** | Result of one simulation |
-| **Metric** | Summary statistic across many simulations |
+You provide a simulation model and decision rules. The framework runs simulations, aggregates results across uncertain futures, and searches for optimal policies.
 
 ## How It Works
 
-The framework is built around nested loops. At the innermost level, a single simulation runs:
+The framework is built around nested loops. Both `explore()` and `optimize()` call `simulate()` at their core:
 
-```julia
-# One simulation: config × scenario × policy → outcome
-function simulate(config, scenario, policy, rng)
-    state = initialize(config, scenario, rng)
-    records = []
-    for t in time_axis(config, scenario)
-        action = get_action(policy, state, t, scenario)
-        state, record = run_timestep(state, action, t, config, scenario, rng)
-        push!(records, record)
-    end
-    return compute_outcome(records, config, scenario)
-end
+```text
+┌────────┐  ┌──────────┐  ┌──────────┐
+│ Config │  │ Scenarios│  │ Policies │
+└───┬────┘  └────┬─────┘  └────┬─────┘
+    │            │             │
+    ▼            ▼             ▼
+┌───────────────────────────────────────────────────────────────┐
+│  explore(config, scenarios, policies)                         │
+│  ─ OR ─                                                       │
+│  optimize(config, scenarios, policy_type, ...)                │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ for each (policy, scenario) combination                 │  │
+│  │                                                         │  │
+│  │  simulate(config, scenario, policy)                     │  │
+│  │  ┌───────────────────────────────────────────────────┐  │  │
+│  │  │   initialize()      ───►  State                   │  │  │
+│  │  │   time_axis()       ───►  times                   │  │  │
+│  │  │                                                   │  │  │
+│  │  │   ┌─────────────────────────────────────────────┐ │  │  │
+│  │  │   │ for t in times                              │ │  │  │
+│  │  │   │   get_action()    ───►  Action              │ │  │  │
+│  │  │   │   run_timestep()  ───►  State, StepRecord   │ │  │  │
+│  │  │   └─────────────────────────────────────────────┘ │  │  │
+│  │  │                                                   │  │  │
+│  │  │   compute_outcome()   ───►  Outcome               │  │  │
+│  │  └───────────────────────────────────────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-Higher-level functions iterate over these simulations:
+| Option | What it controls | Choices |
+|--------|------------------|---------|
+| `executor` | How to run simulations | `SequentialExecutor()`, `ThreadedExecutor()`, `DistributedExecutor()` |
+| `backend` | Where to store results | `InMemoryBackend()`, `ZarrBackend(path)` |
+| `trace` | Save full simulation history | `true` / `false` (default) |
 
-```julia
-# explore: all combinations → structured table
-for policy in policies
-    for scenario in scenarios
-        outcome = simulate(config, scenario, policy, rng)
-        # flatten and record
-    end
-end
+## Why SimOptDecisions?
 
-# optimize: search for Pareto-optimal policies
-for candidate_policy in search_space
-    outcomes = [simulate(config, s, candidate_policy, rng) for s in scenarios]
-    metrics = calculate_metrics(outcomes)
-    # update Pareto front
-end
-```
+Decision-making under deep uncertainty requires running thousands of simulations across uncertain futures. SimOptDecisions handles the infrastructure so you can focus on your model:
 
-**Key functions:**
+- **You write**: physics (`run_timestep`), types (Scenario, Policy, State)
+- **Framework handles**: parallel execution, storage, Pareto optimization, CRN
 
-- `simulate(config, scenario, policy)` — run one simulation, get one outcome
-- `explore(config, scenarios, policies)` — all combinations → structured table
-- `optimize(problem, backend)` — search for Pareto-optimal policies
+Your simulation code runs in tight inner loops. The framework ensures type-stable execution for maximum performance.
 
 ## Installation
 
@@ -86,4 +79,4 @@ Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions")
 
 → [Tutorial](tutorial/01-the-problem.qmd) — Learn SimOptDecisions through a complete worked example (house elevation under flood risk)
 
-→ [Quick Reference](guide/getting-started.qmd) — Checklist of types and callbacks to implement
+→ [Quick Reference](guide/getting-started.qmd) — Checklist of types and functions to implement

@@ -1,0 +1,348 @@
+---
+title: "3. Types and simulate()"
+subtitle: "Multi-year simulation with user-defined functions"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+
+Now we'll extend our single-year model to run over multiple years using SimOptDecisions. This requires defining **types** and implementing **five functions**.
+
+## Setup
+
+```{julia}
+#| output: false
+#| code-fold: true
+#| code-summary: "Setup and physics functions (click to expand)"
+using SimOptDecisions
+using Distributions
+using Random
+using CairoMakie
+
+# Depth-damage function from previous section
+function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
+    depth <= threshold && return zero(T)
+    depth >= saturation && return one(T)
+    midpoint = (threshold + saturation) / 2
+    steepness = T(6) / (saturation - threshold)
+    return one(T) / (one(T) + exp(-steepness * (depth - midpoint)))
+end
+
+# Elevation cost function from previous section
+function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
+    Δh <= 0 && return 0.0
+    base_cost = 20_745.0
+    thresholds = [0.0, 5.0, 8.5, 12.0, 14.0]
+    rates = [80.36, 82.5, 86.25, 103.75, 113.75]
+    rate = rates[1]
+    for i in 1:(length(thresholds) - 1)
+        if Δh <= thresholds[i + 1]
+            t = (Δh - thresholds[i]) / (thresholds[i + 1] - thresholds[i])
+            rate = rates[i] + t * (rates[i + 1] - rates[i])
+            break
+        end
+        rate = rates[i + 1]
+    end
+    return (base_cost + area_ft2 * rate) / house_value
+end
+elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
+```
+
+## The Five Types
+
+SimOptDecisions uses Julia's type system to structure your model. You define five types:
+
+| Type | Purpose | Changes across scenarios? | Changes over time? |
+|------|---------|---------------------------|-------------------|
+| **Config** | Fixed parameters | No | No |
+| **Scenario** | Uncertain parameters | Yes | No |
+| **State** | Model state | No | Yes |
+| **Action** | Decision at each timestep | — | — |
+| **Policy** | Rule that produces actions | No | No |
+
+### Config: What's Fixed
+
+The **Config** holds parameters that are the same across all scenarios and don't change over time:
+
+```{julia}
+#| output: false
+Base.@kwdef struct HouseConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int = 70                    # Years to simulate
+    house_height::T = 4.0                # House floor without elevation
+    house_area_ft2::T = 1500.0           # For cost calculation
+    house_value::T = 200_000.0           # For normalizing costs
+end
+```
+
+### Scenario: What's Uncertain
+
+The **Scenario** holds uncertain parameters. Each scenario represents one possible future. The key insight: scenarios contain **pre-generated data**, not distribution parameters.
+
+```{julia}
+#| output: false
+@scenariodef HouseScenario begin
+    @timeseries water_levels   # Pre-generated annual water levels
+    @continuous dd_threshold   # Depth-damage threshold
+    @continuous dd_saturation  # Depth-damage saturation point
+    @continuous discount_rate  # Economic discount rate
+end
+```
+
+::: {.callout-note}
+## Why Pre-Generated Water Levels?
+
+Storing the actual water level time series (not GEV parameters) makes scenarios:
+
+- **Reproducible**: The same scenario always produces the same water levels
+- **Explicit**: You can inspect exactly what water levels each scenario contains
+- **Deterministic**: `run_timestep()` doesn't need to sample—it just reads the value
+
+The GEV distribution is used when *generating* scenarios, not during simulation.
+:::
+
+We sample scenarios by first drawing distribution parameters, then generating water levels:
+
+```{julia}
+#| output: false
+function sample_scenario(rng::AbstractRNG, horizon::Int)
+    # Draw GEV parameters from prior distributions
+    μ = rand(rng, Normal(2.8, 0.3))
+    σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
+    ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
+
+    # Generate water level time series from GEV
+    surge_dist = GeneralizedExtremeValue(μ, σ, ξ)
+    water_levels = [rand(rng, surge_dist) for _ in 1:horizon]
+
+    # Draw other uncertain parameters
+    dd_threshold = rand(rng, Normal(0.0, 0.25))
+    dd_saturation = rand(rng, Normal(8.0, 0.5))
+    discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))
+
+    HouseScenario(
+        water_levels = water_levels,
+        dd_threshold = dd_threshold,
+        dd_saturation = dd_saturation,
+        discount_rate = discount_rate,
+    )
+end
+```
+
+### State: What Evolves
+
+The **State** tracks variables that change over time. For this simple model, we don't need evolving state, but we still define it:
+
+```{julia}
+#| output: false
+struct HouseState{T<:AbstractFloat} <: AbstractState
+    placeholder::T  # Could track sea level rise, cumulative damage, etc.
+end
+```
+
+### Action and Policy
+
+The **Action** is what gets decided at each timestep:
+
+```{julia}
+#| output: false
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T
+end
+```
+
+The **Policy** is a decision rule that produces actions. We use `@policydef` to enable automatic bounds detection for optimization:
+
+```{julia}
+#| output: false
+@policydef ElevationPolicy begin
+    @continuous elevation_ft 0.0 14.0  # Bounds for optimization
+end
+```
+
+## The Five Functions You Implement
+
+With types defined, we implement five functions that tell the framework how to run simulations.
+
+### 1. `initialize`: Create Starting State
+
+```{julia}
+#| output: false
+function SimOptDecisions.initialize(
+    ::HouseConfig, ::HouseScenario, ::AbstractRNG
+)
+    HouseState(0.0)
+end
+```
+
+### 2. `time_axis`: Define Time Points
+
+```{julia}
+#| output: false
+function SimOptDecisions.time_axis(config::HouseConfig, ::HouseScenario)
+    1:(config.horizon)
+end
+```
+
+### 3. `get_action`: Map Policy to Action
+
+```{julia}
+#| output: false
+function SimOptDecisions.get_action(
+    policy::ElevationPolicy, ::HouseState, ::TimeStep, ::HouseScenario
+)
+    ElevationAction(value(policy.elevation_ft))
+end
+```
+
+### 4. `run_timestep`: Execute One Year
+
+This is where our physics from the previous section lives. Notice that we **read** the water level from the scenario—no sampling needed:
+
+```{julia}
+#| output: false
+function SimOptDecisions.run_timestep(
+    state::HouseState,
+    action::ElevationAction,
+    t::TimeStep,
+    config::HouseConfig,
+    scenario::HouseScenario,
+    rng::AbstractRNG,
+)
+    # Construction cost only in year 1
+    construction_cost = is_first(t) ?
+        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
+
+    # Get water level from scenario (pre-generated)
+    water_level = scenario.water_levels[t]
+
+    # Compute flood depth and damage
+    floor_level = config.house_height + action.elevation_ft
+    flood_depth = water_level - floor_level
+    damage = depth_damage(flood_depth, value(scenario.dd_threshold), value(scenario.dd_saturation))
+
+    # Return new state and step record
+    step_record = (construction_cost=construction_cost, damage_fraction=damage)
+    return (state, step_record)
+end
+```
+
+### 5. `compute_outcome`: Aggregate Results
+
+```{julia}
+#| output: false
+function SimOptDecisions.compute_outcome(
+    step_records::Vector,
+    ::HouseConfig,
+    scenario::HouseScenario,
+)
+    construction_cost = step_records[1].construction_cost
+    npv_damages = sum(
+        step_records[t].damage_fraction * discount_factor(value(scenario.discount_rate), t)
+        for t in eachindex(step_records)
+    )
+    return (
+        construction_cost = construction_cost,
+        npv_damages = npv_damages,
+        total_cost = construction_cost + npv_damages,
+    )
+end
+```
+
+## Running Your First Simulation
+
+Now we can run a simulation with `simulate()`:
+
+```{julia}
+config = HouseConfig()
+rng = Random.Xoshiro(42)
+scenario = sample_scenario(rng, config.horizon)
+policy = ElevationPolicy(elevation_ft=5.0)  # Elevate 5 feet
+
+outcome = simulate(config, scenario, policy)
+
+println("Construction cost: $(round(outcome.construction_cost, digits=3))")
+println("NPV damages: $(round(outcome.npv_damages, digits=3))")
+println("Total cost: $(round(outcome.total_cost, digits=3))")
+```
+
+## Comparing Elevations (One Scenario)
+
+Let's compare different elevation choices on the same scenario:
+
+```{julia}
+#| label: fig-compare-single
+#| fig-cap: "Total cost by elevation (single scenario)"
+#| code-fold: true
+let
+    elevations = 0:14
+    total_costs = Float64[]
+
+    for elev in elevations
+        policy = ElevationPolicy(elevation_ft=Float64(elev))
+        outcome = simulate(config, scenario, policy)
+        push!(total_costs, outcome.total_cost)
+    end
+
+    fig = Figure(; size=(700, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Elevation (ft)",
+        ylabel="Total cost (fraction of house value)",
+        title="Total Cost by Elevation (one scenario)")
+
+    barplot!(ax, collect(elevations), total_costs; color=:steelblue)
+
+    min_idx = argmin(total_costs)
+    scatter!(ax, [elevations[min_idx]], [total_costs[min_idx]];
+        color=:red, markersize=20, marker=:star5)
+
+    fig
+end
+```
+
+For this particular scenario, there's a clear optimal elevation. But this is just **one possible future**. Different scenarios will give different answers.
+
+## The Problem with One Scenario
+
+Let's run the same analysis with different scenarios:
+
+```{julia}
+#| label: fig-multiple-scenarios
+#| fig-cap: "Optimal elevation varies across scenarios"
+#| code-fold: true
+let
+    elevations = 0:14
+    n_scenarios = 6
+
+    fig = Figure(; size=(800, 500))
+    ax = Axis(fig[1, 1];
+        xlabel="Elevation (ft)",
+        ylabel="Total cost (fraction of house value)",
+        title="Different scenarios → different optimal elevations")
+
+    for i in 1:n_scenarios
+        scenario_i = sample_scenario(Random.Xoshiro(i * 100), config.horizon)
+        costs = Float64[]
+        for elev in elevations
+            policy = ElevationPolicy(elevation_ft=Float64(elev))
+            outcome = simulate(config, scenario_i, policy)
+            push!(costs, outcome.total_cost)
+        end
+        lines!(ax, collect(elevations), costs; label="Scenario $i", linewidth=2)
+    end
+
+    axislegend(ax; position=:rt)
+    fig
+end
+```
+
+The "optimal" elevation depends heavily on which future unfolds. This is why we need to consider **many scenarios** and aggregate results.
+
+## Summary
+
+We've built a complete time-stepped simulation:
+
+1. **Types**: Config, Scenario, State, Action, Policy
+2. **Functions**: initialize, time_axis, get_action, run_timestep, compute_outcome
+3. **Running**: `simulate(config, scenario, policy)` → Outcome
+
+But one scenario isn't enough. In the [next section](04-outcomes-metrics.qmd), we'll learn how to aggregate outcomes across many scenarios using **metrics**.

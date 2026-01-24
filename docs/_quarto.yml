@@ -18,17 +18,17 @@ website:
       - section: "Tutorial: House Elevation"
         contents:
           - href: tutorial/01-the-problem.qmd
-            text: "1. The Problem"
-          - href: tutorial/02-defining-your-model.qmd
-            text: "2. Defining Your Model"
-          - href: tutorial/03-running-a-simulation.qmd
-            text: "3. Running a Simulation"
-          - href: tutorial/04-evaluating-a-policy.qmd
-            text: "4. Evaluating a Policy"
+            text: "1. Problem Setup"
+          - href: tutorial/02-system-model.qmd
+            text: "2. Single-Year Physics"
+          - href: tutorial/03-adding-time.qmd
+            text: "3. Types and simulate()"
+          - href: tutorial/04-outcomes-metrics.qmd
+            text: "4. Aggregating with Metrics"
           - href: tutorial/05-exploratory-modeling.qmd
-            text: "5. Exploratory Modeling"
+            text: "5. explore()"
           - href: tutorial/06-policy-search.qmd
-            text: "6. Policy Search"
+            text: "6. optimize()"
       - section: "Reference"
         contents:
           - href: guide/getting-started.qmd

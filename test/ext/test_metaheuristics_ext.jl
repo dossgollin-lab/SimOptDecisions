@@ -3,9 +3,6 @@
 
 using Metaheuristics
 
-# Note: Both Metaheuristics and SimOptDecisions export `optimize`,
-# so we use fully qualified SimOptDecisions.optimize in tests
-
 # Test types for single-objective optimization
 struct MHCounterState <: AbstractState
     value::Float64
@@ -62,23 +59,25 @@ end
 
 @testset "MetaheuristicsExt" begin
     @testset "Single-objective optimization with ECA" begin
-        params = MHCounterParams(10)
+        config = MHCounterParams(10)
         scenarios = [MHEmptySOW() for _ in 1:5]
 
         function metric_calculator(outcomes)
             return (mean_value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
-        prob = OptimizationProblem(
-            params, scenarios, MHCounterPolicy, metric_calculator, [minimize(:mean_value)]
-        )
-
-        # Run optimization with limited iterations for speed
         backend = MetaheuristicsBackend(;
             algorithm=:ECA, max_iterations=20, population_size=20, parallel=false
         )
 
-        result = SimOptDecisions.optimize(prob, backend)
+        result = SimOptDecisions.optimize(
+            config,
+            scenarios,
+            MHCounterPolicy,
+            metric_calculator,
+            [minimize(:mean_value)];
+            backend=backend,
+        )
 
         # Check result structure
         @test result isa OptimizationResult{Float64}
@@ -104,7 +103,7 @@ end
     end
 
     @testset "Multi-objective optimization with NSGA2" begin
-        params = MHCounterParams(5)
+        config = MHCounterParams(5)
         scenarios = [MHEmptySOW() for _ in 1:3]
 
         function multi_metric_calculator(outcomes)
@@ -116,19 +115,18 @@ end
             )
         end
 
-        prob = OptimizationProblem(
-            params,
-            scenarios,
-            MHMultiPolicy,
-            multi_metric_calculator,
-            [minimize(:mean_value), minimize(:variance)],
-        )
-
         backend = MetaheuristicsBackend(;
             algorithm=:NSGA2, max_iterations=10, population_size=20, parallel=false
         )
 
-        result = SimOptDecisions.optimize(prob, backend)
+        result = SimOptDecisions.optimize(
+            config,
+            scenarios,
+            MHMultiPolicy,
+            multi_metric_calculator,
+            [minimize(:mean_value), minimize(:variance)];
+            backend=backend,
+        )
 
         # Check result structure
         @test result isa OptimizationResult{Float64}
@@ -146,26 +144,25 @@ end
     end
 
     @testset "Maximization objective handling" begin
-        params = MHCounterParams(5)
+        config = MHCounterParams(5)
         scenarios = [MHEmptySOW() for _ in 1:3]
 
         function max_metric_calculator(outcomes)
             return (value=sum(o.final_value for o in outcomes) / length(outcomes),)
         end
 
-        prob = OptimizationProblem(
-            params,
-            scenarios,
-            MHCounterPolicy,
-            max_metric_calculator,
-            [maximize(:value)],  # Maximize instead of minimize
-        )
-
         backend = MetaheuristicsBackend(;
             algorithm=:ECA, max_iterations=15, population_size=15, parallel=false
         )
 
-        result = SimOptDecisions.optimize(prob, backend)
+        result = SimOptDecisions.optimize(
+            config,
+            scenarios,
+            MHCounterPolicy,
+            max_metric_calculator,
+            [maximize(:value)];  # Maximize instead of minimize
+            backend=backend,
+        )
 
         # With maximize, objectives should be positive (un-negated)
         # The result should favor higher increment values
@@ -174,7 +171,7 @@ end
     end
 
     @testset "Constraint handling - FeasibilityConstraint" begin
-        params = MHCounterParams(5)
+        config = MHCounterParams(5)
         scenarios = [MHEmptySOW() for _ in 1:3]
 
         function fc_metric_calculator(outcomes)
@@ -184,20 +181,19 @@ end
         # Constraint: increment must be >= 2.0
         constraint = FeasibilityConstraint(:min_increment, p -> p.increment >= 2.0)
 
-        prob = OptimizationProblem(
-            params,
-            scenarios,
-            MHCounterPolicy,
-            fc_metric_calculator,
-            [minimize(:value)];
-            constraints=AbstractConstraint[constraint],
-        )
-
         backend = MetaheuristicsBackend(;
             algorithm=:ECA, max_iterations=20, population_size=20, parallel=false
         )
 
-        result = SimOptDecisions.optimize(prob, backend)
+        result = SimOptDecisions.optimize(
+            config,
+            scenarios,
+            MHCounterPolicy,
+            fc_metric_calculator,
+            [minimize(:value)];
+            backend=backend,
+            constraints=AbstractConstraint[constraint],
+        )
 
         # Best solution should respect constraint (increment >= 2.0)
         # Due to optimization dynamics, this might not be exact but should be close
@@ -206,7 +202,7 @@ end
     end
 
     @testset "Constraint handling - PenaltyConstraint" begin
-        params = MHCounterParams(5)
+        config = MHCounterParams(5)
         scenarios = [MHEmptySOW() for _ in 1:3]
 
         function pc_metric_calculator(outcomes)
@@ -220,20 +216,19 @@ end
             10.0,  # weight
         )
 
-        prob = OptimizationProblem(
-            params,
-            scenarios,
-            MHCounterPolicy,
-            pc_metric_calculator,
-            [minimize(:value)];
-            constraints=AbstractConstraint[penalty_constraint],
-        )
-
         backend = MetaheuristicsBackend(;
             algorithm=:ECA, max_iterations=15, population_size=15, parallel=false
         )
 
-        result = SimOptDecisions.optimize(prob, backend)
+        result = SimOptDecisions.optimize(
+            config,
+            scenarios,
+            MHCounterPolicy,
+            pc_metric_calculator,
+            [minimize(:value)];
+            backend=backend,
+            constraints=AbstractConstraint[penalty_constraint],
+        )
 
         # Result should exist and be valid
         @test result isa OptimizationResult{Float64}

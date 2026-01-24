@@ -19,10 +19,6 @@ end
 SimOptDecisions.param_bounds(::Type{BadBoundsPolicy}) = [(1.0, 0.0)]  # lower > upper
 BadBoundsPolicy(x::AbstractVector) = BadBoundsPolicy(x[1])
 
-# Test types for "Validation hooks"
-struct ValidatableParams <: AbstractConfig end
-struct ValidatablePolicy <: AbstractPolicy end
-
 # ============================================================================
 # Tests
 # ============================================================================
@@ -73,11 +69,5 @@ struct ValidatablePolicy <: AbstractPolicy end
         @test pc.weight == 10.0
         @test pc.func(nothing) == 0.0
         @test_throws ArgumentError PenaltyConstraint(:bad, p -> 0.0, -1.0)
-    end
-
-    @testset "Validation hooks" begin
-        # Default implementations return true
-        @test validate(ValidatableParams()) == true
-        @test validate(ValidatablePolicy(), ValidatableParams()) == true
     end
 end

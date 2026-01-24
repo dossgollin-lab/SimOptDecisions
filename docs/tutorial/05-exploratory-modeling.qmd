@@ -1,76 +1,26 @@
 ---
-title: "5. Exploratory Modeling"
-subtitle: "Systematically comparing policies across scenarios"
+title: "5. explore()"
+subtitle: "Run all policy×scenario combinations"
 engine: julia
 execute:
   exeflags: ["--project=.."]
 ---
 
-In the previous section, we manually looped over policies and scenarios.
-Now we'll use a more systematic approach with the `explore()` function.
+In the previous sections, we ran simulations manually. Now we'll use `explore()` to systematically run all policy×scenario combinations and get structured results.
 
 ## Setup
 
 ```{julia}
 #| output: false
 #| code-fold: true
-#| code-summary: "Type definitions (click to expand)"
+#| code-summary: "Type definitions and callbacks (click to expand)"
 using SimOptDecisions
 using Distributions
 using Random
 using CairoMakie
 using Statistics
 
-# === All type definitions (self-contained) ===
-
-Base.@kwdef struct HouseElevationConfig{T<:AbstractFloat} <: AbstractConfig
-    horizon::Int = 70
-    gauge_height_above_ref::T = 0.0
-    house_height_above_ref::T = 4.0
-    house_area_ft2::T = 1500.0
-    house_value::T = 200_000.0
-end
-
-@scenariodef HouseElevationScenario begin
-    @continuous gev_μ
-    @continuous gev_σ
-    @continuous gev_ξ
-    @continuous dd_threshold
-    @continuous dd_saturation
-    @continuous discount_rate
-end
-
-function sample_scenario(rng::AbstractRNG)
-    HouseElevationScenario(
-        gev_μ = ContinuousParameter(rand(rng, Normal(2.8, 0.3))),
-        gev_σ = ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))),
-        gev_ξ = ContinuousParameter(rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))),
-        dd_threshold = ContinuousParameter(rand(rng, Normal(0.0, 0.25))),
-        dd_saturation = ContinuousParameter(rand(rng, Normal(8.0, 0.5))),
-        discount_rate = ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07))),
-    )
-end
-
-struct SeaLevelState{T<:AbstractFloat} <: AbstractState
-    msl::T
-end
-
-struct ElevationAction{T<:AbstractFloat} <: AbstractAction
-    elevation_ft::T
-end
-
-@policydef ElevationPolicy begin
-    @continuous elevation_ft 0.0 14.0
-end
-
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(elevation_ft = ContinuousParameter(params[1], (0.0, 14.0)))
-
-function SimOptDecisions.get_action(
-    policy::ElevationPolicy, state::SeaLevelState, t::TimeStep, scenario::HouseElevationScenario
-)
-    return ElevationAction(value(policy.elevation_ft))
-end
-
+# Physics
 function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
     depth <= threshold && return zero(T)
     depth >= saturation && return one(T)
@@ -97,165 +47,215 @@ function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
 end
 elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
 
-function SimOptDecisions.initialize(::HouseElevationConfig, ::HouseElevationScenario, ::AbstractRNG)
-    return SeaLevelState(0.0)
+# Types
+Base.@kwdef struct HouseConfig{T<:AbstractFloat} <: AbstractConfig
+    horizon::Int = 70
+    house_height::T = 4.0
+    house_area_ft2::T = 1500.0
+    house_value::T = 200_000.0
 end
 
-function SimOptDecisions.time_axis(config::HouseElevationConfig, ::HouseElevationScenario)
-    return 1:(config.horizon)
+@scenariodef HouseScenario begin
+    @timeseries water_levels
+    @continuous dd_threshold
+    @continuous dd_saturation
+    @continuous discount_rate
 end
+
+function sample_scenario(rng::AbstractRNG, horizon::Int)
+    # Draw GEV parameters from prior distributions
+    μ = rand(rng, Normal(2.8, 0.3))
+    σ = rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))
+    ξ = rand(rng, truncated(Normal(0.15, 0.05); lower=-0.2, upper=0.5))
+
+    # Generate water level time series from GEV
+    surge_dist = GeneralizedExtremeValue(μ, σ, ξ)
+    water_levels = [rand(rng, surge_dist) for _ in 1:horizon]
+
+    HouseScenario(
+        water_levels = water_levels,
+        dd_threshold = rand(rng, Normal(0.0, 0.25)),
+        dd_saturation = rand(rng, Normal(8.0, 0.5)),
+        discount_rate = rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)),
+    )
+end
+
+struct HouseState{T<:AbstractFloat} <: AbstractState
+    placeholder::T
+end
+
+struct ElevationAction{T<:AbstractFloat} <: AbstractAction
+    elevation_ft::T
+end
+
+@policydef ElevationPolicy begin
+    @continuous elevation_ft 0.0 14.0
+end
+
+# Functions
+SimOptDecisions.initialize(::HouseConfig, ::HouseScenario, ::AbstractRNG) = HouseState(0.0)
+SimOptDecisions.time_axis(config::HouseConfig, ::HouseScenario) = 1:(config.horizon)
+SimOptDecisions.get_action(policy::ElevationPolicy, ::HouseState, ::TimeStep, ::HouseScenario) = ElevationAction(value(policy.elevation_ft))
 
 function SimOptDecisions.run_timestep(
-    state::SeaLevelState, action::ElevationAction, t::TimeStep,
-    config::HouseElevationConfig, scenario::HouseElevationScenario, rng::AbstractRNG
+    state::HouseState, action::ElevationAction, t::TimeStep,
+    config::HouseConfig, scenario::HouseScenario, rng::AbstractRNG
 )
     construction_cost = is_first(t) ?
         elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
 
-    surge_dist = GeneralizedExtremeValue(value(scenario.gev_μ), value(scenario.gev_σ), value(scenario.gev_ξ))
-    surge_at_gauge = rand(rng, surge_dist)
-    water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
-    house_floor_level = config.house_height_above_ref + action.elevation_ft
-    flood_depth_at_house = water_level - house_floor_level
-    damage_fraction = depth_damage(flood_depth_at_house, value(scenario.dd_threshold), value(scenario.dd_saturation))
+    # Get water level from scenario (pre-generated)
+    water_level = scenario.water_levels[t]
+    floor_level = config.house_height + action.elevation_ft
+    flood_depth = water_level - floor_level
+    damage = depth_damage(flood_depth, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
-    return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
+    return (state, (construction_cost=construction_cost, damage_fraction=damage))
 end
 
+# Outcome with parameter wrappers (required for explore)
 function SimOptDecisions.compute_outcome(
-    step_records::Vector,
-    config::HouseElevationConfig, scenario::HouseElevationScenario
+    step_records::Vector, ::HouseConfig, scenario::HouseScenario
 )
     construction_cost = step_records[1].construction_cost
     npv_damages = sum(
         step_records[t].damage_fraction * discount_factor(value(scenario.discount_rate), t)
         for t in eachindex(step_records)
     )
-    return (construction_cost=construction_cost, npv_damages=npv_damages)
+    return (
+        construction_cost = ContinuousParameter(construction_cost),
+        npv_damages = ContinuousParameter(npv_damages),
+        total_cost = ContinuousParameter(construction_cost + npv_damages),
+    )
 end
 ```
 
-## Grid Search: Manual Exploration
+## The `explore()` Function
 
-Let's start with a systematic grid search over elevation levels.
-We'll evaluate each elevation across many scenarios:
+The `explore()` function runs `simulate()` for every (policy, scenario) combination and returns a **YAXArray Dataset**—a labeled multi-dimensional array.
 
 ```{julia}
-config = HouseElevationConfig()
-n_scenarios = 1000
+config = HouseConfig()
 rng = Random.Xoshiro(42)
-scenarios = [sample_scenario(rng) for _ in 1:n_scenarios]
 
-elevations = 0:14
-results = Dict{Int,Vector{Float64}}()
+scenarios = [sample_scenario(rng, config.horizon) for _ in 1:200]
+policies = [ElevationPolicy(elevation_ft=Float64(e)) for e in 0:2:14]
 
-for elev in elevations
-    policy = ElevationPolicy(ContinuousParameter(Float64(elev), (0.0, 14.0)))
-    outcomes = [simulate(config, scenario, policy).npv_damages for scenario in scenarios]
-    results[elev] = outcomes
-end
+result = explore(config, scenarios, policies; progress=false)
 
-println("Evaluated $(length(elevations)) elevations × $(n_scenarios) scenarios = $(length(elevations) * n_scenarios) simulations")
+println("Result type: $(typeof(result))")
+println("Cubes: $(keys(result.cubes))")
+println("Shape: $(size(result[:total_cost]))")  # (n_policies, n_scenarios)
 ```
 
-### Trade-off Curve
-
-The key insight is the trade-off between upfront cost and expected damages:
+### Accessing Results
 
 ```{julia}
-#| label: fig-tradeoff
-#| fig-cap: "Trade-off between construction cost and expected NPV damages"
+# Get specific value
+first_val = first(result[:total_cost][policy=1, scenario=1])
+println("Policy 1, Scenario 1: $(round(first_val, digits=3))")
+
+# Get all outcomes for one policy
+policy_3_costs = result[:total_cost].data[3, :]
+println("Policy 3 mean: $(round(mean(policy_3_costs), digits=3))")
+```
+
+### Visualizing Results
+
+```{julia}
+#| label: fig-explore-boxplot
+#| fig-cap: "Distribution of total costs by elevation"
 #| code-fold: true
 let
-    construction_costs = [elevation_cost(e) for e in elevations]
-    expected_damages = [mean(results[e]) for e in elevations]
+    elevations = 0:2:14
+    n_policies = length(elevations)
 
-    fig = Figure(; size=(700, 500))
+    fig = Figure(; size=(800, 500))
     ax = Axis(fig[1, 1];
-        xlabel="Construction cost (fraction of house value)",
-        ylabel="Expected NPV damages (fraction of house value)",
-        title="Cost-Damage Trade-off by Elevation Level")
-
-    scatter!(ax, construction_costs, expected_damages; markersize=15)
+        xlabel="Elevation (ft)",
+        ylabel="Total cost (fraction of house value)",
+        title="Cost Distribution by Elevation ($(length(scenarios)) scenarios)",
+        xticks=(1:n_policies, string.(elevations)))
 
     for (i, elev) in enumerate(elevations)
-        text!(ax, construction_costs[i], expected_damages[i];
-            text=string(elev), align=(:left, :bottom), offset=(5, 5))
+        costs = result[:total_cost].data[i, :]
+        boxplot!(ax, fill(i, length(costs)), costs; width=0.6)
     end
 
     fig
 end
 ```
 
-### Total Cost
+## Executors
 
-Which elevation minimizes total expected cost?
+For large experiments, parallelize with executors:
 
 ```{julia}
-#| label: fig-total-cost
-#| fig-cap: "Total expected cost (construction + NPV damages) by elevation"
-#| code-fold: true
-let
-    construction_costs = [elevation_cost(e) for e in elevations]
-    expected_damages = [mean(results[e]) for e in elevations]
-    total_costs = construction_costs .+ expected_damages
+#| eval: false
+# Sequential (default)
+result = explore(config, scenarios, policies;
+    executor=SequentialExecutor())
 
-    fig = Figure(; size=(700, 500))
-    ax = Axis(fig[1, 1];
-        xlabel="Elevation (ft)",
-        ylabel="Total expected cost (fraction of house value)",
-        title="Total Cost by Elevation Level")
+# Multi-threaded
+result = explore(config, scenarios, policies;
+    executor=ThreadedExecutor())
 
-    barplot!(ax, collect(elevations), total_costs; color=:steelblue)
-
-    min_idx = argmin(total_costs)
-    scatter!(ax, [elevations[min_idx]], [total_costs[min_idx]];
-        color=:red, markersize=20, marker=:star5)
-
-    fig
-end
+# Distributed (across workers)
+result = explore(config, scenarios, policies;
+    executor=DistributedExecutor())
 ```
 
-### Sensitivity to Discount Rate
+### Common Random Numbers (CRN)
 
-How does the optimal elevation depend on economic assumptions?
+CRN ensures each scenario uses the same random stream across all policies, reducing variance when comparing alternatives:
+
+```{julia}
+#| eval: false
+result = explore(config, scenarios, policies;
+    executor=ThreadedExecutor(; crn=true, seed=42))
+```
+
+## Storage Backends
+
+For very large experiments, stream results to disk:
+
+```{julia}
+#| eval: false
+# Save to Zarr format
+result = explore(config, scenarios, policies;
+    backend=ZarrBackend("results.zarr"))
+
+# Load later
+result = load_zarr_results("results.zarr")
+```
+
+## Sensitivity Analysis
+
+With the full result matrix, we can analyze how outcomes depend on scenario parameters:
 
 ```{julia}
 #| label: fig-sensitivity
-#| fig-cap: "Optimal elevation varies with discount rate assumption"
+#| fig-cap: "Optimal elevation varies with discount rate"
 #| code-fold: true
 let
-    rate_bins = [0.015, 0.025, 0.035, 0.045, 0.055, 0.065]
-    optimal_by_rate = Float64[]
+    discount_rates = [value(s.discount_rate) for s in scenarios]
+    elevations = 0:2:14
 
-    for rate in rate_bins
-        filtered_scenarios = filter(s -> abs(value(s.discount_rate) - rate) < 0.005, scenarios)
-        if length(filtered_scenarios) < 10
-            push!(optimal_by_rate, NaN)
-            continue
-        end
-
-        best_elev = 0
-        best_cost = Inf
-        for elev in elevations
-            policy = ElevationPolicy(ContinuousParameter(Float64(elev), (0.0, 14.0)))
-            outcomes = [simulate(config, scenario, policy).npv_damages for scenario in filtered_scenarios]
-            total = elevation_cost(elev) + mean(outcomes)
-            if total < best_cost
-                best_cost = total
-                best_elev = elev
-            end
-        end
-        push!(optimal_by_rate, best_elev)
+    # For each scenario, find the best elevation
+    best_elevations = Int[]
+    for s in 1:length(scenarios)
+        costs = [result[:total_cost].data[p, s] for p in 1:length(elevations)]
+        best_idx = argmin(costs)
+        push!(best_elevations, elevations[best_idx])
     end
 
-    fig = Figure(; size=(600, 400))
+    fig = Figure(; size=(700, 500))
     ax = Axis(fig[1, 1];
         xlabel="Discount rate",
         ylabel="Optimal elevation (ft)",
-        title="Sensitivity to Discount Rate")
+        title="How Discount Rate Affects Optimal Elevation")
 
-    scatterlines!(ax, rate_bins, optimal_by_rate; markersize=12)
+    scatter!(ax, discount_rates, best_elevations; alpha=0.5, markersize=8)
     fig
 end
 ```
@@ -263,166 +263,15 @@ end
 ::: {.callout-tip}
 ## Key Insight
 
-Lower discount rates favor higher elevation because future damages are weighted more heavily. This sensitivity to assumptions is exactly why exploratory modeling matters—different stakeholders with different assumptions will reach different conclusions.
+Lower discount rates favor higher elevations because future damages are weighted more heavily. This sensitivity to assumptions is exactly why exploratory modeling matters—different stakeholders with different assumptions will reach different conclusions.
 :::
-
-## The `explore()` Function
-
-For more systematic exploration with automatic tabular output, SimOptDecisions provides the `explore()` function.
-Since we've been using `ContinuousParameter` throughout this tutorial, our types are already compatible!
-
-For this demo, we'll define simplified types with fewer parameters to produce cleaner output.
-
-### Parameter Types (Review)
-
-| Type | Use Case | Example |
-|------|----------|---------|
-| `ContinuousParameter{T}` | Real values | `ContinuousParameter(0.5)` |
-| `DiscreteParameter{T}` | Integers | `DiscreteParameter(10)` |
-| `CategoricalParameter{T}` | Categories | `CategoricalParameter(:high, [:low, :high])` |
-| `TimeSeriesParameter{T}` | Time series | `TimeSeriesParameter([1.0, 2.0, 3.0])` |
-
-### Wrapped Types for Exploration
-
-```{julia}
-#| output: false
-# Scenario with parameter wrappers
-struct ExploreScenario{T<:AbstractFloat} <: AbstractScenario
-    gev_μ::ContinuousParameter{T}
-    gev_σ::ContinuousParameter{T}
-    discount_rate::ContinuousParameter{T}
-    # Simplified: fewer parameters for cleaner output
-end
-
-# Policy with parameter wrapper
-struct ExplorePolicy{T<:AbstractFloat} <: AbstractPolicy
-    elevation_ft::ContinuousParameter{T}
-end
-
-# State (unchanged)
-struct ExploreState{T<:AbstractFloat} <: AbstractState
-    msl::T
-end
-
-# Action (unchanged)
-struct ExploreAction{T<:AbstractFloat} <: AbstractAction
-    elevation_ft::T
-end
-
-# Callbacks for the wrapped types
-function SimOptDecisions.get_action(
-    policy::ExplorePolicy, state::ExploreState, t::TimeStep, scenario::ExploreScenario
-)
-    return ExploreAction(value(policy.elevation_ft))
-end
-
-function SimOptDecisions.initialize(::HouseElevationConfig, ::ExploreScenario, ::AbstractRNG)
-    return ExploreState(0.0)
-end
-
-function SimOptDecisions.time_axis(config::HouseElevationConfig, ::ExploreScenario)
-    return 1:(config.horizon)
-end
-
-function SimOptDecisions.run_timestep(
-    state::ExploreState, action::ExploreAction, t::TimeStep,
-    config::HouseElevationConfig, scenario::ExploreScenario, rng::AbstractRNG
-)
-    construction_cost = is_first(t) ?
-        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
-
-    surge_dist = GeneralizedExtremeValue(value(scenario.gev_μ), value(scenario.gev_σ), 0.15)
-    surge_at_gauge = rand(rng, surge_dist)
-    water_level = config.gauge_height_above_ref + surge_at_gauge + state.msl
-    house_floor_level = config.house_height_above_ref + action.elevation_ft
-    flood_depth_at_house = water_level - house_floor_level
-    damage_fraction = depth_damage(flood_depth_at_house, 0.0, 8.0)
-
-    return (state, (construction_cost=construction_cost, damage_fraction=damage_fraction))
-end
-
-# Outcome with parameter wrappers (required for explore)
-function SimOptDecisions.compute_outcome(
-    step_records::Vector,
-    config::HouseElevationConfig, scenario::ExploreScenario
-)
-    construction_cost = step_records[1].construction_cost
-    npv_damages = sum(
-        step_records[t].damage_fraction *
-        discount_factor(value(scenario.discount_rate), t)
-        for t in eachindex(step_records)
-    )
-    return (
-        construction_cost=ContinuousParameter(construction_cost),
-        npv_damages=ContinuousParameter(npv_damages)
-    )
-end
-```
-
-### Running Exploration
-
-```{julia}
-# Create wrapped scenarios and policies
-explore_scenarios = [
-    ExploreScenario(
-        ContinuousParameter(rand(rng, Normal(2.8, 0.3))),
-        ContinuousParameter(rand(rng, truncated(Normal(1.0, 0.15); lower=0.3))),
-        ContinuousParameter(rand(rng, truncated(Normal(0.03, 0.015); lower=0.01, upper=0.07)))
-    )
-    for _ in 1:100
-]
-
-explore_policies = [ExplorePolicy(ContinuousParameter(Float64(e))) for e in 0:2:10]
-
-result = explore(config, explore_scenarios, explore_policies; progress=false)
-
-println("Exploration result: $(size(result))")
-println("Columns: policy_idx, scenario_idx, plus flattened parameters and outcomes")
-```
-
-### Accessing Results
-
-```{julia}
-# Access specific result
-r = result[1, 1]
-println("Policy 1, Scenario 1:")
-println("  Elevation: $(r.policy_elevation_ft) ft")
-println("  Discount rate: $(round(r.scenario_discount_rate, digits=3))")
-println("  NPV damages: $(round(r.outcome_npv_damages, digits=3))")
-```
-
-```{julia}
-# All outcomes for one policy
-pol1_outcomes = outcomes_for_policy(result, 1)
-damages = [r.outcome_npv_damages for r in pol1_outcomes]
-println("\nPolicy 1 (0 ft elevation):")
-println("  Mean damage: $(round(mean(damages), digits=3))")
-println("  Max damage: $(round(maximum(damages), digits=3))")
-```
-
-## When to Use Each Approach
-
-| Approach | Best For |
-|----------|----------|
-| **Manual loops** | Quick exploration, custom analysis, non-wrapped types |
-| **`explore()`** | Systematic analysis, tabular export, large experiments |
-
-The manual approach (like we used for the grid search) is often simpler and sufficient.
-Use `explore()` when you need:
-
-- Automatic tabular output for analysis tools
-- Streaming to CSV/NetCDF for large experiments
-- Standardized structure for reproducibility
 
 ## Summary
 
-We've learned:
+- `explore(config, scenarios, policies)` → YAXArray Dataset
+- Results indexed by `:policy` and `:scenario` dimensions
+- Executors for parallelization (Sequential, Threaded, Distributed)
+- CRN for variance reduction when comparing policies
+- Storage backends for large experiments (InMemory, Zarr)
 
-1. **Grid search** systematically evaluates all elevation levels
-2. **Trade-off curves** visualize cost vs damage relationships
-3. **Sensitivity analysis** shows how results depend on assumptions
-4. **`explore()`** provides structured tabular output (requires parameter types)
-
-## Next Steps
-
-In the [final section](06-policy-search.qmd), we'll use multi-objective optimization to automatically find the best trade-offs.
+In the [next section](06-policy-search.qmd), we'll use `optimize()` to automatically search for Pareto-optimal policies.

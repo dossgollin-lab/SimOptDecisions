@@ -2,6 +2,7 @@
 # These tests require CairoMakie to be loaded
 
 using CairoMakie
+using YAXArrays
 
 # Test types for "to_scalars interface"
 struct PlotTestState <: AbstractState
@@ -100,5 +101,40 @@ end
         )
 
         @test_throws ErrorException plot_pareto(result)
+    end
+
+    @testset "plot_exploration with Dataset" begin
+        # Create a simple YAXArray Dataset for testing
+        policy_axis = Dim{:policy}(1:2)
+        scenario_axis = Dim{:scenario}(1:3)
+
+        total_data = [1.0 2.0 3.0; 4.0 5.0 6.0]
+        total = YAXArray((policy_axis, scenario_axis), total_data)
+
+        ds = YAXArrays.Dataset(; total)
+
+        fig, ax = plot_exploration(ds; outcome_field=:total)
+
+        @test fig isa Figure
+        @test ax isa Axis
+    end
+
+    @testset "plot_exploration_scatter with Dataset" begin
+        # Create a simple YAXArray Dataset for testing
+        policy_axis = Dim{:policy}(1:3)
+        scenario_axis = Dim{:scenario}(1:4)
+
+        cost_data = rand(3, 4)
+        benefit_data = rand(3, 4)
+
+        ds = YAXArrays.Dataset(;
+            cost=YAXArray((policy_axis, scenario_axis), cost_data),
+            benefit=YAXArray((policy_axis, scenario_axis), benefit_data),
+        )
+
+        fig, ax = plot_exploration_scatter(ds; x=:cost, y=:benefit)
+
+        @test fig isa Figure
+        @test ax isa Axis
     end
 end

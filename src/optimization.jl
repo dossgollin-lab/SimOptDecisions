@@ -88,95 +88,6 @@ function dominates(a::AbstractVector, b::AbstractVector)
 end
 
 # ============================================================================
-# Optimization Problem
-# ============================================================================
-
-"""Defines a simulation-optimization problem."""
-struct OptimizationProblem{C<:AbstractConfig,S<:AbstractScenario,P<:AbstractPolicy,F}
-    config::C
-    scenarios::Vector{S}
-    policy_type::Type{P}
-    metric_calculator::F
-    objectives::Vector{Objective}
-    batch_size::AbstractBatchSize
-    constraints::Vector{AbstractConstraint}
-    bounds::Union{Nothing,Vector{Tuple{Float64,Float64}}}
-end
-
-"""Get parameter bounds for the problem."""
-function get_bounds(prob::OptimizationProblem)
-    prob.bounds !== nothing && return prob.bounds
-    return [(Float64(lo), Float64(hi)) for (lo, hi) in param_bounds(prob.policy_type)]
-end
-
-function OptimizationProblem(
-    config::AbstractConfig,
-    scenarios::AbstractVector{<:AbstractScenario},
-    policy_type::Type{P},
-    metric_calculator::F,
-    objectives::AbstractVector{<:Objective};
-    batch_size::AbstractBatchSize=FullBatch(),
-    constraints::AbstractVector{<:AbstractConstraint}=AbstractConstraint[],
-    bounds::Union{Nothing,AbstractVector{<:Tuple}}=nothing,
-) where {P<:AbstractPolicy,F}
-    _validate_scenarios(scenarios)
-    _validate_policy_interface(policy_type)
-    _validate_objectives(objectives)
-
-    scenarios_vec = collect(scenarios)
-    obj_vec = collect(objectives)
-    const_vec = collect(constraints)
-    bounds_vec =
-        bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
-
-    return OptimizationProblem(
-        config,
-        scenarios_vec,
-        policy_type,
-        metric_calculator,
-        obj_vec,
-        batch_size,
-        const_vec,
-        bounds_vec,
-    )
-end
-
-function OptimizationProblem(
-    config::AbstractConfig,
-    scenarios::AbstractVector{<:AbstractScenario},
-    policy_type::Type{P},
-    metrics::AbstractVector{<:AbstractMetric},
-    objectives::AbstractVector{<:Objective};
-    batch_size::AbstractBatchSize=FullBatch(),
-    constraints::AbstractVector{<:AbstractConstraint}=AbstractConstraint[],
-    bounds::Union{Nothing,AbstractVector{<:Tuple}}=nothing,
-) where {P<:AbstractPolicy}
-    metric_names = Set(_all_metric_names(metrics))
-    for obj in objectives
-        if obj.name ∉ metric_names
-            available = join(sort(collect(metric_names)), ", ")
-            throw(
-                ArgumentError(
-                    "Objective references :$(obj.name) but no metric produces it. Available: $available",
-                ),
-            )
-        end
-    end
-
-    metric_func = outcomes -> compute_metrics(metrics, outcomes)
-    return OptimizationProblem(
-        config,
-        scenarios,
-        policy_type,
-        metric_func,
-        objectives;
-        batch_size,
-        constraints,
-        bounds,
-    )
-end
-
-# ============================================================================
 # Batch Selection
 # ============================================================================
 
@@ -198,20 +109,35 @@ function _select_batch(
 end
 
 # ============================================================================
-# Policy Evaluation
+# Policy Evaluation (flat args)
 # ============================================================================
 
-"""Evaluate a policy across all (or a batch of) scenarios and return aggregated metrics."""
+"""Evaluate a policy across scenarios and return aggregated metrics."""
 function evaluate_policy(
-    prob::OptimizationProblem, policy::AbstractPolicy, rng::AbstractRNG
+    config::AbstractConfig,
+    scenarios::AbstractVector{<:AbstractScenario},
+    policy::AbstractPolicy,
+    metric_calculator,
+    rng::AbstractRNG;
+    batch_size::AbstractBatchSize=FullBatch(),
 )
-    batch_scenarios = _select_batch(prob.scenarios, prob.batch_size, rng)
-    outcomes = map(s -> simulate(prob.config, s, policy, rng), batch_scenarios)
-    return prob.metric_calculator(outcomes)
+    scenarios_vec = collect(scenarios)
+    batch_scenarios = _select_batch(scenarios_vec, batch_size, rng)
+    outcomes = map(s -> simulate(config, s, policy, rng), batch_scenarios)
+    return metric_calculator(outcomes)
 end
 
-function evaluate_policy(prob::OptimizationProblem, policy::AbstractPolicy; seed::Int=1234)
-    evaluate_policy(prob, policy, Random.Xoshiro(seed))
+function evaluate_policy(
+    config::AbstractConfig,
+    scenarios::AbstractVector{<:AbstractScenario},
+    policy::AbstractPolicy,
+    metric_calculator;
+    batch_size::AbstractBatchSize=FullBatch(),
+    seed::Int=1234,
+)
+    evaluate_policy(
+        config, scenarios, policy, metric_calculator, Random.Xoshiro(seed); batch_size
+    )
 end
 
 # ============================================================================
@@ -232,31 +158,37 @@ function _extract_objectives(metrics::NamedTuple, objectives::Vector{Objective})
 end
 
 # ============================================================================
-# Pareto Front Merging
+# Pareto Front Merging (flat args)
 # ============================================================================
 
 """Evaluate a policy and merge it into the result's Pareto front if non-dominated."""
 function merge_into_pareto!(
     result::OptimizationResult{T},
-    prob::OptimizationProblem,
-    policy::AbstractPolicy;
+    config::AbstractConfig,
+    scenarios::AbstractVector{<:AbstractScenario},
+    policy::AbstractPolicy,
+    metric_calculator,
+    objectives::AbstractVector{<:Objective};
+    batch_size::AbstractBatchSize=FullBatch(),
     seed::Int=42,
 ) where {T}
-    metrics = evaluate_policy(prob, policy; seed=seed)
+    metrics = evaluate_policy(
+        config, scenarios, policy, metric_calculator; batch_size, seed
+    )
 
-    objectives = Vector{T}(undef, length(prob.objectives))
-    for (i, obj) in enumerate(prob.objectives)
-        objectives[i] = T(metrics[obj.name])
+    obj_values = Vector{T}(undef, length(objectives))
+    for (i, obj) in enumerate(objectives)
+        obj_values[i] = T(metrics[obj.name])
     end
 
     function to_min_space(objs)
         return [
-            prob.objectives[i].direction == Maximize ? -objs[i] : objs[i] for
+            objectives[i].direction == Maximize ? -objs[i] : objs[i] for
             i in eachindex(objs)
         ]
     end
 
-    new_min = to_min_space(objectives)
+    new_min = to_min_space(obj_values)
 
     for existing_obj in result.pareto_objectives
         existing_min = to_min_space(existing_obj)
@@ -273,7 +205,7 @@ function merge_into_pareto!(
     new_pareto_objectives = result.pareto_objectives[keep_indices]
 
     push!(new_pareto_params, collect(T, params(policy)))
-    push!(new_pareto_objectives, objectives)
+    push!(new_pareto_objectives, obj_values)
 
     empty!(result.pareto_params)
     empty!(result.pareto_objectives)
@@ -287,17 +219,44 @@ end
 # Optimization Entry Point
 # ============================================================================
 
-"""Run optimization on the problem using the specified backend."""
-function optimize(prob::OptimizationProblem, backend::AbstractOptimizationBackend)
-    _validate_problem(prob)
-    return optimize_backend(prob, backend)
-end
-
 """Backend-specific optimization. Extensions add methods to this function."""
 function optimize_backend end
 
-function optimize_backend(::OptimizationProblem, backend::AbstractOptimizationBackend)
-    error(
-        "No optimize_backend method for $(typeof(backend)). Run `using Metaheuristics` first.",
+function optimize_backend(::AbstractOptimizationBackend, args...)
+    error("No optimize_backend method for this backend. Run `using Metaheuristics` first.")
+end
+
+"""Run multi-objective optimization to find Pareto-optimal policies."""
+function optimize(
+    config::AbstractConfig,
+    scenarios::AbstractVector{<:AbstractScenario},
+    policy_type::Type{<:AbstractPolicy},
+    metric_calculator,
+    objectives::AbstractVector{<:Objective};
+    backend::AbstractOptimizationBackend,
+    batch_size::AbstractBatchSize=FullBatch(),
+    constraints::AbstractVector{<:AbstractConstraint}=AbstractConstraint[],
+    bounds::Union{Nothing,AbstractVector{<:Tuple}}=nothing,
+)
+    _validate_scenarios(scenarios)
+    _validate_policy_interface(policy_type)
+    _validate_objectives(objectives)
+
+    scenarios_vec = collect(scenarios)
+    obj_vec = collect(objectives)
+    const_vec = collect(constraints)
+    bounds_vec =
+        bounds === nothing ? nothing : [(Float64(lo), Float64(hi)) for (lo, hi) in bounds]
+
+    return optimize_backend(
+        backend,
+        config,
+        scenarios_vec,
+        policy_type,
+        metric_calculator,
+        obj_vec;
+        batch_size,
+        constraints=const_vec,
+        bounds=bounds_vec,
     )
 end

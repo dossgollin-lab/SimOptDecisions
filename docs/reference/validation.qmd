@@ -113,37 +113,15 @@ Objectives must be:
 
 ## Parameter Type Validation
 
-SimOptDecisions can validate that your Scenario, Policy, and Outcome types use parameter wrappers (`ContinuousParameter`, `DiscreteParameter`, `CategoricalParameter`, `TimeSeriesParameter`, or `GenericParameter`).
+For `explore()`, your Scenario, Policy, and Outcome types must use parameter wrappers (`ContinuousParameter`, `DiscreteParameter`, `CategoricalParameter`, `TimeSeriesParameter`, or `GenericParameter`).
 
-### When Is Validation Required?
+### When Are Parameter Wrappers Required?
 
 | Function | Parameter Types | Notes |
 |----------|-----------------|-------|
-| `simulate()` | Optional (by default) | Plain types work fine |
-| `explore()` | **Required** | Always validates; will error if types aren't wrapped |
+| `simulate()` | Not required | Plain types work fine |
+| `explore()` | **Required** | Always validates; errors if types aren't wrapped |
 | `optimize()` | Recommended | Enables automatic `param_bounds` derivation |
-
-### Enabling Strict Validation
-
-To validate parameter types during `simulate()`, set the environment variable:
-
-```julia
-ENV["SIMOPT_STRICT_VALIDATION"] = "true"
-```
-
-When enabled, `simulate()` will check that all Scenario, Policy, and Outcome fields use parameter wrappers and throw a `ParameterTypeError` if they don't.
-
-::: {.callout-tip}
-## Recommendation
-
-Enable strict validation during development:
-
-```julia
-ENV["SIMOPT_STRICT_VALIDATION"] = "true"
-```
-
-This catches type errors early, before you try to use `explore()` or optimization.
-:::
 
 ### Error Messages
 

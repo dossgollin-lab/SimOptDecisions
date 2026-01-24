@@ -38,6 +38,28 @@ macro statedef(name, body)
     _defmacro_impl(:AbstractState, body, __module__; name=name)
 end
 
+"""Define an outcome type for exploration results. Same field syntax as @scenariodef."""
+macro outcomedef(body)
+    _defmacro_impl(:AbstractOutcome, body, __module__)
+end
+
+macro outcomedef(name, body)
+    _defmacro_impl(:AbstractOutcome, body, __module__; name=name)
+end
+
+# ============================================================================
+# Field Info for Macro Parsing
+# ============================================================================
+
+struct FieldInfo
+    name::Symbol
+    type_expr::Expr          # The field type expression (may use T)
+    uses_T::Bool             # Whether this field uses the T type parameter
+    wrap_kind::Symbol        # :continuous, :discrete, :categorical, :timeseries, :generic, :none
+    bounds::Union{Nothing,Tuple{Any,Any}}  # For @continuous with bounds
+    levels::Union{Nothing,Any}             # For @categorical
+end
+
 # ============================================================================
 # Implementation
 # ============================================================================
@@ -45,36 +67,158 @@ end
 function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing)
     body.head === :block || throw(ArgumentError("Expected begin...end block"))
 
-    fields = Expr[]
+    # Parse all fields
+    field_infos = FieldInfo[]
     for expr in body.args
         expr isa LineNumberNode && continue
         if expr isa Expr && expr.head === :macrocall
-            field_expr, _, _ = _parse_field_macro(expr, mod)
-            field_expr !== nothing && push!(fields, field_expr)
+            info = _parse_field_macro(expr, mod)
+            info !== nothing && push!(field_infos, info)
         elseif expr isa Expr && expr.head === :(::)
-            push!(fields, expr)
+            # Plain typed field - no wrapping
+            fname = expr.args[1]
+            ftype = expr.args[2]
+            push!(
+                field_infos,
+                FieldInfo(fname, :($fname::$ftype), false, :none, nothing, nothing),
+            )
         end
     end
 
-    isempty(fields) && throw(ArgumentError("No fields defined in block"))
+    isempty(field_infos) && throw(ArgumentError("No fields defined in block"))
 
-    struct_expr = if name === nothing
-        gensym_name = gensym("DefType")
-        quote
-            Base.@kwdef struct $gensym_name <: SimOptDecisions.$supertype
+    # Check if we need a type parameter
+    needs_T = any(f -> f.uses_T, field_infos)
+
+    # Build field expressions for struct
+    fields = [f.type_expr for f in field_infos]
+
+    # Generate struct name
+    struct_name = name === nothing ? gensym("DefType") : name
+
+    # Generate the struct definition
+    if needs_T
+        T = :T
+        struct_def = quote
+            struct $struct_name{$T<:AbstractFloat} <: SimOptDecisions.$supertype
                 $(fields...)
             end
-            $gensym_name
+        end
+    else
+        struct_def = quote
+            struct $struct_name <: SimOptDecisions.$supertype
+                $(fields...)
+            end
+        end
+    end
+
+    # Generate auto-wrapping constructor
+    constructor_def = _generate_constructor(struct_name, field_infos, needs_T, supertype)
+
+    # Combine struct and constructor
+    result = if name === nothing
+        quote
+            $struct_def
+            $constructor_def
+            $struct_name
         end
     else
         quote
-            Base.@kwdef struct $name <: SimOptDecisions.$supertype
-                $(fields...)
-            end
+            $struct_def
+            $constructor_def
         end
     end
 
-    return esc(struct_expr)
+    return esc(result)
+end
+
+function _generate_constructor(struct_name, field_infos, needs_T, supertype)
+    # Build keyword arguments (all required, no defaults)
+    kwargs = [Expr(:kw, f.name, :nothing) for f in field_infos]
+
+    # Build field wrapping expressions
+    wrap_exprs = []
+    for f in field_infos
+        wrapped = _wrap_field_expr(f)
+        push!(wrap_exprs, wrapped)
+    end
+
+    if needs_T
+        # Constructor that infers T from first continuous/timeseries field or defaults to Float64
+        quote
+            function $struct_name(; $(kwargs...))
+                # Infer T from inputs or default to Float64
+                T = Float64
+                $struct_name{T}($(wrap_exprs...))
+            end
+        end
+    else
+        quote
+            function $struct_name(; $(kwargs...))
+                $struct_name($(wrap_exprs...))
+            end
+        end
+    end
+end
+
+function _wrap_field_expr(f::FieldInfo)
+    name = f.name
+    if f.wrap_kind === :continuous
+        if f.bounds !== nothing
+            lo, hi = f.bounds
+            quote
+                if $name isa ContinuousParameter
+                    $name
+                else
+                    ContinuousParameter(T($name), (T($lo), T($hi)))
+                end
+            end
+        else
+            quote
+                if $name isa ContinuousParameter
+                    $name
+                else
+                    ContinuousParameter(T($name))
+                end
+            end
+        end
+    elseif f.wrap_kind === :discrete
+        quote
+            if $name isa DiscreteParameter
+                $name
+            else
+                DiscreteParameter(Int($name))
+            end
+        end
+    elseif f.wrap_kind === :categorical
+        levels = f.levels
+        quote
+            if $name isa CategoricalParameter
+                $name
+            else
+                CategoricalParameter($name, $levels)
+            end
+        end
+    elseif f.wrap_kind === :timeseries
+        quote
+            if $name isa TimeSeriesParameter
+                $name
+            else
+                TimeSeriesParameter($name)
+            end
+        end
+    elseif f.wrap_kind === :generic
+        quote
+            if $name isa GenericParameter
+                $name
+            else
+                GenericParameter{Any}($name)
+            end
+        end
+    else
+        # Plain field, no wrapping
+        name
+    end
 end
 
 function _parse_field_macro(expr::Expr, mod::Module)
@@ -82,51 +226,64 @@ function _parse_field_macro(expr::Expr, mod::Module)
     args = filter(x -> !(x isa LineNumberNode), expr.args[2:end])
 
     if macro_name === Symbol("@continuous")
-        return _parse_continuous(args), nothing, false
+        return _parse_continuous(args)
     elseif macro_name === Symbol("@discrete")
-        return _parse_discrete(args), nothing, false
+        return _parse_discrete(args)
     elseif macro_name === Symbol("@categorical")
-        return _parse_categorical(args), nothing, false
+        return _parse_categorical(args)
     elseif macro_name === Symbol("@timeseries")
-        return _parse_timeseries(args), nothing, false
+        return _parse_timeseries(args)
     elseif macro_name === Symbol("@generic")
-        return _parse_generic(args), nothing, true
+        return _parse_generic(args)
     else
-        return nothing, nothing, false
+        return nothing
     end
 end
 
 function _parse_continuous(args)
     length(args) in (1, 3) || throw(ArgumentError("@continuous expects 1 or 3 arguments"))
     name = args[1]
-    return :($name::ContinuousParameter{Float64})
+    if length(args) == 3
+        lo, hi = args[2], args[3]
+        FieldInfo(
+            name, :($name::ContinuousParameter{T}), true, :continuous, (lo, hi), nothing
+        )
+    else
+        FieldInfo(
+            name, :($name::ContinuousParameter{T}), true, :continuous, nothing, nothing
+        )
+    end
 end
 
 function _parse_discrete(args)
     length(args) in (1, 2) || throw(ArgumentError("@discrete expects 1 or 2 arguments"))
     name = args[1]
-    return :($name::DiscreteParameter{Int})
+    FieldInfo(name, :($name::DiscreteParameter{Int}), false, :discrete, nothing, nothing)
 end
 
 function _parse_categorical(args)
     length(args) == 2 || throw(ArgumentError("@categorical expects 2 arguments"))
-    name = args[1]
-    return :($name::CategoricalParameter{Symbol})
+    name, levels = args[1], args[2]
+    FieldInfo(
+        name, :($name::CategoricalParameter{Symbol}), false, :categorical, nothing, levels
+    )
 end
 
 function _parse_timeseries(args)
     length(args) in (1, 2) || throw(ArgumentError("@timeseries expects 1 or 2 arguments"))
     name = args[1]
-    return :($name::TimeSeriesParameter{Float64,Int})
+    FieldInfo(
+        name, :($name::TimeSeriesParameter{T,Int}), true, :timeseries, nothing, nothing
+    )
 end
 
 function _parse_generic(args)
     if length(args) == 1
         name = args[1]
-        return :($name::GenericParameter{Any})
+        FieldInfo(name, :($name::GenericParameter{Any}), false, :generic, nothing, nothing)
     elseif length(args) == 2
         name, T = args
-        return :($name::GenericParameter{$T})
+        FieldInfo(name, :($name::GenericParameter{$T}), false, :generic, nothing, nothing)
     else
         throw(ArgumentError("@generic expects 1 or 2 arguments"))
     end

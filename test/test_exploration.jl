@@ -1,4 +1,5 @@
 using Tables
+using YAXArrays
 
 # ============================================================================
 # Test Types with Parameter Fields
@@ -136,7 +137,7 @@ end
         end
     end
 
-    @testset "explore() basic" begin
+    @testset "explore() basic - YAXArray Dataset" begin
         config = ExploreTestConfig(3)
         scenarios = [
             ExploreTestScenario(
@@ -153,53 +154,141 @@ end
 
         result = explore(config, scenarios, policies; progress=false)
 
-        @test size(result) == (2, 2)  # 2 policies × 2 scenarios
-        @test length(result) == 4
+        # Result should be a Dataset
+        @test result isa YAXArrays.Dataset
 
-        # Check indexing
-        @test result[1, 1].policy_idx == 1
-        @test result[1, 1].scenario_idx == 1
-        @test result[2, 2].policy_idx == 2
-        @test result[2, 2].scenario_idx == 2
+        # Check dimensions of outcome arrays
+        @test :total in keys(result.cubes)
+        @test :count in keys(result.cubes)
 
-        # Check flattened columns exist
-        @test :policy_threshold in keys(result[1, 1])
-        @test :scenario_x in keys(result[1, 1])
-        @test :outcome_total in keys(result[1, 1])
+        total_arr = result[:total]
+        @test size(total_arr) == (2, 2)  # 2 policies × 2 scenarios
 
         # Check outcome values make sense
-        # policy 1 (threshold=0.5), scenario 1 (x=1.0): 3 steps → total = 3.0
-        @test result[1, 1].outcome_total == 3.0
-        @test result[1, 1].outcome_count == 3
+        # policy 1, scenario 1 (x=1.0): 3 steps → total = 3.0
+        # Use first() for compatibility across Julia/YAXArrays versions
+        @test first(total_arr[policy = 1, scenario = 1]) == 3.0
 
-        # policy 1 (threshold=0.5), scenario 2 (x=2.0): 3 steps → total = 6.0
-        @test result[1, 2].outcome_total == 6.0
+        # policy 1, scenario 2 (x=2.0): 3 steps → total = 6.0
+        @test first(total_arr[policy = 1, scenario = 2]) == 6.0
+
+        # Check count values
+        count_arr = result[:count]
+        @test all(count_arr .== 3)
+
+        # Check parameter metadata is stored
+        @test :policy_threshold in keys(result.cubes)
+        @test :scenario_x in keys(result.cubes)
     end
 
-    @testset "Tables.jl compatibility" begin
-        config = ExploreTestConfig(3)
-        scenarios = [
-            ExploreTestScenario(
-                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
-            ),
-        ]
-        policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
+    @testset "Executors" begin
+        @testset "SequentialExecutor" begin
+            config = ExploreTestConfig(3)
+            scenarios = [
+                ExploreTestScenario(
+                    ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+                ),
+            ]
+            policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
-        result = explore(config, scenarios, policies; progress=false)
+            executor = SequentialExecutor(; crn=true, seed=42)
+            result = explore(config, scenarios, policies; executor, progress=false)
 
-        @test Tables.istable(result)
-        @test Tables.rowaccess(typeof(result))
+            @test result isa YAXArrays.Dataset
+            @test result[:total][1, 1] == 3.0
+        end
 
-        # Should be convertible to any Tables.jl sink
-        rows = collect(Tables.rows(result))
-        @test length(rows) == 1
+        @testset "ThreadedExecutor" begin
+            config = ExploreTestConfig(3)
+            scenarios = [
+                ExploreTestScenario(
+                    ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+                ),
+                ExploreTestScenario(
+                    ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])
+                ),
+            ]
+            policies = [
+                ExploreTestPolicy(ContinuousParameter(0.5)),
+                ExploreTestPolicy(ContinuousParameter(0.8)),
+            ]
 
-        # Schema should be available
-        schema = Tables.schema(result)
-        @test schema !== nothing
+            executor = ThreadedExecutor(; crn=true, seed=42)
+            result = explore(config, scenarios, policies; executor, progress=false)
+
+            @test result isa YAXArrays.Dataset
+            @test size(result[:total]) == (2, 2)
+        end
+
+        @testset "CRN reproducibility" begin
+            config = ExploreTestConfig(3)
+            scenarios = [
+                ExploreTestScenario(
+                    ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+                ),
+            ]
+            policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
+
+            # Same seed should give same results
+            executor1 = SequentialExecutor(; crn=true, seed=12345)
+            executor2 = SequentialExecutor(; crn=true, seed=12345)
+
+            result1 = explore(
+                config, scenarios, policies; executor=executor1, progress=false
+            )
+            result2 = explore(
+                config, scenarios, policies; executor=executor2, progress=false
+            )
+
+            @test result1[:total][1, 1] == result2[:total][1, 1]
+        end
     end
 
-    @testset "ExplorationResult accessors" begin
+    @testset "Storage Backends" begin
+        @testset "InMemoryBackend" begin
+            config = ExploreTestConfig(3)
+            scenarios = [
+                ExploreTestScenario(
+                    ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+                ),
+            ]
+            policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
+
+            result = explore(
+                config, scenarios, policies; backend=InMemoryBackend(), progress=false
+            )
+            @test result isa YAXArrays.Dataset
+        end
+
+        @testset "ZarrBackend" begin
+            config = ExploreTestConfig(3)
+            scenarios = [
+                ExploreTestScenario(
+                    ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+                ),
+                ExploreTestScenario(
+                    ContinuousParameter(2.0), CategoricalParameter(:high, [:low, :high])
+                ),
+            ]
+            policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
+
+            zarr_path = mktempdir()
+            result = explore(
+                config,
+                scenarios,
+                policies;
+                backend=ZarrBackend(joinpath(zarr_path, "results.zarr")),
+                progress=false,
+            )
+
+            @test result isa YAXArrays.Dataset
+            @test isdir(joinpath(zarr_path, "results.zarr"))
+            @test result[:total][1, 1] == 3.0
+            @test result[:total][1, 2] == 6.0
+        end
+    end
+
+    @testset "Result accessors" begin
         config = ExploreTestConfig(3)
         scenarios = [
             ExploreTestScenario(
@@ -218,37 +307,13 @@ end
 
         # outcomes_for_policy
         pol1_outcomes = outcomes_for_policy(result, 1)
-        @test length(pol1_outcomes) == 2
-        @test all(r.policy_idx == 1 for r in pol1_outcomes)
+        @test :total in keys(pol1_outcomes)
+        @test size(pol1_outcomes[:total]) == (2,)  # 2 scenarios
 
         # outcomes_for_scenario
         scenario1_outcomes = outcomes_for_scenario(result, 1)
-        @test length(scenario1_outcomes) == 2
-        @test all(r.scenario_idx == 1 for r in scenario1_outcomes)
-
-        # filter
-        filtered = filter(r -> r.policy_idx == 1, result)
-        @test length(filtered) == 2
-
-        # Column categorization
-        @test :policy_threshold in result.policy_columns
-        @test :scenario_x in result.scenario_columns
-        @test :outcome_total in result.outcome_columns
-    end
-
-    @testset "Sinks" begin
-        @testset "InMemorySink" begin
-            sink = InMemorySink()
-            record!(sink, (a=1, b=2))
-            record!(sink, (a=3, b=4))
-            @test length(sink.results) == 2
-        end
-
-        @testset "NoSink" begin
-            sink = NoSink()
-            record!(sink, (a=1,))
-            @test finalize(sink, 1, 1) === nothing
-        end
+        @test :total in keys(scenario1_outcomes)
+        @test size(scenario1_outcomes[:total]) == (2,)  # 2 policies
     end
 
     @testset "Single policy convenience" begin
@@ -261,7 +326,7 @@ end
         policy = ExploreTestPolicy(ContinuousParameter(0.5))
 
         result = explore(config, scenarios, policy; progress=false)
-        @test size(result) == (1, 1)
+        @test size(result[:total]) == (1, 1)
     end
 
     @testset "Empty inputs throw" begin
@@ -282,7 +347,7 @@ end
         )
     end
 
-    @testset "Bounds checking" begin
+    @testset "explore with trace=true" begin
         config = ExploreTestConfig(3)
         scenarios = [
             ExploreTestScenario(
@@ -291,11 +356,49 @@ end
         ]
         policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
 
-        result = explore(config, scenarios, policies; progress=false)
+        result, traces = explore(config, scenarios, policies; trace=true, progress=false)
 
-        @test_throws BoundsError result[0, 1]
-        @test_throws BoundsError result[1, 0]
-        @test_throws BoundsError result[2, 1]
-        @test_throws BoundsError result[1, 2]
+        @test result isa YAXArrays.Dataset
+        @test size(traces) == (1, 1)
+        @test traces[1, 1] isa SimulationTrace
+    end
+
+    @testset "DistributedExecutor trace=true throws" begin
+        config = ExploreTestConfig(3)
+        scenarios = [
+            ExploreTestScenario(
+                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+            ),
+        ]
+        policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
+
+        @test_throws ArgumentError explore(
+            config,
+            scenarios,
+            policies;
+            executor=DistributedExecutor(),
+            trace=true,
+            progress=false,
+        )
+    end
+
+    @testset "trace=true with ZarrBackend throws" begin
+        config = ExploreTestConfig(3)
+        scenarios = [
+            ExploreTestScenario(
+                ContinuousParameter(1.0), CategoricalParameter(:low, [:low, :high])
+            ),
+        ]
+        policies = [ExploreTestPolicy(ContinuousParameter(0.5))]
+
+        zarr_path = mktempdir()
+        @test_throws ArgumentError explore(
+            config,
+            scenarios,
+            policies;
+            backend=ZarrBackend(joinpath(zarr_path, "results.zarr")),
+            trace=true,
+            progress=false,
+        )
     end
 end

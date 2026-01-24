@@ -1,3 +1,7 @@
+# ============================================================================
+# Core Abstract Types and TimeStep
+# ============================================================================
+
 # Abstract type hierarchy
 abstract type AbstractState end
 abstract type AbstractPolicy end
@@ -5,65 +9,7 @@ abstract type AbstractConfig end
 abstract type AbstractScenario end
 abstract type AbstractRecorder end
 abstract type AbstractAction end
-
-# ============================================================================
-# Parameter Types for Exploratory Modeling
-# ============================================================================
-
-"""Base type for typed parameters. Subtypes enable automatic flattening for `explore()`."""
-abstract type AbstractParameter{T} end
-
-"""Continuous real-valued parameter with optional bounds."""
-struct ContinuousParameter{T<:AbstractFloat} <: AbstractParameter{T}
-    value::T
-    bounds::Tuple{T,T}
-end
-function ContinuousParameter(value::T) where {T<:AbstractFloat}
-    ContinuousParameter(value, (T(-Inf), T(Inf)))
-end
-
-"""Integer parameter with optional valid values constraint."""
-struct DiscreteParameter{T<:Integer} <: AbstractParameter{T}
-    value::T
-    valid_values::Union{Nothing,Vector{T}}
-end
-DiscreteParameter(value::T) where {T<:Integer} = DiscreteParameter(value, nothing)
-
-"""Categorical parameter with defined levels."""
-struct CategoricalParameter{T} <: AbstractParameter{T}
-    value::T
-    levels::Vector{T}
-
-    function CategoricalParameter(value::T, levels::Vector{T}) where {T}
-        value ∈ levels || throw(ArgumentError("Value `$value` not in levels $levels"))
-        new{T}(value, levels)
-    end
-end
-
-"""Generic parameter for complex objects. Skipped in explore/flatten."""
-struct GenericParameter{T}
-    value::T
-end
-
-"""Extract the value from a parameter."""
-@inline value(p::AbstractParameter) = p.value
-@inline value(p::GenericParameter) = p.value
-
-Base.getindex(p::AbstractParameter) = p.value
-Base.getindex(p::GenericParameter) = p.value
-
-"""Check if a type is a valid parameter type."""
-function _is_parameter_type(ftype)
-    ftype <: AbstractParameter && return true
-    ftype <: TimeSeriesParameter && return true
-    ftype <: GenericParameter && return true
-    if ftype isa UnionAll
-        ftype <: AbstractParameter && return true
-        ftype <: TimeSeriesParameter && return true
-        ftype <: GenericParameter && return true
-    end
-    return false
-end
+abstract type AbstractOutcome end
 
 """Throw a helpful error for unimplemented interface methods."""
 function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
@@ -82,6 +28,25 @@ struct TimeStep{V}
     val::V
 end
 
+"""Return the 1-based index of the timestep."""
+@inline index(t::TimeStep) = t.t
+
+"""Return the value (e.g., year, date) of the timestep."""
+@inline value(t::TimeStep) = t.val
+
+function _validate_time_axis(times)
+    T = eltype(times)
+    if T === Any
+        throw(
+            ArgumentError(
+                "time_axis must return a homogeneously-typed collection. " *
+                "Got eltype=Any. Use a concrete type like Vector{Int} or StepRange{Date}.",
+            ),
+        )
+    end
+    return nothing
+end
+
 # ============================================================================
 # Action Interface
 # ============================================================================
@@ -95,19 +60,6 @@ function get_action(
         typeof(p),
         "state::AbstractState, t::TimeStep, scenario::AbstractScenario",
     )
-end
-
-function _validate_time_axis(times)
-    T = eltype(times)
-    if T === Any
-        throw(
-            ArgumentError(
-                "time_axis must return a homogeneously-typed collection. " *
-                "Got eltype=Any. Use a concrete type like Vector{Int} or StepRange{Date}.",
-            ),
-        )
-    end
-    return nothing
 end
 
 # ============================================================================

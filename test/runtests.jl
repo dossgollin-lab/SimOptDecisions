@@ -3,14 +3,13 @@ using Test
 using Random
 using Tables
 using Dates
+using YAXArrays
+using Zarr
 
 # Load extensions at the start so they're available for all tests
 using Metaheuristics
 using CairoMakie
 using NCDatasets
-
-# Import finalize for sinks (shadows Base.finalize)
-import SimOptDecisions: finalize
 
 @testset "SimOptDecisions.jl" begin
     include("test_types.jl")

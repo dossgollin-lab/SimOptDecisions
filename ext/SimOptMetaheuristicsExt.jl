@@ -8,25 +8,26 @@ using Random
 import SimOptDecisions:
     optimize_backend,
     _extract_objectives,
-    OptimizationProblem,
     OptimizationResult,
     MetaheuristicsBackend,
     AbstractPolicy,
+    AbstractConfig,
+    AbstractScenario,
+    AbstractBatchSize,
+    FullBatch,
     AbstractConstraint,
     FeasibilityConstraint,
     PenaltyConstraint,
+    Objective,
     Maximize,
     evaluate_policy,
-    get_bounds
+    param_bounds
 
 # ============================================================================
 # Algorithm Selection
 # ============================================================================
 
-"""
-Select the appropriate Metaheuristics algorithm based on the symbol and number of objectives.
-Metaheuristics.jl v3 uses the algorithm's internal iteration handling.
-"""
+"""Select Metaheuristics algorithm based on symbol and number of objectives."""
 function _get_algorithm(
     sym::Symbol,
     n_objectives::Int,
@@ -35,11 +36,9 @@ function _get_algorithm(
     parallel::Bool,
     user_options::Dict{Symbol,Any},
 )
-    # Create options with parallel evaluation setting
     options = Metaheuristics.Options(; iterations=max_iters, parallel_evaluation=parallel)
 
     if n_objectives == 1
-        # Single-objective algorithms
         if sym == :ECA
             alg = Metaheuristics.ECA(; N=pop_size, options=options, user_options...)
         elseif sym == :DE
@@ -57,7 +56,6 @@ function _get_algorithm(
             )
         end
     else
-        # Multi-objective algorithms
         if sym == :NSGA2
             alg = Metaheuristics.NSGA2(; N=pop_size, options=options, user_options...)
         elseif sym == :NSGA3
@@ -81,18 +79,14 @@ end
 # Parameter Normalization
 # ============================================================================
 
-"""
-Denormalize parameters from [0,1] space to actual bounds.
-"""
+"""Denormalize parameters from [0,1] space to actual bounds."""
 function _denormalize(
     x_normalized::AbstractVector, bounds_vec::Vector{Tuple{Float64,Float64}}
 )
     return [lo + x * (hi - lo) for (x, (lo, hi)) in zip(x_normalized, bounds_vec)]
 end
 
-"""
-Denormalize a matrix of parameters (each row is a solution).
-"""
+"""Denormalize a matrix of parameters (each row is a solution)."""
 function _denormalize(
     X_normalized::AbstractMatrix, bounds_vec::Vector{Tuple{Float64,Float64}}
 )
@@ -108,15 +102,9 @@ end
 # Constraint Application
 # ============================================================================
 
-"""
-Apply constraints to objective values. Returns modified objectives.
-For feasibility constraints, returns Inf if infeasible.
-For penalty constraints, adds weighted penalty to objectives.
-"""
+"""Apply constraints to objective values."""
 function _apply_constraints(
-    objectives::Vector{Float64},
-    policy::AbstractPolicy,
-    constraints::Vector{<:AbstractConstraint},
+    objectives::Vector{Float64}, policy::AbstractPolicy, constraints
 )
     for c in constraints
         if c isa FeasibilityConstraint
@@ -137,22 +125,17 @@ end
 # Result Wrapping
 # ============================================================================
 
-"""
-Convert Metaheuristics result to SimOptDecisions OptimizationResult.
-Handles both single and multi-objective cases.
-Denormalizes parameters from [0,1] space back to actual bounds.
-"""
+"""Convert Metaheuristics result to OptimizationResult."""
 function _wrap_result(
-    mh_result, prob::OptimizationProblem, bounds_vec::Vector{Tuple{Float64,Float64}}
+    mh_result, objectives::Vector{Objective}, bounds_vec::Vector{Tuple{Float64,Float64}}
 )
-    n_objectives = length(prob.objectives)
+    n_objectives = length(objectives)
 
     if n_objectives == 1
-        # Single-objective: store result as single-point Pareto front
         best_x_norm = Vector{Float64}(Metaheuristics.minimizer(mh_result))
         best_x = _denormalize(best_x_norm, bounds_vec)
         best_f_raw = [Metaheuristics.minimum(mh_result)]
-        best_f = _unnegate_objectives(best_f_raw, prob.objectives)
+        best_f = _unnegate_objectives(best_f_raw, objectives)
 
         return OptimizationResult{Float64}(
             Dict{Symbol,Any}(
@@ -160,11 +143,10 @@ function _wrap_result(
                 :f_calls => mh_result.f_calls,
                 :converged => Metaheuristics.termination_status_message(mh_result),
             ),
-            [best_x],      # Single point in Pareto front
+            [best_x],
             [best_f],
         )
     else
-        # Multi-objective: extract Pareto front using non-dominated solutions
         nds = Metaheuristics.get_non_dominated_solutions(mh_result.population)
 
         pareto_params = Vector{Vector{Float64}}()
@@ -174,7 +156,7 @@ function _wrap_result(
             x_norm = Vector{Float64}(Metaheuristics.get_position(sol))
             push!(pareto_params, _denormalize(x_norm, bounds_vec))
             raw_obj = Vector{Float64}(Metaheuristics.fval(sol))
-            push!(pareto_objectives, _unnegate_objectives(raw_obj, prob.objectives))
+            push!(pareto_objectives, _unnegate_objectives(raw_obj, objectives))
         end
 
         return OptimizationResult{Float64}(
@@ -190,9 +172,7 @@ function _wrap_result(
     end
 end
 
-"""
-Un-negate objectives that were maximized (since Metaheuristics minimizes).
-"""
+"""Un-negate objectives that were maximized."""
 function _unnegate_objectives(raw_objectives::Vector{Float64}, objectives)
     result = copy(raw_objectives)
     for (i, obj) in enumerate(objectives)
@@ -204,62 +184,68 @@ function _unnegate_objectives(raw_objectives::Vector{Float64}, objectives)
 end
 
 # ============================================================================
-# Main Optimization Backend
+# Main Optimization Backend (flat args)
 # ============================================================================
 
 function SimOptDecisions.optimize_backend(
-    prob::OptimizationProblem, backend::MetaheuristicsBackend
-)
-    P = prob.policy_type
-    n_objectives = length(prob.objectives)
+    backend::MetaheuristicsBackend,
+    config::AbstractConfig,
+    scenarios::Vector{<:AbstractScenario},
+    policy_type::Type{P},
+    metric_calculator,
+    objectives::Vector{Objective};
+    batch_size=FullBatch(),
+    constraints=AbstractConstraint[],
+    bounds=nothing,
+) where {P<:AbstractPolicy}
+    n_objectives = length(objectives)
 
-    # Get actual bounds for denormalization (uses custom bounds if specified)
-    bounds_vec = get_bounds(prob)
+    # Get bounds (custom or from policy type)
+    bounds_vec = if bounds !== nothing
+        bounds
+    else
+        [(Float64(lo), Float64(hi)) for (lo, hi) in param_bounds(policy_type)]
+    end
     n_params = length(bounds_vec)
 
     # Optimizer works in normalized [0,1] space
     normalized_bounds = zeros(2, n_params)
-    normalized_bounds[2, :] .= 1.0  # All upper bounds are 1.0
+    normalized_bounds[2, :] .= 1.0
 
-    # Get seed from backend options, defaulting to 42
+    # Get seed from backend options
     sim_seed = get(backend.options, :seed, 42)::Int
 
-    # Evaluate a single solution vector (in normalized space) and return objectives
-    # Uses fixed seed for consistent policy comparison across optimization
+    # Evaluate a single solution vector (in normalized space)
     function _evaluate_one(x_normalized)
         x_real = _denormalize(x_normalized, bounds_vec)
         policy = P(x_real)
         rng = Random.Xoshiro(sim_seed)
-        metrics = evaluate_policy(prob, policy, rng)
-        objectives = _extract_objectives(metrics, prob.objectives)
-        return _apply_constraints(objectives, policy, prob.constraints)
+        metrics = evaluate_policy(
+            config, scenarios, policy, metric_calculator, rng; batch_size
+        )
+        obj_values = _extract_objectives(metrics, objectives)
+        return _apply_constraints(obj_values, policy, constraints)
     end
 
-    # Fitness function that handles both single (Vector) and batch (Matrix) evaluation
-    # When parallel_evaluation=true, Metaheuristics passes a Matrix where each row is a solution
-    # When parallel_evaluation=false, it passes a Vector
+    # Fitness function for Metaheuristics
     function fitness(X)
         if X isa AbstractVector
-            # Single solution evaluation
-            objectives = _evaluate_one(X)
+            obj_values = _evaluate_one(X)
             if n_objectives == 1
-                return objectives[1]
+                return obj_values[1]
             else
-                return (objectives, Float64[], Float64[])
+                return (obj_values, Float64[], Float64[])
             end
         else
-            # Batch evaluation: X is N × D matrix, each row is a solution
             n_solutions = size(X, 1)
 
             if n_objectives == 1
-                # Single objective: return vector of fitness values
                 fx = zeros(n_solutions)
                 Threads.@threads for i in 1:n_solutions
                     fx[i] = _evaluate_one(view(X, i, :))[1]
                 end
                 return fx
             else
-                # Multi-objective: return (F, G, H)
                 fx = zeros(n_solutions, n_objectives)
                 gx = zeros(n_solutions, 0)
                 hx = zeros(n_solutions, 0)
@@ -271,7 +257,6 @@ function SimOptDecisions.optimize_backend(
         end
     end
 
-    # Select algorithm with iteration limit and parallel evaluation setting
     algorithm = _get_algorithm(
         backend.algorithm,
         n_objectives,
@@ -281,11 +266,9 @@ function SimOptDecisions.optimize_backend(
         backend.options,
     )
 
-    # Run optimization in normalized space
     mh_result = Metaheuristics.optimize(fitness, normalized_bounds, algorithm)
 
-    # Wrap result (denormalizing parameters back to real space)
-    return _wrap_result(mh_result, prob, bounds_vec)
+    return _wrap_result(mh_result, objectives, bounds_vec)
 end
 
 end # module SimOptMetaheuristicsExt

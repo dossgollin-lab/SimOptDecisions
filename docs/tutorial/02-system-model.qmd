@@ -1,0 +1,251 @@
+---
+title: "2. Running a Time Step"
+subtitle: "Building the physics for run_timestep()"
+engine: julia
+execute:
+  exeflags: ["--project=.."]
+---
+
+Before we connect to the framework, let's understand the core physics: **what happens in a single time step?**
+
+In SimOptDecisions, you implement a `run_timestep()` function that the framework calls repeatedly. This function receives inputs (water level, policy choices, etc.) and returns outputs (damage, costs). Let's build that physics.
+
+## Setup
+
+```{julia}
+#| output: false
+using CairoMakie
+using Statistics
+```
+
+## The Depth-Damage Function
+
+When floodwater enters a house, it causes damage. The relationship between water depth and damage is called a **depth-damage function**.
+
+We model this as a logistic curve with two parameters:
+
+- **threshold**: depth below which no damage occurs (water hasn't reached damageable contents)
+- **saturation**: depth at which damage reaches 100% (total loss)
+
+```{julia}
+#| output: false
+function depth_damage(depth::T, threshold::T, saturation::T) where {T<:AbstractFloat}
+    depth <= threshold && return zero(T)
+    depth >= saturation && return one(T)
+    midpoint = (threshold + saturation) / 2
+    steepness = T(6) / (saturation - threshold)
+    return one(T) / (one(T) + exp(-steepness * (depth - midpoint)))
+end
+```
+
+```{julia}
+#| label: fig-depth-damage
+#| fig-cap: "Depth-damage function: fractional damage as a function of flood depth"
+#| code-fold: true
+let
+    depths = range(-1, 10; length=200)
+    fig = Figure(; size=(600, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Flood depth at house (ft)",
+        ylabel="Damage (fraction of house value)",
+        title="Depth-Damage Function")
+
+    damages = [depth_damage(d, 0.0, 8.0) for d in depths]
+    lines!(ax, depths, damages; linewidth=2, label="Nominal (threshold=0, sat=8)")
+
+    # Show uncertainty in the curve
+    for (thresh, sat) in [(-0.5, 7.5), (0.5, 8.5)]
+        damages_alt = [depth_damage(d, thresh, sat) for d in depths]
+        lines!(ax, depths, damages_alt; linewidth=1, linestyle=:dash, alpha=0.5)
+    end
+
+    axislegend(ax; position=:rb)
+    fig
+end
+```
+
+The dashed lines show how uncertainty in the threshold and saturation parameters affects the curve. This uncertainty will be represented by different **scenarios**.
+
+## The Construction Cost Function
+
+Elevating a house costs money. The cost increases with height and depends on house size. We use a cost model based on [Doss-Gollin et al. (2022)](https://github.com/jdossgollin/2022-elevation-robustness):
+
+```{julia}
+#| output: false
+function elevation_cost(Δh::Real, area_ft2::Real, house_value::Real)
+    Δh <= 0 && return 0.0
+    Δh > 14 && error("Cannot elevate more than 14 ft")
+
+    base_cost = 10_000 + 300 + 470 + 4_300 + 2_175 + 3_500  # = $20,745
+    thresholds = [0.0, 5.0, 8.5, 12.0, 14.0]
+    rates = [80.36, 82.5, 86.25, 103.75, 113.75]  # $/ft²
+
+    rate = rates[1]
+    for i in 1:(length(thresholds) - 1)
+        if Δh <= thresholds[i + 1]
+            t = (Δh - thresholds[i]) / (thresholds[i + 1] - thresholds[i])
+            rate = rates[i] + t * (rates[i + 1] - rates[i])
+            break
+        end
+        rate = rates[i + 1]
+    end
+
+    cost_dollars = base_cost + area_ft2 * rate
+    return cost_dollars / house_value  # Return as fraction of house value
+end
+
+# Convenience: default house size
+elevation_cost(Δh::Real) = elevation_cost(Δh, 1500.0, 200_000.0)
+```
+
+```{julia}
+#| label: fig-elevation-cost
+#| fig-cap: "Construction cost as a function of elevation height"
+#| code-fold: true
+let
+    heights = 0:14
+    costs = [elevation_cost(h) for h in heights]
+
+    fig = Figure(; size=(600, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Elevation height (ft)",
+        ylabel="Cost (fraction of house value)",
+        title="Elevation Cost Function (1500 ft², \$200k house)")
+    scatterlines!(ax, heights, costs; markersize=10)
+    fig
+end
+```
+
+## Water Levels as Input
+
+In a `run_timestep()` function, we don't generate the water level ourselves—it comes from the **scenario**. The scenario contains a pre-generated time series of water levels for each year of the simulation.
+
+This separation is important:
+
+- **Scenarios** define what might happen (uncertain inputs like water levels, economic parameters)
+- **Physics** defines how the system responds (damage given water level and elevation)
+
+For now, let's write a function that computes flood damage given a water level:
+
+```{julia}
+#| output: false
+function compute_flood_damage(
+    water_level::T, elevation_ft::T, house_height::T,
+    dd_threshold::T, dd_saturation::T
+) where {T<:AbstractFloat}
+    floor_level = house_height + elevation_ft
+    flood_depth = water_level - floor_level
+    damage = depth_damage(flood_depth, dd_threshold, dd_saturation)
+    return (flood_depth=flood_depth, damage=damage)
+end
+```
+
+Notice:
+
+- `water_level` is an **input** (from the scenario), not generated here
+- All arguments are positional for performance (no keyword argument overhead)
+- We use `T<:AbstractFloat` for type stability—Julia infers `T` from the arguments
+- The function is pure physics: inputs → outputs
+
+Let's see how different elevations perform against various water levels:
+
+```{julia}
+water_level = 6.0  # A moderate-to-severe water level
+house_height = 4.0
+dd_threshold = 0.0
+dd_saturation = 8.0
+
+for elev in [0, 3, 6, 9]
+    result = compute_flood_damage(water_level, Float64(elev), house_height, dd_threshold, dd_saturation)
+    println("Elevation $(elev)ft: flood depth = $(round(result.flood_depth, digits=1))ft, damage = $(round(result.damage * 100, digits=1))%")
+end
+```
+
+## The Trade-off Emerges
+
+Let's visualize the trade-off between construction cost and flood damage across a range of water levels:
+
+```{julia}
+#| label: fig-tradeoff-simple
+#| fig-cap: "Cost and average damage for different elevations across water level scenarios"
+#| code-fold: true
+let
+    elevations = 0:14
+    house_height = 4.0
+    dd_threshold = 0.0
+    dd_saturation = 8.0
+
+    # Sample some water levels to represent uncertainty
+    water_levels = [2.0, 4.0, 6.0, 8.0, 10.0]
+
+    construction = [elevation_cost(e) for e in elevations]
+    avg_damage = Float64[]
+
+    for elev in elevations
+        damages = [compute_flood_damage(wl, Float64(elev), house_height, dd_threshold, dd_saturation).damage
+                   for wl in water_levels]
+        push!(avg_damage, mean(damages))
+    end
+
+    fig = Figure(; size=(700, 400))
+    ax = Axis(fig[1, 1];
+        xlabel="Elevation (ft)",
+        ylabel="Value (fraction of house)",
+        title="Trade-off: Construction Cost vs. Average Damage")
+
+    barplot!(ax, collect(elevations), construction; label="Construction cost", color=:steelblue)
+    scatter!(ax, collect(elevations), avg_damage; label="Avg damage (5 water levels)", color=:red, markersize=12)
+
+    axislegend(ax; position=:rt)
+    fig
+end
+```
+
+Construction cost increases with elevation. Damage decreases—but not linearly. The optimal choice isn't obvious, and becomes even less obvious when we consider:
+
+1. **Multiple years**: Damages accumulate over time
+2. **Discounting**: Future damages are worth less than present costs
+3. **Uncertainty**: The water level distribution parameters are themselves uncertain
+
+## Preview: The run_timestep Function
+
+In the next section, we'll connect these physics to SimOptDecisions. The `run_timestep()` function you implement will look like this:
+
+```julia
+function SimOptDecisions.run_timestep(
+    state::HouseState,
+    action::ElevationAction,
+    t::TimeStep,
+    config::HouseConfig,
+    scenario::HouseScenario,
+    rng::AbstractRNG,
+)
+    # Get water level from scenario (pre-generated time series)
+    water_level = scenario.water_levels[t]
+
+    # Apply physics
+    result = compute_flood_damage(;
+        water_level = water_level,
+        elevation_ft = action.elevation_ft,
+        house_height = config.house_height,
+        dd_threshold = value(scenario.dd_threshold),
+        dd_saturation = value(scenario.dd_saturation),
+    )
+
+    # Record what happened this time step
+    step_record = (damage_fraction = result.damage, flood_depth = result.flood_depth)
+    return (state, step_record)
+end
+```
+
+The framework calls this for each time step. You implement the physics; the framework handles the loop.
+
+## Summary
+
+We've built the core physics:
+
+- **Depth-damage function**: converts flood depth to fractional damage
+- **Construction cost**: cost of elevating to a given height
+- **Flood damage computation**: combines water level, elevation, and depth-damage
+
+In the [next section](03-adding-time.qmd), we'll define the types (Config, Scenario, State, Policy) and connect to `simulate()`.

@@ -1,6 +1,7 @@
 *.pdf
 .claude/
 Manifest.toml
+_temp/
 
 # Quarto output
 docs/_site/

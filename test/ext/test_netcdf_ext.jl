@@ -1,5 +1,6 @@
-# Test NetCDF extension for exploration results
-# This test catches the critical bug where the extension used sow_idx instead of scenario_idx
+# Test NetCDF export for exploration results
+
+using NCDatasets
 
 @testset "NetCDF Extension" begin
     # Define minimal types for testing
@@ -57,48 +58,39 @@
         NCTestOutcome(ContinuousParameter(step_records[end].step_value))
     end
 
-    @testset "netcdf_sink with explore()" begin
+    @testset "save_netcdf and load_netcdf" begin
         config = NCTestConfig(3)
         scenarios = [
             NCTestScenario(ContinuousParameter(1.0)),
             NCTestScenario(ContinuousParameter(2.0)),
         ]
-        policies = [NCTestPolicy(ContinuousParameter(0.5))]
+        policies = [
+            NCTestPolicy(ContinuousParameter(0.5)), NCTestPolicy(ContinuousParameter(0.8))
+        ]
 
-        # Create temp file for NetCDF output
+        # Run exploration
+        result = explore(config, scenarios, policies; progress=false)
+
+        # Save to NetCDF
         filepath = tempname() * ".nc"
 
-        try
-            # This test catches the bug: extension must use scenario_idx not sow_idx
-            sink = netcdf_sink(filepath; flush_every=1)
-            result = explore(config, scenarios, policies; sink=sink, progress=false)
+        # Save to NetCDF (YAXArrays infers format from .nc extension)
+        save_netcdf(result, filepath)
 
-            # Verify file was created
-            @test isfile(filepath)
-            @test result == filepath
+        # Verify file was created
+        @test isfile(filepath)
 
-            # Verify contents using NCDatasets
-            NCDataset(filepath, "r") do ds
-                # Check dimensions use "scenario" not "sow"
-                @test haskey(ds.dim, "scenario")
-                @test haskey(ds.dim, "policy")
-                @test !haskey(ds.dim, "sow")
+        # Load back and verify
+        loaded = load_netcdf(filepath)
 
-                # Check attribute names
-                @test haskey(ds.attrib, "n_scenarios")
-                @test haskey(ds.attrib, "n_policies")
-                @test !haskey(ds.attrib, "n_sows")
+        @test loaded isa YAXArrays.Dataset
+        @test :total in keys(loaded.cubes)
 
-                # Check data was written correctly
-                @test ds.attrib["n_scenarios"] == 2
-                @test ds.attrib["n_policies"] == 1
+        # Verify data matches
+        @test loaded[:total][1, 1] == result[:total][1, 1]
+        @test loaded[:total][2, 2] == result[:total][2, 2]
 
-                # Verify outcome values
-                @test haskey(ds, "outcome_total")
-            end
-        finally
-            # Cleanup
-            isfile(filepath) && rm(filepath)
-        end
+        # Cleanup
+        rm(filepath; recursive=true)
     end
 end

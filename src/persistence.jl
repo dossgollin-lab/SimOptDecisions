@@ -72,13 +72,19 @@ end
 """Save optimization state for crash recovery."""
 function save_checkpoint(
     filename::AbstractString,
-    prob::OptimizationProblem,
+    config::AbstractConfig,
+    scenarios::AbstractVector{<:AbstractScenario},
+    policy_type::Type{<:AbstractPolicy},
+    objectives::AbstractVector{<:Objective},
     optimizer_state;
     metadata::String="",
 )
     JLD2.jldsave(
         filename;
-        problem=prob,
+        config=config,
+        scenarios=collect(scenarios),
+        policy_type=policy_type,
+        objectives=collect(objectives),
         optimizer_state=optimizer_state,
         metadata=metadata,
         timestamp=Dates.now(),
@@ -91,7 +97,10 @@ end
 function load_checkpoint(filename::AbstractString)
     JLD2.jldopen(filename, "r") do file
         (;
-            problem=file["problem"],
+            config=file["config"],
+            scenarios=file["scenarios"],
+            policy_type=file["policy_type"],
+            objectives=file["objectives"],
             optimizer_state=file["optimizer_state"],
             metadata=file["metadata"],
             timestamp=file["timestamp"],

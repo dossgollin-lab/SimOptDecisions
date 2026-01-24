@@ -7,18 +7,20 @@ using Dates
 using JLD2
 
 # Include source files in dependency order
-include("types.jl")
+include("types.jl")        # Abstract types, TimeStep, optimization types
+include("parameters.jl")   # Parameter types (ContinuousParameter, etc.)
 include("recorders.jl")
 include("validation.jl")
 include("utils.jl")
-include("timestepping.jl")
+include("timestepping.jl") # User callbacks, run_simulation
 include("simulation.jl")
 include("metrics.jl")
 include("optimization.jl")
 include("persistence.jl")
 include("plotting.jl")
-include("sinks.jl")
-include("exploration.jl")
+include("executors.jl")    # AbstractExecutor, CRN support
+include("backends.jl")     # Storage backends (InMemory, Zarr)
+include("exploration.jl")  # explore(), YAXArray results
 include("macros.jl")
 
 # ============================================================================
@@ -27,7 +29,12 @@ include("macros.jl")
 
 # Abstract types (users subtype these)
 export AbstractState,
-    AbstractPolicy, AbstractConfig, AbstractScenario, AbstractRecorder, AbstractAction
+    AbstractPolicy,
+    AbstractConfig,
+    AbstractScenario,
+    AbstractRecorder,
+    AbstractAction,
+    AbstractOutcome
 
 # TimeStep struct and accessors
 export TimeStep, index
@@ -41,15 +48,17 @@ export initialize, run_timestep, time_axis, compute_outcome
 # Utility functions
 export discount_factor, is_first, is_last, timeindex
 
-# TimeSeriesParameter
-export TimeSeriesParameter, TimeSeriesParameterBoundsError
-
 # Recorders and traces
 export NoRecorder, TraceRecorderBuilder, SimulationTrace, record!, build_trace
 
-# ---------- Phase 2 Exports ----------
+# ---------- Parameter Types ----------
 
-# Optimization direction and objectives
+export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
+export GenericParameter, TimeSeriesParameter, TimeSeriesParameterBoundsError
+export value
+
+# ---------- Optimization ----------
+
 export OptimizationDirection, Minimize, Maximize
 export Objective, minimize, maximize
 
@@ -63,9 +72,9 @@ export AbstractOptimizationBackend, MetaheuristicsBackend
 export params, param_bounds
 
 # Optimization problem and execution
-export OptimizationProblem, OptimizationResult
+export OptimizationResult
 export evaluate_policy, optimize, optimize_backend, pareto_front
-export merge_into_pareto!, dominates, get_bounds
+export merge_into_pareto!, dominates
 
 # Validation hooks
 export validate
@@ -83,31 +92,27 @@ export SharedParameters, ExperimentConfig
 export save_checkpoint, load_checkpoint
 export save_experiment, load_experiment
 
-# ---------- Phase 3 Exports ----------
-
 # Plotting (requires Makie extension)
 export to_scalars, plot_trace, plot_pareto, plot_parallel
 
-# ---------- Phase 4 Exports: Exploratory Modeling ----------
-
-# Parameter types
-export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
-export GenericParameter
-export value
+# ---------- Exploratory Modeling ----------
 
 # Definition macros
-export @scenariodef, @policydef, @configdef, @statedef
+export @scenariodef, @policydef, @configdef, @statedef, @outcomedef
 
-# Sinks
-export AbstractResultSink, NoSink, InMemorySink
-export AbstractFileSink, StreamingSink
-export write_header!, write_rows!, close!
-export csv_sink, netcdf_sink  # Factory functions (require extensions)
+# Executors
+export AbstractExecutor, SequentialExecutor, ThreadedExecutor, DistributedExecutor
+export CRNConfig, create_scenario_rng
 
-# Exploration
-export ExplorationResult, explore
+# Storage backends
+export AbstractStorageBackend, InMemoryBackend, ZarrBackend
+
+# Exploration (YAXArray-based)
+export explore
 export outcomes_for_policy, outcomes_for_scenario
-export ExploratoryInterfaceError, ParameterTypeError
+export load_zarr_results
+export save_netcdf, load_netcdf
+export ExploratoryInterfaceError
 
 # Exploration plotting (requires Makie extension)
 export plot_exploration, plot_exploration_parallel, plot_exploration_scatter
