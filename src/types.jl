@@ -11,6 +11,12 @@ abstract type AbstractRecorder end
 abstract type AbstractAction end
 abstract type AbstractOutcome end
 
+"""Validate a config. Override for your config type to add validation logic."""
+function validate_config(config::AbstractConfig)
+    @warn "No validation implemented for $(typeof(config)), passes by default" maxlog = 1
+    return nothing
+end
+
 """Throw a helpful error for unimplemented interface methods."""
 function interface_not_implemented(fn::Symbol, T::Type, signature::String="")
     hint = isempty(signature) ? "" : ", $signature"

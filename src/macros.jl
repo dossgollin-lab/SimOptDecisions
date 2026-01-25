@@ -143,19 +143,30 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
         push!(wrap_exprs, wrapped)
     end
 
+    # Add validation call for configs
+    validate_call = if supertype === :AbstractConfig
+        :(SimOptDecisions.validate_config(obj))
+    else
+        nothing
+    end
+
     if needs_T
         # Constructor that infers T from first continuous/timeseries field or defaults to Float64
         quote
             function $struct_name(; $(kwargs...))
                 # Infer T from inputs or default to Float64
                 T = Float64
-                $struct_name{T}($(wrap_exprs...))
+                obj = $struct_name{T}($(wrap_exprs...))
+                $validate_call
+                return obj
             end
         end
     else
         quote
             function $struct_name(; $(kwargs...))
-                $struct_name($(wrap_exprs...))
+                obj = $struct_name($(wrap_exprs...))
+                $validate_call
+                return obj
             end
         end
     end
