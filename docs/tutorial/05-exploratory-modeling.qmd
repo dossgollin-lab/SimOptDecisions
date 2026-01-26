@@ -339,6 +339,25 @@ One who expects high discount rates can accept lower elevation.
 This is the essence of exploratory modeling: **understanding the relationship between assumptions and outcomes**, rather than collapsing everything into a single recommendation.
 :::
 
+## Iterative Analysis
+
+Exploratory modeling is not a one-shot process.
+A typical DMDU workflow iterates:
+
+1. **Explore**: Run policies across scenarios and build scenario maps
+2. **Discover**: Identify which uncertainties drive poor outcomes
+3. **Refine**: Generate new scenarios that stress-test the vulnerable regions, or design new policies that address the discovered vulnerabilities
+4. **Repeat**: Explore the refined set
+
+For example, the scenario maps above might lead you to:
+
+- Add more scenarios with low discount rates (to better resolve that region)
+- Design an adaptive policy that performs differently depending on observed flood frequency
+- Include additional uncertain parameters (e.g., sea-level rise) that were initially omitted
+
+The `explore()` output provides the raw data for this iterative process.
+External tools (classification trees, PRIM, etc.) can be applied to the result matrix to automate the scenario discovery step.
+
 ## Summary
 
 **The `explore()` function:**

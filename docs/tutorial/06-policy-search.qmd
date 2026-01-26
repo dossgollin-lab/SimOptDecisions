@@ -12,7 +12,7 @@ Now we use **multi-objective optimization** to automatically search for policies
 In DMDU practice, optimization and exploration are complementary [@kasprzyk_mordm:2013]:
 
 - **Exploration** reveals the structure of the problem---which uncertainties matter, where policies are vulnerable
-- **Optimization** efficiently searches the policy space for Pareto-optimal trade-offs [@quinn_dps:2017]
+- **Optimization** efficiently searches the policy space for Pareto-optimal trade-offs
 
 When objectives conflict (e.g., upfront cost vs. long-term damage), no single solution is best.
 Instead, we get a **Pareto front**: the set of solutions where improving one objective necessarily worsens another.
@@ -361,13 +361,21 @@ We've covered the complete SimOptDecisions workflow:
 4. **Use multi-objective optimization** when objectives conflict
 5. **The Pareto front shows trade-offs**; choosing a point requires judgment
 
+::: {.callout-tip}
+## Connecting Optimization Back to Exploration
+
+In a full DMDU analysis, the Pareto-optimal policies found here would be stress-tested using `explore()` against a broader or different scenario ensemble.
+This closes the loop: optimization finds promising policies, and exploratory modeling reveals whether they are robust.
+If a Pareto-optimal policy has a region of vulnerability (visible in a scenario map), you might redesign the policy or add constraints before re-optimizing.
+:::
+
 ## Discussion
 
 This tutorial used a deliberately simplified model to illustrate the DMDU workflow.
 In a real analysis, you would want to critically examine these simplifications:
 
-- **Stationary climate**: We drew storm surges from a fixed distribution, but climate change is shifting flood risk over time [@doss-gollin_robustadaptation:2019]. The scenario type supports time-varying parameters via `@timeseries`.
-- **No sea-level rise**: Rising seas will compound storm surge risk [@garner_slrise:2018]. The `State` type can track evolving baseline conditions.
+- **Stationary climate**: We drew storm surges from a fixed distribution, but climate change is shifting flood risk over time. The scenario type supports time-varying parameters via `@timeseries`.
+- **No sea-level rise**: Rising seas will compound storm surge risk. The `State` type can track evolving baseline conditions.
 - **Independent damages**: We assumed each year's damage is independent, but cumulative flooding can worsen structural vulnerability. The state-based simulation loop supports path-dependent effects.
 - **Single, static decision**: We chose one elevation at time zero. In practice, decision-makers can adapt over time. More complex `Policy` types can encode adaptive decision rules (e.g., "elevate further if damages exceed a threshold").
 

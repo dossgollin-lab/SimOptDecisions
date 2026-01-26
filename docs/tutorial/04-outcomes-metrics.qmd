@@ -248,7 +248,7 @@ This reveals a **Pareto frontier**: no policy can improve on expected cost witho
 ## Risk Attitudes and Metric Choice
 
 The "right" metric depends on the decision-maker's values and the institutional context.
-In decision making under deep uncertainty, the choice of metric is itself a modeling decision with real consequences [@herman_robustness:2015; @mcphail_robustness:2019]:
+In decision making under deep uncertainty, the choice of metric is itself a modeling decision with real consequences [@herman_robustness:2015]:
 
 | Risk Attitude | Metric | Favors |
 |---------------|--------|--------|

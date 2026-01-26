@@ -15,6 +15,12 @@ website:
     contents:
       - href: index.qmd
         text: Home
+      - section: "Concepts"
+        contents:
+          - href: concepts/dmdu.qmd
+            text: Deep Uncertainty and DMDU
+          - href: concepts/architecture.qmd
+            text: Framework Architecture
       - section: "Tutorial: House Elevation"
         contents:
           - href: tutorial/01-the-problem.qmd

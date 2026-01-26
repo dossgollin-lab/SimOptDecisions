@@ -4,6 +4,16 @@ title: "Quick Reference"
 
 This guide shows you exactly what to implement to use SimOptDecisions.
 
+## Workflow Overview
+
+SimOptDecisions supports two main workflows:
+
+1. **Exploratory modeling** with `explore()`: Run all (policy, scenario) combinations and analyze the result matrix to understand where policies succeed or fail
+2. **Policy search** with `optimize()`: Use multi-objective optimization to find Pareto-optimal policies, then stress-test them with `explore()`
+
+Both build on `simulate()`, which runs a single (policy, scenario) pair through user-defined callbacks.
+See [Framework Architecture](../concepts/architecture.qmd) for why the framework is structured this way.
+
 ## Checklist: What You Implement
 
 ### Types (5 required)

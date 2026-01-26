@@ -6,7 +6,11 @@ execute:
   exeflags: ["--project=.."]
 ---
 
-Now we'll extend our single-year model to run over multiple years using SimOptDecisions. This requires defining **types** and implementing **five functions**.
+Now we'll extend our single-year model to run over multiple years using SimOptDecisions.
+This requires defining **five types** (Config, Scenario, State, Action, Policy) and implementing **five callbacks** (initialize, time_axis, get_action, run_timestep, compute_outcome).
+
+This decomposition is central to the framework's design: it separates *what might happen* (Scenario) from *what we decide* (Policy) from *how the system responds* (the callbacks).
+See [Framework Architecture](../concepts/architecture.qmd) for why the framework is structured this way.
 
 ## Setup
 
@@ -95,7 +99,8 @@ Storing the actual water level time series (not GEV parameters) makes scenarios:
 
 - **Reproducible**: The same scenario always produces the same water levels
 - **Explicit**: You can inspect exactly what water levels each scenario contains
-- **Deterministic**: `run_timestep()` doesn't need to sample—it just reads the value
+- **Deterministic**: `run_timestep()` doesn't need to sample---it just reads the value
+- **CRN-compatible**: Every policy sees the *exact same* water level sequence for a given scenario, so outcome differences are due to the policy, not randomness
 
 The GEV distribution is used when *generating* scenarios, not during simulation.
 :::
@@ -335,7 +340,9 @@ let
 end
 ```
 
-The "optimal" elevation depends heavily on which future unfolds. This is why we need to consider **many scenarios** and aggregate results.
+The "optimal" elevation depends heavily on which future unfolds.
+This is the fundamental challenge of deep uncertainty: there is no single "correct" scenario, and the best decision depends on which future materializes.
+This is why we need to consider **many scenarios** and aggregate results.
 
 ## Summary
 

@@ -76,7 +76,14 @@ using Pkg
 Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions")
 ```
 
+## Who Is This For?
+
+SimOptDecisions is designed for researchers and practitioners working on decision problems under deep uncertainty---particularly in climate risk management, water resources, infrastructure planning, and environmental policy.
+The [Concepts](concepts/dmdu.qmd) section introduces the key ideas; the [Tutorial](tutorial/01-the-problem.qmd) walks through a complete worked example.
+
 ## Next Steps
+
+→ [Concepts: Deep Uncertainty and DMDU](concepts/dmdu.qmd) — Key vocabulary and ideas for the DMDU workflow
 
 → [Tutorial](tutorial/01-the-problem.qmd) — Learn SimOptDecisions through a complete worked example (house elevation under flood risk)
 
