@@ -76,7 +76,7 @@ compute_metric(m::CustomMetric, outcomes) = m.name => m.func(outcomes)
 
 """Compute all metrics and return as a NamedTuple."""
 function compute_metrics(metrics::AbstractVector{<:AbstractMetric}, outcomes)
-    pairs = Pair{Symbol,Float64}[]
+    pairs = Pair{Symbol,Real}[]
     for m in metrics
         result = compute_metric(m, outcomes)
         if result isa Vector

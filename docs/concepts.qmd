@@ -14,32 +14,6 @@ SimOptDecisions targets a class of decision problems with three characteristics:
 This setting is common in infrastructure design, climate adaptation, water resources planning, and natural hazard management.
 It draws on ideas from several traditions: stochastic optimization, optimal control, reinforcement learning, engineering design, and decision making under deep uncertainty (DMDU).
 
-## Deep Uncertainty
-
-In some problems, the probability distributions governing uncertain inputs are themselves unknown or contested.
-For example, experts may disagree about the form of future storm surge distributions, not just the parameter values.
-This is sometimes called **deep uncertainty** [@doss-gollin_subjective:2023].
-
-SimOptDecisions does not require well-characterized probability distributions.
-The scenario ensemble can represent any set of plausible futures---sampled from priors, drawn from expert elicitation, or constructed to stress-test specific assumptions.
-
-## DMDU Frameworks
-
-Decision Making under Deep Uncertainty (DMDU) is a family of approaches that share a common structure:
-
-1. **Generate** candidate decisions (policies)
-2. **Stress-test** them across many plausible futures (scenarios)
-3. **Analyze** where each candidate succeeds or fails
-4. **Iterate** based on what you learn
-
-Several specific frameworks fit this pattern:
-
-- **Robust Decision Making (RDM)** evaluates candidates across an ensemble and uses scenario discovery to identify vulnerabilities [@lempert_robust:2000]
-- **Many-Objective Robust Decision Making (MORDM)** adds multi-objective optimization to search the policy space for Pareto-optimal trade-offs [@kasprzyk_mordm:2013]
-- **Climate adaptation as a control problem** frames sequential investment decisions as optimal control under uncertainty [@herman_control:2020]
-
-SimOptDecisions supports RDM and MORDM workflows natively through `explore()` and `optimize()`.
-
 ## Key Vocabulary
 
 **Scenario**
@@ -49,17 +23,11 @@ In SimOptDecisions, scenarios are concrete data objects containing pre-generated
 
 **Policy**
 : A decision rule mapping system state to actions.
-A policy can be as simple as a fixed parameter (elevate 4 feet) or as complex as an adaptive rule (elevate further if cumulative damages exceed a threshold).
+Specifically, we use *parametric* policy rules, meaning policy rules that have parameters we can update, improve, or optimize.
 
 **Exploratory modeling**
 : Running a model across many scenarios to understand system behavior, rather than to predict a single outcome [@bankes_exploratory:1993].
 The goal is to discover *where* a policy is vulnerable.
-
-**Scenario discovery**
-: Identifying the conditions (regions of the scenario space) under which a policy fails to meet performance thresholds.
-
-**Robustness**
-: A property of a policy that performs acceptably well across a wide range of plausible futures, even if it is not optimal in any single one [@herman_robustness:2015].
 
 **Pareto front**
 : The set of solutions where no objective can be improved without worsening another.
@@ -77,5 +45,5 @@ In multi-objective optimization, the Pareto front characterizes the fundamental 
 
 ## Further Reading
 
-For a review of climate risk management and decision-making under uncertainty, see @keller_management:2021.
+For a review of climate risk management and decision-making under uncertainty, see @keller_management:2021 or @doss-gollin_subjective:2023.
 For an overview of how these methods connect to broader multisector dynamics challenges, see @reed_multisectordynamics:2022.

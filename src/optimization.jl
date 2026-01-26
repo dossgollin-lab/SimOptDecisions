@@ -15,25 +15,6 @@ function param_bounds end
 """Extract parameter bounds from a policy's ContinuousParameter fields."""
 function param_bounds(policy::AbstractPolicy)
     P = typeof(policy)
-    for fname in fieldnames(P)
-        field = getfield(policy, fname)
-        if field isa DiscreteParameter
-            throw(
-                ArgumentError(
-                    "Field :$fname is DiscreteParameter. " *
-                    "Optimization backends like Metaheuristics only support continuous parameters.",
-                ),
-            )
-        elseif field isa CategoricalParameter
-            throw(
-                ArgumentError(
-                    "Field :$fname is CategoricalParameter. " *
-                    "Optimization backends like Metaheuristics only support continuous parameters.",
-                ),
-            )
-        end
-    end
-
     bounds = [
         getfield(policy, fname).bounds for
         fname in fieldnames(P) if getfield(policy, fname) isa ContinuousParameter

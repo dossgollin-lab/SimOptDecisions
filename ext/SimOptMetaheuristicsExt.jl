@@ -198,6 +198,25 @@ function SimOptDecisions.optimize_backend(
     constraints=AbstractConstraint[],
     bounds=nothing,
 ) where {P<:AbstractPolicy}
+    # Metaheuristics only supports continuous parameters
+    for (fname, ftype) in zip(fieldnames(P), fieldtypes(P))
+        if ftype <: SimOptDecisions.DiscreteParameter
+            throw(
+                ArgumentError(
+                    "Field :$fname is DiscreteParameter. " *
+                    "Metaheuristics backend only supports continuous parameters.",
+                ),
+            )
+        elseif ftype <: SimOptDecisions.CategoricalParameter
+            throw(
+                ArgumentError(
+                    "Field :$fname is CategoricalParameter. " *
+                    "Metaheuristics backend only supports continuous parameters.",
+                ),
+            )
+        end
+    end
+
     n_objectives = length(objectives)
 
     # Get bounds (custom or from policy type)

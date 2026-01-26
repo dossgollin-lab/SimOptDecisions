@@ -55,7 +55,7 @@ export NoRecorder, TraceRecorderBuilder, SimulationTrace, record!, build_trace
 
 export AbstractParameter, ContinuousParameter, DiscreteParameter, CategoricalParameter
 export GenericParameter, TimeSeriesParameter, TimeSeriesParameterBoundsError
-export value
+export value, align
 
 # ---------- Optimization ----------
 

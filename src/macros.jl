@@ -156,11 +156,12 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
     end
 
     if needs_T
-        # Constructor that infers T from first continuous/timeseries field or defaults to Float64
+        # Collect names of continuous/timeseries fields for T inference
+        t_fields = [f.name for f in field_infos if f.wrap_kind in (:continuous, :timeseries)]
+
         quote
             function $struct_name(; $(kwargs...))
-                # Infer T from inputs or default to Float64
-                T = Float64
+                T = SimOptDecisions._infer_float_type($(t_fields...))
                 obj = $struct_name{T}($(wrap_exprs...))
                 $validate_call
                 return obj
@@ -300,6 +301,8 @@ function _parse_categorical(args)
     )
 end
 
+"""Parse @timeseries field. Index type is always Int (1-based position); actual time values
+(e.g. dates, years) live in TimeStep.val and can be aligned via `align()`."""
 function _parse_timeseries(args)
     length(args) in (1, 2) || throw(ArgumentError("@timeseries expects 1 or 2 arguments"))
     name = args[1]

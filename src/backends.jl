@@ -15,7 +15,7 @@ abstract type AbstractStorageBackend end
 """Store results in memory as YAXArray."""
 struct InMemoryBackend <: AbstractStorageBackend end
 
-"""Stream results to Zarr storage for memory-efficient processing."""
+"""Save exploration results to Zarr storage on disk."""
 struct ZarrBackend <: AbstractStorageBackend
     path::String
     overwrite::Bool
