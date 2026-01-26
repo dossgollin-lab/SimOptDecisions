@@ -8,10 +8,6 @@ function params end
 """Return bounds for each parameter as Vector of (lower, upper) tuples."""
 function param_bounds end
 
-function param_bounds(::Type{T}) where {T<:AbstractPolicy}
-    interface_not_implemented(:param_bounds, T, "::Type")
-end
-
 # ============================================================================
 # Auto-derive param_bounds and params from ContinuousParameter fields
 # ============================================================================
@@ -42,8 +38,19 @@ function param_bounds(policy::AbstractPolicy)
         getfield(policy, fname).bounds for
         fname in fieldnames(P) if getfield(policy, fname) isa ContinuousParameter
     ]
-    isempty(bounds) && return param_bounds(P)
+    isempty(bounds) && interface_not_implemented(:param_bounds, P)
     return bounds
+end
+
+"""Derive type-level bounds by constructing a dummy instance."""
+function param_bounds(::Type{P}) where {P<:AbstractPolicy}
+    n = length(fieldnames(P))
+    n == 0 && interface_not_implemented(:param_bounds, P, "::Type")
+    try
+        return param_bounds(P(zeros(n)))
+    catch
+        interface_not_implemented(:param_bounds, P, "::Type")
+    end
 end
 
 function _auto_params(policy::AbstractPolicy)

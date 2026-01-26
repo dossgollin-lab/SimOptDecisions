@@ -115,16 +115,14 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
     # Generate auto-wrapping constructor
     constructor_def = _generate_constructor(struct_name, field_infos, needs_T, supertype)
 
-    # Generate param_bounds and vector constructor for policy types
-    param_bounds_def = _generate_param_bounds(struct_name, field_infos, supertype)
+    # Generate vector constructor for policy types
     vector_constructor_def = _generate_vector_constructor(struct_name, field_infos, supertype)
 
-    # Combine struct, constructor, param_bounds, and vector constructor
+    # Combine struct, constructor, and vector constructor
     result = if name === nothing
         quote
             $struct_def
             $constructor_def
-            $param_bounds_def
             $vector_constructor_def
             $struct_name
         end
@@ -132,7 +130,6 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
         quote
             $struct_def
             $constructor_def
-            $param_bounds_def
             $vector_constructor_def
         end
     end
@@ -176,24 +173,6 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
                 $validate_call
                 return obj
             end
-        end
-    end
-end
-
-"""Generate param_bounds(::Type) for @policydef types whose @continuous fields all have bounds."""
-function _generate_param_bounds(struct_name, field_infos, supertype)
-    supertype === :AbstractPolicy || return nothing
-
-    continuous_fields = filter(f -> f.wrap_kind === :continuous, field_infos)
-    isempty(continuous_fields) && return nothing
-    # All continuous fields must have bounds so the result matches params() length
-    all(f -> f.bounds !== nothing, continuous_fields) || return nothing
-
-    bounds_exprs = [:(($(f.bounds[1]), $(f.bounds[2]))) for f in continuous_fields]
-    bounds_vec = Expr(:vect, bounds_exprs...)
-    return quote
-        function SimOptDecisions.param_bounds(::Type{<:$struct_name})
-            return $bounds_vec
         end
     end
 end
