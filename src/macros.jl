@@ -180,21 +180,16 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
     end
 end
 
-"""Generate param_bounds(::Type) for @policydef types with bounded continuous fields."""
+"""Generate param_bounds(::Type) for @policydef types whose @continuous fields all have bounds."""
 function _generate_param_bounds(struct_name, field_infos, supertype)
     supertype === :AbstractPolicy || return nothing
 
-    # Collect bounds from @continuous fields that have explicit bounds
-    bounds_exprs = []
-    for f in field_infos
-        if f.wrap_kind === :continuous && f.bounds !== nothing
-            lo, hi = f.bounds
-            push!(bounds_exprs, :(($(lo), $(hi))))
-        end
-    end
+    continuous_fields = filter(f -> f.wrap_kind === :continuous, field_infos)
+    isempty(continuous_fields) && return nothing
+    # All continuous fields must have bounds so the result matches params() length
+    all(f -> f.bounds !== nothing, continuous_fields) || return nothing
 
-    isempty(bounds_exprs) && return nothing
-
+    bounds_exprs = [:(($(f.bounds[1]), $(f.bounds[2]))) for f in continuous_fields]
     bounds_vec = Expr(:vect, bounds_exprs...)
     return quote
         function SimOptDecisions.param_bounds(::Type{<:$struct_name})

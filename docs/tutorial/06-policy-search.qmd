@@ -157,7 +157,7 @@ When all fields in a `@policydef` are bounded `@continuous`, everything needed f
 - `param_bounds(::Type{<:MyPolicy})` — returns bounds from field definitions
 - `MyPolicy(x::AbstractVector)` — vector constructor for the optimizer
 
-No manual method definitions are required. If some fields are not bounded `@continuous`, you must define the vector constructor manually.
+No manual method definitions are required. If some fields are not bounded `@continuous`, you must define `param_bounds(::Type)` and the vector constructor manually.
 
 Unlike `explore()`, `optimize()` does not need parameter-wrapped outcomes.
 It works with `simulate()` directly and uses `calculate_metrics` to aggregate plain outcome values.

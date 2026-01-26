@@ -69,7 +69,7 @@ When all `@policydef` fields are bounded `@continuous`, everything is auto-deriv
 - `param_bounds(::Type)` — returns bounds from field definitions
 - `MyPolicy(x::AbstractVector)` — vector constructor for the optimizer
 
-If some fields are not bounded `@continuous`, you must define the vector constructor manually.
+If some fields are not bounded `@continuous`, you must define `param_bounds(::Type)` and the vector constructor manually.
 
 ### Executors
 
