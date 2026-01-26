@@ -26,9 +26,9 @@ website:
           - href: tutorial/04-outcomes-metrics.qmd
             text: "4. Aggregating with Metrics"
           - href: tutorial/05-exploratory-modeling.qmd
-            text: "5. explore()"
+            text: "5. Exploratory Modeling"
           - href: tutorial/06-policy-search.qmd
-            text: "6. optimize()"
+            text: "6. Policy Search"
       - section: "Reference"
         contents:
           - href: guide/getting-started.qmd

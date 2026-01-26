@@ -247,13 +247,28 @@ This reveals a **Pareto frontier**: no policy can improve on expected cost witho
 
 ## Risk Attitudes and Metric Choice
 
-Different stakeholders may care about different metrics:
+The "right" metric depends on the decision-maker's values and the institutional context.
+In decision making under deep uncertainty, the choice of metric is itself a modeling decision with real consequences:
 
-- **Risk-neutral**: Minimize expected cost
-- **Risk-averse**: Minimize worst-case (or high quantile)
-- **Regret-averse**: Minimize maximum regret across scenarios
+| Risk Attitude | Metric | Favors |
+|---------------|--------|--------|
+| **Risk-neutral** | Expected cost | Policies that perform well *on average* across scenarios |
+| **Risk-averse** | 95th percentile or CVaR | Policies that limit worst-case losses |
+| **Regret-averse** | Maximum regret | Policies whose worst-case *deviation from the best possible choice* is small |
+| **Satisficing** | Probability of cost < threshold | Policies most likely to meet a minimum performance standard |
 
-The `calculate_metrics` function lets you define whatever aggregations are relevant for your problem.
+::: {.callout-tip}
+## Robustness vs. Optimality
+
+In classical optimization, we seek the policy that *minimizes* (or maximizes) some objective.
+In DMDU, we often seek **robust** policies---ones that perform *acceptably well* across a wide range of futures, even if they aren't optimal in any single scenario.
+
+A policy that minimizes expected cost might perform terribly in the worst 5% of scenarios.
+A slightly more expensive policy might avoid catastrophic outcomes entirely.
+The Pareto frontier in the plot above captures exactly this trade-off.
+:::
+
+The `calculate_metrics` function lets you define whatever aggregations are relevant for your problem. Different metrics lead to different "optimal" policies---which is why exploring the full outcome distribution matters.
 
 ## Built-in Metric Types
 

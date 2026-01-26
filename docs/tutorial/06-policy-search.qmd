@@ -1,13 +1,21 @@
 ---
-title: "6. optimize()"
-subtitle: "Multi-objective Pareto search"
+title: "6. Policy Search"
+subtitle: "Multi-objective Pareto optimization"
 engine: julia
 execute:
   exeflags: ["--project=.."]
 ---
 
-Instead of manually searching over elevation levels, we can use optimization to automatically find the best policies.
-When objectives conflict (cost vs. damage), we get a **Pareto front** of optimal trade-offs.
+In the [previous section](05-exploratory-modeling.qmd), we used exploratory modeling to understand *where* candidate policies succeed or fail.
+Now we use **multi-objective optimization** to automatically search for policies that balance competing objectives.
+
+In DMDU practice, optimization and exploration are complementary:
+
+- **Exploration** reveals the structure of the problem---which uncertainties matter, where policies are vulnerable
+- **Optimization** efficiently searches the policy space for Pareto-optimal trade-offs
+
+When objectives conflict (e.g., upfront cost vs. long-term damage), no single solution is best.
+Instead, we get a **Pareto front**: the set of solutions where improving one objective necessarily worsens another.
 
 ## Setup
 
@@ -305,14 +313,19 @@ end
 
 ## Selecting from the Pareto Front
 
-The optimizer finds the efficient frontier, but **choosing a point is a decision**, not an optimization.
-Different stakeholders might choose differently:
+The optimizer finds the efficient frontier, but **choosing a point on it is a decision, not an optimization**.
+This is a fundamental insight in DMDU: the analyst's job is to *characterize the trade-offs*, not to prescribe a single answer.
+
+Different stakeholders, values, and institutional contexts lead to different choices:
 
 | Stakeholder | Preference | Likely Choice |
 |-------------|------------|---------------|
-| Risk-averse homeowner | Minimize worst case | Higher elevation |
-| Budget-constrained | Minimize upfront cost | Lower elevation |
-| Expected-value optimizer | Minimize total expected cost | Middle of curve |
+| Risk-averse homeowner | Minimize worst-case outcome | Higher elevation |
+| Budget-constrained owner | Minimize upfront cost | Lower elevation |
+| Insurance company | Minimize expected total cost | Middle of the Pareto curve |
+| Community planner | Meet a cost threshold reliably | Depends on the threshold |
+
+The Pareto front makes these trade-offs explicit, enabling informed deliberation rather than opaque optimization.
 
 ```{julia}
 # Find the solution with minimum total expected cost
@@ -350,14 +363,15 @@ We've covered the complete SimOptDecisions workflow:
 
 ## Discussion
 
-This model makes simplifying assumptions worth noting:
+This tutorial used a deliberately simplified model to illustrate the DMDU workflow.
+In a real analysis, you would want to critically examine these simplifications:
 
-- **Stationary climate**: Storm distribution doesn't change over time
-- **Constant sea level**: No sea-level rise (though the state structure supports it)
-- **Independent damages**: No cumulative effects year-to-year
-- **Single decision**: Elevation chosen once, not adaptively
+- **Stationary climate**: We drew storm surges from a fixed distribution, but climate change is shifting flood risk over time. The scenario type supports time-varying parameters via `@timeseries`.
+- **No sea-level rise**: Rising seas will compound storm surge risk. The `State` type can track evolving baseline conditions.
+- **Independent damages**: We assumed each year's damage is independent, but cumulative flooding can worsen structural vulnerability. The state-based simulation loop supports path-dependent effects.
+- **Single, static decision**: We chose one elevation at time zero. In practice, decision-makers can adapt over time. More complex `Policy` types can encode adaptive decision rules (e.g., "elevate further if damages exceed a threshold").
 
-For real applications, you'd want to relax these assumptions. The framework supports time-varying scenarios, evolving state, and more complex policies.
+The value of the DMDU workflow is that it makes these modeling choices *transparent*. By exploring how results depend on assumptions, analysts and stakeholders can identify which simplifications matter most and where further modeling effort is needed.
 
 ## Next Steps
 

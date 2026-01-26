@@ -12,9 +12,10 @@ This package is under active development and the API may change.
 
 ## What is SimOptDecisions?
 
-SimOptDecisions is a Julia framework for simulation-based decision analysis under deep uncertainty.
+SimOptDecisions is a Julia framework for simulation-based decision analysis under deep uncertainty (DMDU).
 
-You provide a simulation model and decision rules. The framework runs simulations, aggregates results across uncertain futures, and searches for optimal policies.
+Many decisions in climate adaptation, infrastructure planning, and resource management must be made before key uncertainties are resolved---and those uncertainties may be too deep to assign reliable probabilities.
+SimOptDecisions provides the infrastructure for the core DMDU workflow: you provide a simulation model and decision rules, and the framework runs simulations across many plausible futures, aggregates results, and searches for robust or Pareto-optimal policies.
 
 ## How It Works
 
@@ -59,12 +60,12 @@ The framework is built around nested loops. Both `explore()` and `optimize()` ca
 
 ## Why SimOptDecisions?
 
-Decision-making under deep uncertainty requires running thousands of simulations across uncertain futures. SimOptDecisions handles the infrastructure so you can focus on your model:
+DMDU analyses require running thousands to millions of simulations across uncertain futures and candidate decisions. SimOptDecisions handles the computational infrastructure so you can focus on your model:
 
-- **You write**: physics (`run_timestep`), types (Scenario, Policy, State)
-- **Framework handles**: parallel execution, storage, Pareto optimization, CRN
+- **You write**: the system model (`run_timestep`), uncertainty characterization (Scenarios), and decision rules (Policies)
+- **Framework handles**: parallel execution, result storage, exploratory analysis, and multi-objective Pareto optimization
 
-Your simulation code runs in tight inner loops. The framework ensures type-stable execution for maximum performance.
+The framework is designed for the kinds of problems common in climate risk management, water resources engineering, and infrastructure planning---where models are computationally intensive and the uncertainty space is large.
 
 ## Installation
 

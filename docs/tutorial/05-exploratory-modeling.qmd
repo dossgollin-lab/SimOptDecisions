@@ -1,12 +1,15 @@
 ---
-title: "5. explore()"
-subtitle: "Run all policy×scenario combinations"
+title: "5. Exploratory Modeling"
+subtitle: "Mapping policy performance across scenarios"
 engine: julia
 execute:
   exeflags: ["--project=.."]
 ---
 
-In the previous sections, we ran simulations manually. Now we'll use `explore()` to systematically run all policy×scenario combinations and get structured results.
+In the DMDU literature, **exploratory modeling** means systematically running a model across a wide range of plausible assumptions to understand *where and why* a policy succeeds or fails.
+Rather than searching for the single "optimal" policy, exploratory modeling asks: **under what conditions does a given policy lead to unacceptable outcomes?**
+
+This section uses `explore()` to run all policy×scenario combinations and then analyzes the results to build a **scenario map**---a visualization of which regions of the uncertainty space are favorable or unfavorable for a given strategy.
 
 ## Setup
 
@@ -229,44 +232,116 @@ result = explore(config, scenarios, policies;
 result = load_zarr_results("results.zarr")
 ```
 
-## Sensitivity Analysis
+## Scenario Discovery
 
-With the full result matrix, we can analyze how outcomes depend on scenario parameters:
+The core question in exploratory modeling is not *"which policy is best?"* but *"under what conditions does a given policy fail?"*
+
+This reframing is powerful: instead of searching for an optimal decision, we map out the **vulnerabilities** of each candidate decision. This is sometimes called **scenario discovery** in the DMDU literature.
+
+### When does a moderate elevation fail?
+
+Let's take a concrete policy---elevating 4 feet---and ask: across our 200 scenarios, when does this policy lead to high total costs?
+
+We'll map the results against two key uncertain parameters: the **discount rate** (which controls how much we weight future damages) and the **average storm severity** (summarized as the mean of each scenario's water level time series).
 
 ```{julia}
-#| label: fig-sensitivity
-#| fig-cap: "Optimal elevation varies with discount rate"
+#| label: fig-scenario-map
+#| fig-cap: "Scenario map for a 4ft elevation policy. Each point is one scenario, colored by total cost. The dashed line marks a cost threshold of 0.5 (half the house value). Scenarios above and to the left tend to produce worse outcomes: low discount rates weight future damages heavily, and high water levels cause more flooding."
+#| code-fold: true
+let
+    # Extract scenario parameters
+    discount_rates = [value(s.discount_rate) for s in scenarios]
+    mean_water_levels = [mean(s.water_levels.values) for s in scenarios]
+
+    # Get total costs for the 4ft elevation policy (index 3: 0,2,4,...)
+    policy_idx = 3  # 4ft elevation (0:2:14 → index 3)
+    costs = result[:total_cost].data[policy_idx, :]
+
+    # Threshold for "unacceptable" outcome
+    cost_threshold = 0.5
+
+    fig = Figure(; size=(700, 550))
+    ax = Axis(fig[1, 1];
+        xlabel="Discount rate",
+        ylabel="Mean annual water level (ft)",
+        title="Scenario Map: 4ft Elevation Policy")
+
+    sc = scatter!(ax, discount_rates, mean_water_levels;
+        color=costs, colormap=:RdYlGn_r, markersize=10, alpha=0.8)
+
+    Colorbar(fig[1, 2], sc; label="Total cost (fraction of house value)")
+
+    # Mark the threshold
+    hlines!(ax, [mean(mean_water_levels)]; color=(:gray, 0.3), linestyle=:dot)
+    vlines!(ax, [mean(discount_rates)]; color=(:gray, 0.3), linestyle=:dot)
+
+    fig
+end
+```
+
+The scenario map reveals the structure of vulnerability:
+
+- **Low discount rates** (left side) make future damages count more, pushing total costs up
+- **Higher mean water levels** (top) mean more frequent flooding, increasing damage regardless of discounting
+- The combination of low discounting and high water levels produces the worst outcomes
+
+This is more informative than asking "what is the optimal elevation for each scenario?"---it tells us *where in the uncertainty space* our chosen policy is at risk.
+
+### Comparing vulnerability across policies
+
+We can repeat this analysis for multiple elevation levels to see how vulnerability shifts:
+
+```{julia}
+#| label: fig-scenario-map-compare
+#| fig-cap: "Fraction of scenarios exceeding a cost threshold of 0.5, by elevation and scenario region. Low discount rate scenarios (below median) are more sensitive to elevation choice."
 #| code-fold: true
 let
     discount_rates = [value(s.discount_rate) for s in scenarios]
+    median_dr = median(discount_rates)
     elevations = 0:2:14
+    cost_threshold = 0.5
 
-    # For each scenario, find the best elevation
-    best_elevations = Int[]
-    for s in 1:length(scenarios)
-        costs = [result[:total_cost].data[p, s] for p in 1:length(elevations)]
-        best_idx = argmin(costs)
-        push!(best_elevations, elevations[best_idx])
+    low_dr = discount_rates .< median_dr
+    high_dr = .!low_dr
+
+    fig = Figure(; size=(700, 450))
+    ax = Axis(fig[1, 1];
+        xlabel="Elevation (ft)",
+        ylabel="Fraction of scenarios with cost > $(cost_threshold)",
+        title="Policy Vulnerability by Discount Rate Region",
+        xticks=(1:length(elevations), string.(elevations)))
+
+    for (label, mask, color) in [
+        ("Low discount rate", low_dr, :firebrick),
+        ("High discount rate", high_dr, :steelblue)
+    ]
+        fracs = Float64[]
+        for (i, _) in enumerate(elevations)
+            costs_subset = result[:total_cost].data[i, mask]
+            push!(fracs, mean(costs_subset .> cost_threshold))
+        end
+        barplot!(ax, 1:length(elevations), fracs;
+            dodge=label == "Low discount rate" ? fill(1, length(elevations)) : fill(2, length(elevations)),
+            color=color, label=label)
     end
 
-    fig = Figure(; size=(700, 500))
-    ax = Axis(fig[1, 1];
-        xlabel="Discount rate",
-        ylabel="Optimal elevation (ft)",
-        title="How Discount Rate Affects Optimal Elevation")
-
-    scatter!(ax, discount_rates, best_elevations; alpha=0.5, markersize=8)
+    axislegend(ax; position=:rt)
     fig
 end
 ```
 
 ::: {.callout-tip}
-## Key Insight
+## Key Insight: Scenario Discovery
 
-Lower discount rates favor higher elevations because future damages are weighted more heavily. This sensitivity to assumptions is exactly why exploratory modeling matters—different stakeholders with different assumptions will reach different conclusions.
+The scenario map doesn't tell us which policy is "best"---it tells us *under what conditions each policy is vulnerable*.
+A decision-maker who believes discount rates will be low should choose a higher elevation.
+One who expects high discount rates can accept lower elevation.
+This is the essence of exploratory modeling: **understanding the relationship between assumptions and outcomes**, rather than collapsing everything into a single recommendation.
 :::
 
 ## Summary
+
+**The `explore()` function:**
 
 - `explore(config, scenarios, policies)` → YAXArray Dataset
 - Results indexed by `:policy` and `:scenario` dimensions
@@ -274,4 +349,11 @@ Lower discount rates favor higher elevations because future damages are weighted
 - CRN for variance reduction when comparing policies
 - Storage backends for large experiments (InMemory, Zarr)
 
-In the [next section](06-policy-search.qmd), we'll use `optimize()` to automatically search for Pareto-optimal policies.
+**Exploratory modeling concepts:**
+
+- A **scenario map** shows how outcomes vary across the uncertainty space for a given policy
+- **Scenario discovery** identifies the conditions under which a policy leads to unacceptable outcomes
+- The goal is to understand *where* a policy is vulnerable, not just *whether* it's optimal on average
+
+Exploratory modeling gives us a rich picture of how our decisions interact with uncertainty.
+In the [next section](06-policy-search.qmd), we'll use `optimize()` to automatically search for Pareto-optimal policies---but the scenario maps from this section will help us interpret those results.
