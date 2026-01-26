@@ -217,21 +217,27 @@ function SimOptDecisions.run_timestep(
     scenario::HouseScenario,
     rng::AbstractRNG,
 )
+    # Apply elevation in year 1, then state persists
+    if is_first(t)
+        new_elevation = state.elevation_ft + action.elevation_ft
+        construction_cost = elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value)
+    else
+        new_elevation = state.elevation_ft
+        construction_cost = 0.0
+    end
+
     # Get water level from scenario (pre-generated time series)
     water_level = scenario.water_levels[t]
 
-    # Apply physics
-    result = compute_flood_damage(;
-        water_level = water_level,
-        elevation_ft = action.elevation_ft,
-        house_height = config.house_height,
-        dd_threshold = value(scenario.dd_threshold),
-        dd_saturation = value(scenario.dd_saturation),
-    )
+    # Compute flood depth and damage using current elevation
+    floor_level = config.house_height + new_elevation
+    flood_depth = water_level - floor_level
+    damage = depth_damage(flood_depth, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
-    # Record what happened this time step
-    step_record = (damage_fraction = result.damage, flood_depth = result.flood_depth)
-    return (state, step_record)
+    # Return updated state and step record
+    new_state = HouseState(new_elevation)
+    step_record = (construction_cost=construction_cost, damage_fraction=damage)
+    return (new_state, step_record)
 end
 ```
 

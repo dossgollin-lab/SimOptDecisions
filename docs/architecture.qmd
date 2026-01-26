@@ -20,7 +20,7 @@ It reflects the structure of decision problems under deep uncertainty, where the
 |------|-------------------|-----------------|
 | `Config` | Fixed system parameters (house size, planning horizon) | Nothing---shared by all runs |
 | `Scenario` | One plausible future (storm levels, damage parameters, discount rate) | The scenario ensemble |
-| `State` | System memory at a point in time (cumulative damage, account balance) | Time steps within a simulation |
+| `State` | System memory at a point in time (current elevation, cumulative damage) | Time steps within a simulation |
 | `Action` | What is done at a single time step (elevate by X feet) | Time steps, depending on policy |
 | `Policy` | A decision rule that maps state to action | The policy search space |
 
