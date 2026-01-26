@@ -64,7 +64,7 @@ function sample_scenario(rng::AbstractRNG, horizon::Int)
 end
 
 struct HouseState{T<:AbstractFloat} <: AbstractState
-    placeholder::T
+    elevation_ft::T
 end
 
 struct ElevationAction{T<:AbstractFloat} <: AbstractAction
@@ -124,16 +124,20 @@ function SimOptDecisions.run_timestep(
     state::HouseState, action::ElevationAction, t::TimeStep,
     config::HouseConfig, scenario::HouseScenario, rng::AbstractRNG
 )
-    construction_cost = is_first(t) ?
-        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
+    if is_first(t)
+        new_elevation = state.elevation_ft + action.elevation_ft
+        construction_cost = elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value)
+    else
+        new_elevation = state.elevation_ft
+        construction_cost = 0.0
+    end
 
-    # Get water level from scenario (pre-generated)
     water_level = scenario.water_levels[t]
-    floor_level = config.house_height + action.elevation_ft
+    floor_level = config.house_height + new_elevation
     flood_depth = water_level - floor_level
     damage = depth_damage(flood_depth, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
-    return (state, (construction_cost=construction_cost, damage_fraction=damage))
+    return (HouseState(new_elevation), (construction_cost=construction_cost, damage_fraction=damage))
 end
 
 function SimOptDecisions.compute_outcome(

@@ -145,12 +145,12 @@ end
 
 ### State: What Evolves
 
-The **State** tracks variables that change over time. For this simple model, we don't need evolving state, but we still define it:
+The **State** tracks variables that change over time. For house elevation, the state tracks the current elevation of the house—it starts at zero and gets modified when we apply the policy:
 
 ```{julia}
 #| output: false
 struct HouseState{T<:AbstractFloat} <: AbstractState
-    placeholder::T  # Could track sea level rise, cumulative damage, etc.
+    elevation_ft::T
 end
 ```
 
@@ -180,12 +180,14 @@ With types defined, we implement five functions that tell the framework how to r
 
 ### 1. `initialize`: Create Starting State
 
+The house starts at ground level (no elevation):
+
 ```{julia}
 #| output: false
 function SimOptDecisions.initialize(
     ::HouseConfig, ::HouseScenario, ::AbstractRNG
 )
-    HouseState(0.0)
+    HouseState(0.0)  # House starts with no elevation
 end
 ```
 
@@ -211,7 +213,7 @@ end
 
 ### 4. `run_timestep`: Execute One Year
 
-This is where our physics from the previous section lives. Notice that we **read** the water level from the scenario—no sampling needed:
+This is where our physics from the previous section lives. The state tracks the house elevation, which gets modified by the action in the first timestep:
 
 ```{julia}
 #| output: false
@@ -223,21 +225,27 @@ function SimOptDecisions.run_timestep(
     scenario::HouseScenario,
     rng::AbstractRNG,
 )
-    # Construction cost only in year 1
-    construction_cost = is_first(t) ?
-        elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value) : 0.0
+    # Apply elevation in year 1, then state persists
+    if is_first(t)
+        new_elevation = state.elevation_ft + action.elevation_ft
+        construction_cost = elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value)
+    else
+        new_elevation = state.elevation_ft
+        construction_cost = 0.0
+    end
 
     # Get water level from scenario (pre-generated)
     water_level = scenario.water_levels[t]
 
-    # Compute flood depth and damage
-    floor_level = config.house_height + action.elevation_ft
+    # Compute flood depth and damage using current elevation
+    floor_level = config.house_height + new_elevation
     flood_depth = water_level - floor_level
     damage = depth_damage(flood_depth, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
-    # Return new state and step record
+    # Return updated state and step record
+    new_state = HouseState(new_elevation)
     step_record = (construction_cost=construction_cost, damage_fraction=damage)
-    return (state, step_record)
+    return (new_state, step_record)
 end
 ```
 
