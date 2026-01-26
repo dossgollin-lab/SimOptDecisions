@@ -267,7 +267,7 @@ let
         title="Scenario Map: 4ft Elevation Policy")
 
     sc = scatter!(ax, discount_rates, mean_water_levels;
-        color=costs, colormap=:RdYlGn_r, markersize=10, alpha=0.8)
+        color=costs, colormap=Reverse(:RdYlGn), markersize=10, alpha=0.8)
 
     Colorbar(fig[1, 2], sc; label="Total cost (fraction of house value)")
 
