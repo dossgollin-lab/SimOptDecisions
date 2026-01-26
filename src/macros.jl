@@ -116,7 +116,9 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
     constructor_def = _generate_constructor(struct_name, field_infos, needs_T, supertype)
 
     # Generate vector constructor for policy types
-    vector_constructor_def = _generate_vector_constructor(struct_name, field_infos, supertype)
+    vector_constructor_def = _generate_vector_constructor(
+        struct_name, field_infos, supertype
+    )
 
     # Combine struct, constructor, and vector constructor
     result = if name === nothing
@@ -157,7 +159,9 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
 
     if needs_T
         # Collect names of continuous/timeseries fields for T inference
-        t_fields = [f.name for f in field_infos if f.wrap_kind in (:continuous, :timeseries)]
+        t_fields = [
+            f.name for f in field_infos if f.wrap_kind in (:continuous, :timeseries)
+        ]
 
         quote
             function $struct_name(; $(kwargs...))
@@ -183,7 +187,8 @@ function _generate_vector_constructor(struct_name, field_infos, supertype)
     supertype === :AbstractPolicy || return nothing
 
     # Only auto-generate if ALL fields are bounded @continuous
-    all(f -> f.wrap_kind === :continuous && f.bounds !== nothing, field_infos) || return nothing
+    all(f -> f.wrap_kind === :continuous && f.bounds !== nothing, field_infos) ||
+        return nothing
 
     kw_pairs = [Expr(:kw, f.name, :(x[$i])) for (i, f) in enumerate(field_infos)]
     return quote

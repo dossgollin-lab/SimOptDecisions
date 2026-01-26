@@ -36,8 +36,8 @@ end
 
 function _auto_params(policy::AbstractPolicy)
     vals = [
-        value(getfield(policy, fname)) for
-        fname in fieldnames(typeof(policy)) if getfield(policy, fname) isa ContinuousParameter
+        value(getfield(policy, fname)) for fname in fieldnames(typeof(policy)) if
+        getfield(policy, fname) isa ContinuousParameter
     ]
     return vals
 end
