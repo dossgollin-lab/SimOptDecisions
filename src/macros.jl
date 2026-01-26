@@ -115,15 +115,17 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
     # Generate auto-wrapping constructor
     constructor_def = _generate_constructor(struct_name, field_infos, needs_T, supertype)
 
-    # Generate param_bounds for policy types (only for bounded continuous fields)
+    # Generate param_bounds and vector constructor for policy types
     param_bounds_def = _generate_param_bounds(struct_name, field_infos, supertype)
+    vector_constructor_def = _generate_vector_constructor(struct_name, field_infos, supertype)
 
-    # Combine struct, constructor, and param_bounds
+    # Combine struct, constructor, param_bounds, and vector constructor
     result = if name === nothing
         quote
             $struct_def
             $constructor_def
             $param_bounds_def
+            $vector_constructor_def
             $struct_name
         end
     else
@@ -131,6 +133,7 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
             $struct_def
             $constructor_def
             $param_bounds_def
+            $vector_constructor_def
         end
     end
 
@@ -196,6 +199,21 @@ function _generate_param_bounds(struct_name, field_infos, supertype)
     return quote
         function SimOptDecisions.param_bounds(::Type{<:$struct_name})
             return $bounds_vec
+        end
+    end
+end
+
+"""Generate vector constructor for @policydef types with only bounded @continuous fields."""
+function _generate_vector_constructor(struct_name, field_infos, supertype)
+    supertype === :AbstractPolicy || return nothing
+
+    # Only auto-generate if ALL fields are bounded @continuous
+    all(f -> f.wrap_kind === :continuous && f.bounds !== nothing, field_infos) || return nothing
+
+    kw_pairs = [Expr(:kw, f.name, :(x[$i])) for (i, f) in enumerate(field_infos)]
+    return quote
+        function $struct_name(x::AbstractVector)
+            return $struct_name(; $(kw_pairs...))
         end
     end
 end
