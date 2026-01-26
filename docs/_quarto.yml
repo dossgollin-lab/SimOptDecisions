@@ -45,6 +45,8 @@ website:
       - icon: github
         href: https://github.com/dossgollin-lab/SimOptDecisions
 
+bibliography: references.bib
+
 format:
   html:
     theme: [sandstone, _assets/theme/theme-rice.scss]

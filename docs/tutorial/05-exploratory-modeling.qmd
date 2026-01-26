@@ -6,7 +6,7 @@ execute:
   exeflags: ["--project=.."]
 ---
 
-In the DMDU literature, **exploratory modeling** means systematically running a model across a wide range of plausible assumptions to understand *where and why* a policy succeeds or fails.
+In the DMDU literature, **exploratory modeling** means systematically running a model across a wide range of plausible assumptions to understand *where and why* a policy succeeds or fails [@bankes_exploratory:1993].
 Rather than searching for the single "optimal" policy, exploratory modeling asks: **under what conditions does a given policy lead to unacceptable outcomes?**
 
 This section uses `explore()` to run all policy×scenario combinations and then analyzes the results to build a **scenario map**---a visualization of which regions of the uncertainty space are favorable or unfavorable for a given strategy.

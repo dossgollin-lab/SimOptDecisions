@@ -20,7 +20,7 @@ using Statistics
 
 ## The Depth-Damage Function
 
-When floodwater enters a house, it causes damage. The relationship between water depth and damage is called a **depth-damage function**.
+When floodwater enters a house, it causes damage. The relationship between water depth and damage is called a **depth-damage function** [see @wing_vulnerability:2020 for empirical evidence on depth-damage relationships].
 
 We model this as a logistic curve with two parameters:
 

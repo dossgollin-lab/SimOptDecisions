@@ -23,10 +23,10 @@ Many real-world decisions---infrastructure investments, climate adaptation strat
 Standard cost-benefit analysis assumes we know (or can estimate) the probability distribution of future outcomes.
 But for many problems in climate risk, water management, and infrastructure planning, we face **deep uncertainty**: we cannot confidently assign probabilities to future states of the world.
 
-Decision Making under Deep Uncertainty (DMDU) is a family of approaches that takes this challenge seriously.
-Rather than optimizing for a single "expected" future, DMDU methods stress-test candidate decisions across a wide range of plausible futures to identify strategies that perform well across many of them.
+Decision Making under Deep Uncertainty (DMDU) is a family of approaches that takes this challenge seriously [see @keller_management:2021 for a review of climate risk management].
+Rather than optimizing for a single "expected" future, DMDU methods stress-test candidate decisions across a wide range of plausible futures to identify strategies that perform well across many of them [@lempert_robust:2000].
 
-This tutorial teaches SimOptDecisions.jl through a realistic DMDU workflow, using the example of **deciding how high to elevate a house in a flood-prone area**.
+This tutorial teaches SimOptDecisions.jl through a realistic DMDU workflow, using the example of **deciding how high to elevate a house in a flood-prone area** [inspired by @zarekarizi_suboptimal:2020].
 
 ## The Decision Problem
 
@@ -39,7 +39,7 @@ The challenge is that you face deep uncertainty about:
 
 - **Future storm surge intensity** — The frequency and severity of future floods depends on climate variability and change, which we cannot precisely predict
 - **The depth-damage relationship** — How much damage a given flood depth causes depends on building characteristics and contents, which are uncertain
-- **Future economic conditions** — The discount rate used to compare present costs against future damages reflects contested value judgments
+- **Future economic conditions** — The discount rate used to compare present costs against future damages reflects contested value judgments [@arrow_discount:2013]
 
 These aren't just "noise" around a known distribution.
 Reasonable experts disagree about the *form* of the distribution, not just its parameters.
