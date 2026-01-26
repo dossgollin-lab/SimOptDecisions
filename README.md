@@ -8,33 +8,22 @@ A Julia framework for simulation-based decision analysis under uncertainty.
 
 ## What is SimOptDecisions?
 
-SimOptDecisions helps you find good decision strategies when the future is uncertain.
+SimOptDecisions helps you find good decision strategies for nonlinear sequential decision problems under uncertainty.
 
-You provide a simulation model and a parameterized policy. The framework:
+You define a time-stepped simulation model and candidate decision rules. The framework:
 
 1. **Simulates** your model across many possible futures (Scenarios)
-2. **Optimizes** policy parameters using multi-objective evolutionary algorithms
-3. **Explores** how policies perform across the full uncertainty space
+2. **Explores** how policies perform across the full uncertainty space with `explore()`
+3. **Optimizes** policy parameters using multi-objective evolutionary algorithms with `optimize()`
 
 ## Key Features
 
 - **Five-callback simulation interface** — implement `initialize`, `get_action`, `run_timestep`, `time_axis`, and `compute_outcome`
+- **Definition macros** — `@scenariodef`, `@policydef`, `@outcomedef` auto-wrap fields in parameter types
+- **Exploratory modeling** — `explore()` returns a YAXArray Dataset indexed by policy and scenario
 - **Multi-objective optimization** — find Pareto-optimal policies with Metaheuristics.jl
-- **Exploratory modeling** — analyze policy performance across all scenario combinations
-- **Streaming output** — handle large-scale analyses with CSV/NetCDF file sinks
-- **Visualization** — built-in plotting with Makie
-
-## Key Vocabulary
-
-| Term | What it means |
-|------|---------------|
-| **Config** | Fixed parameters that don't change across scenarios |
-| **Scenario** | One possible future (uncertain parameters) |
-| **Policy** | A decision rule with tunable parameters |
-| **Action** | What the policy decides at each timestep |
-| **State** | Your model's internal state that evolves over time |
-| **Outcome** | Result of one simulation |
-| **Metric** | Summary statistic across many simulations |
+- **Parallel execution** — Sequential, Threaded, and Distributed executors with Common Random Numbers
+- **Storage backends** — InMemory (default) or Zarr for large experiments; NetCDF export
 
 ## Quick Start
 
@@ -47,8 +36,8 @@ struct MyConfig <: AbstractConfig
     horizon::Int
 end
 
-struct MyScenario{T<:AbstractFloat} <: AbstractScenario
-    growth_rate::T
+@scenariodef MyScenario begin
+    @continuous growth_rate
 end
 
 struct MyState{T<:AbstractFloat} <: AbstractState
@@ -57,7 +46,9 @@ end
 
 struct MyAction <: AbstractAction end
 
-struct MyPolicy <: AbstractPolicy end
+@policydef MyPolicy begin
+    @continuous threshold 0.0 10.0
+end
 
 # Implement the five callbacks
 SimOptDecisions.initialize(::MyConfig, ::MyScenario, ::AbstractRNG) = MyState(1.0)
@@ -65,7 +56,7 @@ SimOptDecisions.time_axis(c::MyConfig, ::MyScenario) = 1:c.horizon
 SimOptDecisions.get_action(::MyPolicy, ::MyState, ::TimeStep, ::MyScenario) = MyAction()
 
 function SimOptDecisions.run_timestep(state::MyState, ::MyAction, ::TimeStep, ::MyConfig, scenario::MyScenario, ::AbstractRNG)
-    new_state = MyState(state.value * (1 + scenario.growth_rate))
+    new_state = MyState(state.value * (1 + value(scenario.growth_rate)))
     return (new_state, (value=state.value,))
 end
 
@@ -74,64 +65,46 @@ function SimOptDecisions.compute_outcome(step_records::Vector, ::MyConfig, ::MyS
 end
 
 # Run a single simulation
-result = simulate(MyConfig(10), MyScenario(0.05), MyPolicy())
+result = simulate(MyConfig(10), MyScenario(growth_rate=0.05), MyPolicy(threshold=5.0))
 ```
 
 ## Exploratory Modeling
 
-For systematic analysis across policies and scenarios, use the definition macros:
+For systematic analysis across policies and scenarios, define an outcome type with `@outcomedef` and use `explore()`:
 
 ```julia
-using SimOptDecisions
-using DataFrames
-
-# Define types with parameter fields
-@configdef MyConfig begin
-    horizon::Int
+@outcomedef MyOutcome begin
+    @continuous final_value
 end
 
-@scenariodef MyScenario begin
-    @continuous growth_rate
-    @categorical climate [:low, :high]
+# Update compute_outcome to return the wrapped type
+function SimOptDecisions.compute_outcome(step_records::Vector, ::MyConfig, ::MyScenario)
+    return MyOutcome(final_value=step_records[end].value)
 end
 
-@policydef MyPolicy begin
-    @continuous threshold 0.0 1.0
-end
+# Create scenarios and policies (macros auto-wrap plain values)
+scenarios = [MyScenario(growth_rate=r) for r in 0.01:0.01:0.10]
+policies = [MyPolicy(threshold=t) for t in 1.0:1.0:5.0]
 
-# Create scenarios and policies
-scenarios = [
-    MyScenario(
-        growth_rate=ContinuousParameter(r),
-        climate=CategoricalParameter(s, [:low, :high])
-    )
-    for r in 0.01:0.01:0.10, s in [:low, :high]
-]
-policies = [MyPolicy(threshold=ContinuousParameter(t, (0.0, 1.0))) for t in 0.1:0.1:0.5]
-
-# Run all combinations
-result = explore(MyConfig(horizon=50), vec(scenarios), policies)
-
-# Analyze as DataFrame
-df = DataFrame(result)
+# Run all combinations → YAXArray Dataset
+result = explore(MyConfig(50), scenarios, policies)
+result[:final_value]  # indexed by (policy, scenario)
 ```
 
-For large-scale analyses, stream directly to file:
+For large experiments, use parallel execution and disk-backed storage:
 
 ```julia
-using CSV  # or NCDatasets for NetCDF
-
-sink = StreamingSink(csv_sink("results.csv"); flush_every=100)
-explore(config, scenarios, policies; sink=sink)
+result = explore(config, scenarios, policies;
+    executor=ThreadedExecutor(; crn=true, seed=42),
+    backend=ZarrBackend("results.zarr"))
 ```
 
 ## Documentation
 
 See the [full documentation](https://dossgollin-lab.github.io/SimOptDecisions/) for:
 
-- [Getting Started](https://dossgollin-lab.github.io/SimOptDecisions/guide/getting-started.html) — checklist + minimal working example
-- [Exploratory Modeling](https://dossgollin-lab.github.io/SimOptDecisions/tutorial/05-exploratory-modeling.html) — parameter types, streaming output, visualization
-- [House Elevation Tutorial](https://dossgollin-lab.github.io/SimOptDecisions/tutorial/01-the-problem.html) — complete tutorial with multi-objective optimization
+- [Quick Reference](https://dossgollin-lab.github.io/SimOptDecisions/guide/getting-started.html) — checklist + minimal working example
+- [Tutorial](https://dossgollin-lab.github.io/SimOptDecisions/tutorial/01-the-problem.html) — complete house elevation tutorial with exploration and optimization
 
 ## Installation
 
@@ -146,7 +119,6 @@ Load these packages to enable additional features:
 
 | Package | Feature |
 |---------|---------|
-| `Metaheuristics` | Multi-objective optimization |
+| `Metaheuristics` | Multi-objective optimization (`optimize()`) |
 | `CairoMakie` / `GLMakie` | Visualization |
-| `CSV` | CSV file streaming |
-| `NCDatasets` | NetCDF file streaming |
+| `NCDatasets` | NetCDF export/import (`save_netcdf`, `load_netcdf`) |
