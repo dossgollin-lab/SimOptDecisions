@@ -1,13 +1,21 @@
 ---
-title: "6. optimize()"
-subtitle: "Multi-objective Pareto search"
+title: "6. Policy Search"
+subtitle: "Multi-objective Pareto optimization"
 engine: julia
 execute:
   exeflags: ["--project=.."]
 ---
 
-Instead of manually searching over elevation levels, we can use optimization to automatically find the best policies.
-When objectives conflict (cost vs. damage), we get a **Pareto front** of optimal trade-offs.
+In the [previous section](05-exploratory-modeling.qmd), we used exploratory modeling to understand *where* candidate policies succeed or fail.
+Now we use **multi-objective optimization** to automatically search for policies that balance competing objectives.
+
+In DMDU practice, optimization and exploration are complementary [@kasprzyk_mordm:2013]:
+
+- **Exploration** reveals the structure of the problem---which uncertainties matter, where policies are vulnerable
+- **Optimization** efficiently searches the policy space for Pareto-optimal trade-offs
+
+When objectives conflict (e.g., upfront cost vs. long-term damage), no single solution is best.
+Instead, we get a **Pareto front**: the set of solutions where improving one objective necessarily worsens another.
 
 ## Setup
 
@@ -66,11 +74,6 @@ end
 @policydef ElevationPolicy begin
     @continuous elevation_ft 0.0 14.0
 end
-
-# Required for optimization
-ElevationPolicy(params::AbstractVector) = ElevationPolicy(elevation_ft=params[1])
-SimOptDecisions.params(p::ElevationPolicy) = [value(p.elevation_ft)]
-SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
 
 function SimOptDecisions.get_action(
     policy::ElevationPolicy, state::HouseState, t::TimeStep, scenario::HouseScenario
@@ -144,6 +147,21 @@ function SimOptDecisions.compute_outcome(
     return (construction_cost=construction_cost, npv_damages=npv_damages)
 end
 ```
+
+::: {.callout-note}
+## What `optimize()` Needs
+
+When all fields in a `@policydef` are bounded `@continuous`, everything needed for optimization is **auto-derived**:
+
+- `params(policy)` — extracts current values as a vector
+- `param_bounds(::Type{<:MyPolicy})` — returns bounds from field definitions
+- `MyPolicy(x::AbstractVector)` — vector constructor for the optimizer
+
+No manual method definitions are required. If some fields are not bounded `@continuous`, you must define `param_bounds(::Type)` and the vector constructor manually.
+
+Unlike `explore()`, `optimize()` does not need parameter-wrapped outcomes.
+It works with `simulate()` directly and uses `calculate_metrics` to aggregate plain outcome values.
+:::
 
 ## Outcomes vs Metrics
 
@@ -309,14 +327,19 @@ end
 
 ## Selecting from the Pareto Front
 
-The optimizer finds the efficient frontier, but **choosing a point is a decision**, not an optimization.
-Different stakeholders might choose differently:
+The optimizer finds the efficient frontier, but **choosing a point on it is a decision, not an optimization**.
+This is a fundamental insight in DMDU: the analyst's job is to *characterize the trade-offs*, not to prescribe a single answer.
+
+Different stakeholders, values, and institutional contexts lead to different choices:
 
 | Stakeholder | Preference | Likely Choice |
 |-------------|------------|---------------|
-| Risk-averse homeowner | Minimize worst case | Higher elevation |
-| Budget-constrained | Minimize upfront cost | Lower elevation |
-| Expected-value optimizer | Minimize total expected cost | Middle of curve |
+| Risk-averse homeowner | Minimize worst-case outcome | Higher elevation |
+| Budget-constrained owner | Minimize upfront cost | Lower elevation |
+| Insurance company | Minimize expected total cost | Middle of the Pareto curve |
+| Community planner | Meet a cost threshold reliably | Depends on the threshold |
+
+The Pareto front makes these trade-offs explicit, enabling informed deliberation rather than opaque optimization.
 
 ```{julia}
 # Find the solution with minimum total expected cost
@@ -352,16 +375,25 @@ We've covered the complete SimOptDecisions workflow:
 4. **Use multi-objective optimization** when objectives conflict
 5. **The Pareto front shows trade-offs**; choosing a point requires judgment
 
+::: {.callout-tip}
+## Connecting Optimization Back to Exploration
+
+In a full DMDU analysis, the Pareto-optimal policies found here would be stress-tested using `explore()` against a broader or different scenario ensemble.
+This closes the loop: optimization finds promising policies, and exploratory modeling reveals whether they are robust.
+If a Pareto-optimal policy has a region of vulnerability (visible in a scenario map), you might redesign the policy or add constraints before re-optimizing.
+:::
+
 ## Discussion
 
-This model makes simplifying assumptions worth noting:
+This tutorial used a deliberately simplified model to illustrate the DMDU workflow.
+In a real analysis, you would want to critically examine these simplifications:
 
-- **Stationary climate**: Storm distribution doesn't change over time
-- **Constant sea level**: No sea-level rise (though the state structure supports it)
-- **Independent damages**: No cumulative effects year-to-year
-- **Single decision**: Elevation chosen once, not adaptively
+- **Stationary climate**: We drew storm surges from a fixed distribution, but climate change is shifting flood risk over time. The scenario type supports time-varying parameters via `@timeseries`.
+- **No sea-level rise**: Rising seas will compound storm surge risk. The `State` type can track evolving baseline conditions.
+- **Independent damages**: We assumed each year's damage is independent, but cumulative flooding can worsen structural vulnerability. The state-based simulation loop supports path-dependent effects.
+- **Single, static decision**: We chose one elevation at time zero. In practice, decision-makers can adapt over time. More complex `Policy` types can encode adaptive decision rules (e.g., "elevate further if damages exceed a threshold").
 
-For real applications, you'd want to relax these assumptions. The framework supports time-varying scenarios, evolving state, and more complex policies.
+The value of the DMDU workflow is that it makes these modeling choices *transparent*. By exploring how results depend on assumptions, analysts and stakeholders can identify which simplifications matter most and where further modeling effort is needed.
 
 ## Next Steps
 

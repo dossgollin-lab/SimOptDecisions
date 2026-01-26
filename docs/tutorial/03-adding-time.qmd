@@ -6,7 +6,11 @@ execute:
   exeflags: ["--project=.."]
 ---
 
-Now we'll extend our single-year model to run over multiple years using SimOptDecisions. This requires defining **types** and implementing **five functions**.
+Now we'll extend our single-year model to run over multiple years using SimOptDecisions.
+This requires defining **five types** (Config, Scenario, State, Action, Policy) and implementing **five callbacks** (initialize, time_axis, get_action, run_timestep, compute_outcome).
+
+This decomposition is central to the framework's design: it separates *what might happen* (Scenario) from *what we decide* (Policy) from *how the system responds* (the callbacks).
+See [Framework Architecture](../architecture.qmd) for why the framework is structured this way.
 
 ## Setup
 
@@ -60,6 +64,16 @@ SimOptDecisions uses Julia's type system to structure your model. You define fiv
 | **Action** | Decision at each timestep | — | — |
 | **Policy** | Rule that produces actions | No | No |
 
+::: {.callout-note}
+## Macros vs Plain Structs
+
+SimOptDecisions provides definition macros (`@scenariodef`, `@policydef`, `@outcomedef`, `@configdef`, `@statedef`) that automatically wrap fields in parameter types like `ContinuousParameter`.
+You need parameter wrappers for fields that `explore()` flattens into result dimensions---typically Scenario, Policy, and Outcome fields.
+
+Config, State, and Action usually have plain fields (`Int`, `Float64`) that aren't explored as dimensions, so we define them as regular Julia structs.
+You *can* use `@configdef` or `@statedef` if their fields need parameter wrappers, but for most models plain structs are simpler.
+:::
+
 ### Config: What's Fixed
 
 The **Config** holds parameters that are the same across all scenarios and don't change over time:
@@ -95,7 +109,8 @@ Storing the actual water level time series (not GEV parameters) makes scenarios:
 
 - **Reproducible**: The same scenario always produces the same water levels
 - **Explicit**: You can inspect exactly what water levels each scenario contains
-- **Deterministic**: `run_timestep()` doesn't need to sample—it just reads the value
+- **Deterministic**: `run_timestep()` doesn't need to sample---it just reads the value
+- **CRN-compatible**: Every policy sees the *exact same* water level sequence for a given scenario, so outcome differences are due to the policy, not randomness
 
 The GEV distribution is used when *generating* scenarios, not during simulation.
 :::
@@ -343,7 +358,9 @@ let
 end
 ```
 
-The "optimal" elevation depends heavily on which future unfolds. This is why we need to consider **many scenarios** and aggregate results.
+The "optimal" elevation depends heavily on which future unfolds.
+This is the fundamental challenge of deep uncertainty: there is no single "correct" scenario, and the best decision depends on which future materializes.
+This is why we need to consider **many scenarios** and aggregate results.
 
 ## Summary
 

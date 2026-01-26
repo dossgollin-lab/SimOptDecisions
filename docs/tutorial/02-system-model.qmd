@@ -64,7 +64,7 @@ let
 end
 ```
 
-The dashed lines show how uncertainty in the threshold and saturation parameters affects the curve. This uncertainty will be represented by different **scenarios**.
+The dashed lines show how uncertainty in the threshold and saturation parameters shifts the curve. In practice, the depth-damage relationship depends on building characteristics, contents, and floor layout that are difficult to measure precisely. Different **scenarios** will sample different values of these parameters to represent this structural uncertainty.
 
 ## The Construction Cost Function
 
@@ -140,12 +140,9 @@ function compute_flood_damage(
 end
 ```
 
-Notice:
-
-- `water_level` is an **input** (from the scenario), not generated here
-- All arguments are positional for performance (no keyword argument overhead)
-- We use `T<:AbstractFloat` for type stability—Julia infers `T` from the arguments
-- The function is pure physics: inputs → outputs
+This function is **pure physics**: given a water level, an elevation height, and the house and damage parameters, it returns the flood depth and fractional damage.
+The water level comes from the **scenario** (representing one plausible future), not from sampling inside the function.
+This separation is what lets us systematically explore many different futures later.
 
 Let's see how different elevations perform against various water levels:
 
@@ -201,11 +198,11 @@ let
 end
 ```
 
-Construction cost increases with elevation. Damage decreases—but not linearly. The optimal choice isn't obvious, and becomes even less obvious when we consider:
+Construction cost increases with elevation. Damage decreases---but not linearly. Even for these five water levels, there's no single elevation that clearly "wins". The decision becomes even harder when we consider:
 
-1. **Multiple years**: Damages accumulate over time
-2. **Discounting**: Future damages are worth less than present costs
-3. **Uncertainty**: The water level distribution parameters are themselves uncertain
+1. **Multiple years**: Damages accumulate over a decades-long planning horizon
+2. **Discounting**: A dollar of future damage is worth less than a dollar spent today, but the discount rate is itself contested
+3. **Deep uncertainty**: The storm surge distribution, damage function, and economic parameters are all uncertain---and experts disagree about them
 
 ## Preview: The run_timestep Function
 
@@ -220,21 +217,27 @@ function SimOptDecisions.run_timestep(
     scenario::HouseScenario,
     rng::AbstractRNG,
 )
+    # Apply elevation in year 1, then state persists
+    if is_first(t)
+        new_elevation = state.elevation_ft + action.elevation_ft
+        construction_cost = elevation_cost(action.elevation_ft, config.house_area_ft2, config.house_value)
+    else
+        new_elevation = state.elevation_ft
+        construction_cost = 0.0
+    end
+
     # Get water level from scenario (pre-generated time series)
     water_level = scenario.water_levels[t]
 
-    # Apply physics
-    result = compute_flood_damage(;
-        water_level = water_level,
-        elevation_ft = action.elevation_ft,
-        house_height = config.house_height,
-        dd_threshold = value(scenario.dd_threshold),
-        dd_saturation = value(scenario.dd_saturation),
-    )
+    # Compute flood depth and damage using current elevation
+    floor_level = config.house_height + new_elevation
+    flood_depth = water_level - floor_level
+    damage = depth_damage(flood_depth, value(scenario.dd_threshold), value(scenario.dd_saturation))
 
-    # Record what happened this time step
-    step_record = (damage_fraction = result.damage, flood_depth = result.flood_depth)
-    return (state, step_record)
+    # Return updated state and step record
+    new_state = HouseState(new_elevation)
+    step_record = (construction_cost=construction_cost, damage_fraction=damage)
+    return (new_state, step_record)
 end
 ```
 

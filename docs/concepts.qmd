@@ -1,0 +1,49 @@
+---
+title: "Concepts"
+subtitle: "Key ideas and vocabulary"
+---
+
+## The Problem Setting
+
+SimOptDecisions targets a class of decision problems with three characteristics:
+
+1. **Sequential dynamics**: The system evolves over time through discrete steps (years, months, decision epochs). Actions taken now affect future states.
+2. **Nonlinearity**: Outcomes are nonlinear functions of inputs---threshold effects, saturation, path dependence---so closed-form solutions are unavailable. Monte Carlo simulation is the natural evaluation tool.
+3. **Uncertainty**: Key inputs (future climate, economic conditions, system parameters) are uncertain. Rather than optimizing for a single expected future, we evaluate decisions across an ensemble of plausible scenarios.
+
+This setting is common in infrastructure design, climate adaptation, water resources planning, and natural hazard management.
+It draws on ideas from several traditions: stochastic optimization, optimal control, reinforcement learning, engineering design, and decision making under deep uncertainty (DMDU).
+
+## Key Vocabulary
+
+**Scenario**
+: A plausible future state of the world.
+Not a prediction---a scenario represents one internally consistent set of assumptions about uncertain quantities.
+In SimOptDecisions, scenarios are concrete data objects containing pre-generated inputs.
+
+**Policy**
+: A decision rule mapping system state to actions.
+Specifically, we use *parametric* policy rules, meaning policy rules that have parameters we can update, improve, or optimize.
+
+**Exploratory modeling**
+: Running a model across many scenarios to understand system behavior, rather than to predict a single outcome [@bankes_exploratory:1993].
+The goal is to discover *where* a policy is vulnerable.
+
+**Pareto front**
+: The set of solutions where no objective can be improved without worsening another.
+In multi-objective optimization, the Pareto front characterizes the fundamental trade-offs in the problem.
+
+## How SimOptDecisions Fits
+
+| Workflow Step | SimOptDecisions Feature |
+|---------------|------------------------|
+| Define uncertain futures | `Scenario` type with parameter wrappers |
+| Define candidate decisions | `Policy` type with tunable parameters |
+| Simulate system response | `simulate()` with user-defined callbacks |
+| Explore across futures | `explore()` → YAXArray result matrix |
+| Search for optimal trade-offs | `optimize()` → Pareto front |
+
+## Further Reading
+
+For a review of climate risk management and decision-making under uncertainty, see @keller_management:2021 or @doss-gollin_subjective:2023.
+For an overview of how these methods connect to broader multisector dynamics challenges, see @reed_multisectordynamics:2022.

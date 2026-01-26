@@ -6,19 +6,27 @@ execute:
   exeflags: ["--project=.."]
 ---
 
-## Overview
+::: {.callout-note}
+## Learning Objectives
 
-This tutorial teaches SimOptDecisions.jl through a realistic example: **deciding how high to elevate a house in a flood-prone area**.
+After completing this tutorial series, you will be able to:
 
-You'll learn by building from the inside out:
+1. Build a time-stepped simulation model for a decision problem under deep uncertainty
+2. Use **exploratory modeling** to understand how a policy performs across many plausible futures
+3. Use **multi-objective optimization** to find Pareto-optimal trade-offs
+4. Interpret scenario maps and Pareto fronts to support real-world decision-making
+:::
 
-1. **The System Model** — What happens in a single year? (depth-damage, construction costs)
-2. **Adding Time** — Extending to multi-year simulations with types and callbacks
-3. **Outcomes and Metrics** — Aggregating results and comparing across uncertain futures
-4. **Exploratory Modeling** — Systematically comparing policies across scenarios
-5. **Policy Search** — Multi-objective optimization to find Pareto-optimal solutions
+## Why This Tutorial?
 
-Each section builds on the previous, using the same house elevation context throughout.
+Many real-world decisions---infrastructure investments, climate adaptation strategies, resource management policies---must be made *before* key uncertainties are resolved.
+Standard cost-benefit analysis assumes we know (or can estimate) the probability distribution of future outcomes.
+But for many problems in climate risk, water management, and infrastructure planning, we face **deep uncertainty**: we cannot confidently assign probabilities to future states of the world.
+
+Decision Making under Deep Uncertainty (DMDU) is a family of approaches that takes this challenge seriously.
+Rather than optimizing for a single "expected" future, DMDU methods stress-test candidate decisions across a wide range of plausible futures to identify strategies that perform well across many of them.
+
+This tutorial teaches SimOptDecisions.jl through a realistic DMDU workflow, using the example of **deciding how high to elevate a house in a flood-prone area** [inspired by @zarekarizi_suboptimal:2020; see also @doss-gollin_subjective:2023].
 
 ## The Decision Problem
 
@@ -29,19 +37,36 @@ You must decide: **how high should you elevate your house?**
 Elevating higher costs more upfront, but reduces future flood damages.
 The challenge is that you face deep uncertainty about:
 
-- **Future storm surge intensity** (climate variability)
-- **The relationship between flood depth and damage** (depth-damage curves)
-- **Future economic conditions** (discount rates)
+- **Future storm surge intensity** — The frequency and severity of future floods depends on climate variability and change, which we cannot precisely predict
+- **The depth-damage relationship** — How much damage a given flood depth causes depends on building characteristics and contents, which are uncertain
+- **Future economic conditions** — The discount rate used to compare present costs against future damages reflects contested value judgments
+
+These aren't just "noise" around a known distribution.
+Reasonable experts disagree about the *form* of the distribution, not just its parameters.
+This is what makes the problem one of deep uncertainty rather than well-characterized risk.
 
 ## The Trade-off
 
-This is a classic decision under uncertainty:
-
 - **Low elevation**: Cheap upfront, but expensive flood damages over time
 - **High elevation**: Expensive construction, but minimal future damages
-- **Optimal elevation**: Balances upfront costs against expected long-term damages
+- **"Optimal" elevation**: Depends on your assumptions about the uncertain future
 
-But what's "optimal" depends on assumptions about the uncertain future. Different assumptions lead to different recommendations.
+Different assumptions about storm intensity, damage functions, and discount rates lead to different "optimal" recommendations.
+There is no single right answer---only trade-offs to understand.
+
+## The DMDU Workflow
+
+This tutorial walks through a complete DMDU analysis:
+
+| Step | Tutorial Section | What You'll Do |
+|------|-----------------|----------------|
+| **Build the model** | [2. Running a Time Step](02-system-model.qmd) | Define the physics: depth-damage, construction costs |
+| **Add time** | [3. Types and simulate()](03-adding-time.qmd) | Structure the model with types and run multi-year simulations |
+| **Aggregate results** | [4. Outcomes and Metrics](04-outcomes-metrics.qmd) | Summarize outcomes across scenarios; choose metrics |
+| **Explore** | [5. Exploratory Modeling](05-exploratory-modeling.qmd) | Map out where policies succeed and fail across the scenario space |
+| **Optimize** | [6. Policy Search](06-policy-search.qmd) | Find Pareto-optimal trade-offs with multi-objective optimization |
+
+Each section builds on the previous, using the same house elevation context throughout.
 
 ## Next Steps
 

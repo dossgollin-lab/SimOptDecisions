@@ -8,50 +8,37 @@ function params end
 """Return bounds for each parameter as Vector of (lower, upper) tuples."""
 function param_bounds end
 
-function param_bounds(::Type{T}) where {T<:AbstractPolicy}
-    interface_not_implemented(:param_bounds, T, "::Type")
-end
-
 # ============================================================================
 # Auto-derive param_bounds and params from ContinuousParameter fields
 # ============================================================================
 
 """Extract parameter bounds from a policy's ContinuousParameter fields."""
 function param_bounds(policy::AbstractPolicy)
-    bounds = Tuple{Float64,Float64}[]
-    for fname in fieldnames(typeof(policy))
-        field = getfield(policy, fname)
-        if field isa ContinuousParameter
-            push!(bounds, (Float64(field.bounds[1]), Float64(field.bounds[2])))
-        elseif field isa DiscreteParameter
-            throw(
-                ArgumentError(
-                    "Field :$fname is DiscreteParameter. " *
-                    "Optimization backends like Metaheuristics only support continuous parameters.",
-                ),
-            )
-        elseif field isa CategoricalParameter
-            throw(
-                ArgumentError(
-                    "Field :$fname is CategoricalParameter. " *
-                    "Optimization backends like Metaheuristics only support continuous parameters.",
-                ),
-            )
-        end
-    end
-
-    isempty(bounds) && return param_bounds(typeof(policy))
+    P = typeof(policy)
+    bounds = [
+        getfield(policy, fname).bounds for
+        fname in fieldnames(P) if getfield(policy, fname) isa ContinuousParameter
+    ]
+    isempty(bounds) && interface_not_implemented(:param_bounds, P)
     return bounds
 end
 
-function _auto_params(policy::AbstractPolicy)
-    vals = Float64[]
-    for fname in fieldnames(typeof(policy))
-        field = getfield(policy, fname)
-        if field isa ContinuousParameter
-            push!(vals, Float64(value(field)))
-        end
+"""Derive type-level bounds by constructing a dummy instance."""
+function param_bounds(::Type{P}) where {P<:AbstractPolicy}
+    n = length(fieldnames(P))
+    n == 0 && interface_not_implemented(:param_bounds, P, "::Type")
+    try
+        return param_bounds(P(zeros(n)))
+    catch
+        interface_not_implemented(:param_bounds, P, "::Type")
     end
+end
+
+function _auto_params(policy::AbstractPolicy)
+    vals = [
+        value(getfield(policy, fname)) for fname in fieldnames(typeof(policy)) if
+        getfield(policy, fname) isa ContinuousParameter
+    ]
     return vals
 end
 

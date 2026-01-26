@@ -13,3 +13,4 @@ docs/*_files/
 docs/*.html
 docs/*.pdf
 *html.json
+/docs/site_libs

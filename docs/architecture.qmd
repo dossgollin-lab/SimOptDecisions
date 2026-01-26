@@ -1,0 +1,96 @@
+---
+title: "The SimOptDecisions Architecture"
+subtitle: "Why the framework is designed this way"
+---
+
+## The Core Idea
+
+SimOptDecisions separates a decision problem into three concerns:
+
+1. **What might happen** — represented by `Scenario` objects
+2. **What we decide** — represented by `Policy` objects
+3. **How the system responds** — defined by user callbacks (`run_timestep`, `compute_outcome`, etc.)
+
+This separation is not arbitrary.
+It reflects the structure of decision problems under deep uncertainty, where the same physical system must be evaluated under many different assumptions about the future *and* many different candidate decisions.
+
+## The Five Types
+
+| Type | What it represents | Varies across... |
+|------|-------------------|-----------------|
+| `Config` | Fixed system parameters (house size, planning horizon) | Nothing---shared by all runs |
+| `Scenario` | One plausible future (storm levels, damage parameters, discount rate) | The scenario ensemble |
+| `State` | System memory at a point in time (current elevation, cumulative damage) | Time steps within a simulation |
+| `Action` | What is done at a single time step (elevate by X feet) | Time steps, depending on policy |
+| `Policy` | A decision rule that maps state to action | The policy search space |
+
+### Why separate Config from Scenario?
+
+`Config` holds quantities that are *not* uncertain: the house exists, it has a certain size, you're planning over a fixed horizon.
+`Scenario` holds quantities that *are* uncertain: how bad will storms be? What discount rate should we use?
+
+This distinction matters because `explore()` and `optimize()` loop over scenarios and policies but hold the config fixed.
+Putting non-uncertain parameters in `Config` avoids needlessly varying them.
+
+### Why pre-generate scenario data?
+
+Scenarios in SimOptDecisions contain **pre-generated data** (e.g., a 70-year time series of water levels), not distribution parameters.
+This is a deliberate design choice with three benefits:
+
+1. **Reproducibility**: The same scenario always produces the same simulation result, regardless of execution order or parallelism.
+2. **Common Random Numbers (CRN)**: Every policy sees the *exact same* water level sequence for a given scenario, so differences in outcomes are due to the policy, not random noise.
+3. **Inspectability**: You can examine, plot, and filter scenarios before running any simulations.
+
+### Why is Policy a rule, not a fixed choice?
+
+A `Policy` maps system state to an action via `get_action(policy, state, timestep, scenario)`.
+For a simple problem, this might always return the same action (elevate 4 feet).
+But the same interface supports **adaptive policies** that condition on state (e.g., "elevate further if cumulative damages exceed a threshold").
+This is important for DMDU because real-world decisions are often sequential and adaptive.
+
+## The Five Callbacks
+
+Rather than asking for a single `run_model()` function, SimOptDecisions decomposes the simulation into five callbacks:
+
+| Callback | Purpose |
+|----------|---------|
+| `initialize(config, scenario, rng)` | Create the initial `State` |
+| `time_axis(config, scenario)` | Define the time points (e.g., `1:70`) |
+| `get_action(policy, state, t, scenario)` | Map policy + state → action |
+| `run_timestep(state, action, t, config, scenario, rng)` | Execute one time step; return new state and step record |
+| `compute_outcome(step_records, config, scenario)` | Aggregate step records into a single outcome |
+
+This decomposition enables the framework to:
+
+- **Inject CRN**: The `rng` argument ensures reproducible random streams per scenario
+- **Support tracing**: Step records capture the full simulation history when needed
+- **Parallelize**: Each (policy, scenario) pair runs independently
+- **Store incrementally**: Results can be streamed to disk via storage backends
+
+## Parameter Types and explore()
+
+`explore()` assembles results into a **YAXArray Dataset** with labeled dimensions (`:policy`, `:scenario`).
+For this to work, Scenario, Policy, and Outcome fields must be parameter types (`ContinuousParameter`, `DiscreteParameter`, etc.).
+
+The definition macros handle wrapping automatically:
+
+```julia
+@scenariodef MyScenario begin
+    @continuous growth_rate       # becomes ContinuousParameter{T}
+    @timeseries water_levels      # becomes TimeSeriesParameter{T,Int}
+end
+
+@outcomedef MyOutcome begin
+    @continuous total_cost        # becomes ContinuousParameter{T}
+end
+```
+
+This is what makes the result matrix indexable:
+
+```julia
+result[:total_cost][policy=3, scenario=42]  # single value
+result[:total_cost].data[3, :]              # all scenarios for policy 3
+```
+
+`simulate()` and `optimize()` do not require parameter wrappers—plain NamedTuples work.
+Only `explore()` needs the wrapper types so it can build the right array structure.

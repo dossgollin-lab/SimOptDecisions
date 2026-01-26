@@ -115,17 +115,24 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
     # Generate auto-wrapping constructor
     constructor_def = _generate_constructor(struct_name, field_infos, needs_T, supertype)
 
-    # Combine struct and constructor
+    # Generate vector constructor for policy types
+    vector_constructor_def = _generate_vector_constructor(
+        struct_name, field_infos, supertype
+    )
+
+    # Combine struct, constructor, and vector constructor
     result = if name === nothing
         quote
             $struct_def
             $constructor_def
+            $vector_constructor_def
             $struct_name
         end
     else
         quote
             $struct_def
             $constructor_def
+            $vector_constructor_def
         end
     end
 
@@ -151,11 +158,14 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
     end
 
     if needs_T
-        # Constructor that infers T from first continuous/timeseries field or defaults to Float64
+        # Collect names of continuous/timeseries fields for T inference
+        t_fields = [
+            f.name for f in field_infos if f.wrap_kind in (:continuous, :timeseries)
+        ]
+
         quote
             function $struct_name(; $(kwargs...))
-                # Infer T from inputs or default to Float64
-                T = Float64
+                T = SimOptDecisions._infer_float_type($(t_fields...))
                 obj = $struct_name{T}($(wrap_exprs...))
                 $validate_call
                 return obj
@@ -168,6 +178,22 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
                 $validate_call
                 return obj
             end
+        end
+    end
+end
+
+"""Generate vector constructor for @policydef types with only bounded @continuous fields."""
+function _generate_vector_constructor(struct_name, field_infos, supertype)
+    supertype === :AbstractPolicy || return nothing
+
+    # Only auto-generate if ALL fields are bounded @continuous
+    all(f -> f.wrap_kind === :continuous && f.bounds !== nothing, field_infos) ||
+        return nothing
+
+    kw_pairs = [Expr(:kw, f.name, :(x[$i])) for (i, f) in enumerate(field_infos)]
+    return quote
+        function $struct_name(x::AbstractVector)
+            return $struct_name(; $(kw_pairs...))
         end
     end
 end
@@ -280,6 +306,8 @@ function _parse_categorical(args)
     )
 end
 
+"""Parse @timeseries field. Index type is always Int (1-based position); actual time values
+(e.g. dates, years) live in TimeStep.val and can be aligned via `align()`."""
 function _parse_timeseries(args)
     length(args) in (1, 2) || throw(ArgumentError("@timeseries expects 1 or 2 arguments"))
     name = args[1]

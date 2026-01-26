@@ -371,7 +371,7 @@ function _explore_zarr(
     time_axes::Union{Nothing,Dict{Symbol,Vector}};
     progress::Bool=true,
 )
-    # Build in-memory first, then save to Zarr
+    # NOTE: builds full result in-memory, then writes to Zarr — not streaming
     result = _explore_inmemory(
         config,
         scenarios,

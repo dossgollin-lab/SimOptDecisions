@@ -100,6 +100,9 @@
         @test value(p) == "a string"
         @test p[] == "a string"
 
+        # GenericParameter is a subtype of AbstractParameter
+        @test p isa AbstractParameter
+
         # With complex type
         data = Dict(:a => 1, :b => 2)
         p2 = GenericParameter(data)
@@ -108,5 +111,25 @@
         # Type-parameterized
         p3 = GenericParameter{Vector{Int}}([1, 2, 3])
         @test p3.value == [1, 2, 3]
+    end
+
+    @testset "align" begin
+        # Full time series covers years 2000-2005
+        ts = TimeSeriesParameter(2000:2005, [10.0, 20.0, 30.0, 40.0, 50.0, 60.0])
+
+        # Align to a subset (2002-2004)
+        aligned = align(ts, 2002:2004)
+        @test length(aligned) == 3
+        @test aligned.time_axis == [1, 2, 3]
+        @test aligned.values == [30.0, 40.0, 50.0]
+        @test aligned[1] == 30.0
+        @test aligned[3] == 50.0
+
+        # Align to full range
+        aligned_full = align(ts, 2000:2005)
+        @test aligned_full.values == ts.values
+
+        # Missing values throw
+        @test_throws ArgumentError align(ts, 2004:2008)
     end
 end

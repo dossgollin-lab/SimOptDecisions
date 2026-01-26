@@ -228,7 +228,7 @@ function execute_exploration(
     ]
 
     crn_config = executor.crn
-    results = asyncmap(work_items; ntasks=n_total) do (p_idx, s_idx, policy, scenario)
+    results = asyncmap(work_items) do (p_idx, s_idx, policy, scenario)
         rng = if crn_config.enabled
             create_scenario_rng(crn_config, s_idx)
         else

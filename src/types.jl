@@ -12,8 +12,7 @@ abstract type AbstractAction end
 abstract type AbstractOutcome end
 
 """Validate a config. Override for your config type to add validation logic."""
-function validate_config(config::AbstractConfig)
-    @warn "No validation implemented for $(typeof(config)), passes by default" maxlog = 1
+function validate_config(::AbstractConfig)
     return nothing
 end
 
