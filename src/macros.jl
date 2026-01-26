@@ -115,17 +115,22 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
     # Generate auto-wrapping constructor
     constructor_def = _generate_constructor(struct_name, field_infos, needs_T, supertype)
 
-    # Combine struct and constructor
+    # Generate vector constructor for policy types
+    vector_constructor_def = _generate_vector_constructor(struct_name, field_infos, supertype)
+
+    # Combine struct, constructor, and vector constructor
     result = if name === nothing
         quote
             $struct_def
             $constructor_def
+            $vector_constructor_def
             $struct_name
         end
     else
         quote
             $struct_def
             $constructor_def
+            $vector_constructor_def
         end
     end
 
@@ -168,6 +173,21 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
                 $validate_call
                 return obj
             end
+        end
+    end
+end
+
+"""Generate vector constructor for @policydef types with only bounded @continuous fields."""
+function _generate_vector_constructor(struct_name, field_infos, supertype)
+    supertype === :AbstractPolicy || return nothing
+
+    # Only auto-generate if ALL fields are bounded @continuous
+    all(f -> f.wrap_kind === :continuous && f.bounds !== nothing, field_infos) || return nothing
+
+    kw_pairs = [Expr(:kw, f.name, :(x[$i])) for (i, f) in enumerate(field_infos)]
+    return quote
+        function $struct_name(x::AbstractVector)
+            return $struct_name(; $(kw_pairs...))
         end
     end
 end
