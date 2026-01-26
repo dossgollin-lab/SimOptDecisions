@@ -42,24 +42,56 @@ Macros `@configdef` and `@statedef` are available if you need parameter wrappers
 
 ### For `explore()` (parameter wrappers required)
 
-Scenario, Policy, and Outcome fields must use parameter types:
+Scenario, Policy, and Outcome fields must use parameter types.
+Use `@scenariodef`, `@policydef`, and `@outcomedef` to define these types—the macros auto-wrap plain values.
 
-| Type | Use Case |
-|------|----------|
-| `ContinuousParameter{T}` | Real values |
-| `DiscreteParameter{T}` | Integer values |
-| `CategoricalParameter{T}` | Categorical values |
-| `TimeSeriesParameter{T}` | Time-indexed data |
-| `GenericParameter{T}` | Complex objects (skipped in flattening) |
+| Macro | Produces subtype of | Use |
+|-------|-------------------|-----|
+| `@scenariodef` | `AbstractScenario` | Uncertain parameters |
+| `@policydef` | `AbstractPolicy` | Decision parameters (with optional bounds) |
+| `@outcomedef` | `AbstractOutcome` | Simulation results for explore() |
 
-### For Optimization (2 additional methods)
+Field macros within these definitions:
 
-| Method | Signature | Returns |
-|--------|-----------|---------|
-| `params` | `(policy)` | `Vector` of parameter values |
-| `param_bounds` | `(PolicyType)` | Vector of `(min, max)` tuples |
+| Field macro | Wraps as | Example |
+|-------------|----------|---------|
+| `@continuous` | `ContinuousParameter{T}` | `@continuous growth_rate` or `@continuous x 0.0 1.0` |
+| `@discrete` | `DiscreteParameter{Int}` | `@discrete count` |
+| `@categorical` | `CategoricalParameter{Symbol}` | `@categorical climate [:low, :high]` |
+| `@timeseries` | `TimeSeriesParameter{T,Int}` | `@timeseries water_levels` |
+| `@generic` | `GenericParameter{Any}` | `@generic metadata` (skipped in flattening) |
 
-Plus a constructor: `MyPolicy(params::AbstractVector)`.
+### For Optimization
+
+The optimizer needs a **vector constructor** for the policy type:
+
+```julia
+MyPolicy(params::AbstractVector) = MyPolicy(threshold=params[1])
+```
+
+`params(policy)` and `param_bounds(policy)` are **auto-derived** from `ContinuousParameter` fields defined by `@policydef`.
+You can also pass explicit `bounds` to `optimize()`.
+
+### Executors
+
+| Executor | Parallelism | Traced exploration? |
+|----------|-------------|---------------------|
+| `SequentialExecutor(; crn=true, seed=1234)` | None | Yes |
+| `ThreadedExecutor(; crn=true, seed=1234)` | `Threads.@threads` | Yes |
+| `DistributedExecutor(; crn=true, seed=1234)` | `asyncmap` across workers | No |
+
+All executors support **Common Random Numbers** (CRN, enabled by default): each scenario index gets a deterministic RNG seed, so the same scenario produces the same random stream across all policies.
+`ThreadedExecutor` also accepts `ntasks` (defaults to `Threads.nthreads()`).
+
+### Utility Functions
+
+| Function | Signature | Returns |
+|----------|-----------|---------|
+| `is_first` | `(t::TimeStep)` | `true` if `t` is the first timestep |
+| `is_last` | `(t::TimeStep, times)` | `true` if `t` is the last timestep |
+| `discount_factor` | `(rate, t)` | `1 / (1 + rate)^t` |
+| `timeindex` | `(times)` | Iterator of `TimeStep(i, v)` pairs |
+| `value` | `(param)` | Unwrap a parameter type to its raw value |
 
 ## Minimal Working Example
 
@@ -133,12 +165,34 @@ end
 # =============================================================================
 
 config = MyConfig(10)
-scenario = MyScenario(growth_rate = ContinuousParameter(0.05))
-policy = MyPolicy(threshold = ContinuousParameter(5.0, (0.0, 10.0)))
+scenario = MyScenario(growth_rate = 0.05)  # auto-wrapped by @scenariodef
+policy = MyPolicy(threshold = 5.0)         # auto-wrapped by @policydef
 
 result = simulate(config, scenario, policy)
 println("Final value: ", result.final_value)
 ```
+
+::: {.callout-note}
+## Using `explore()` with this example
+
+To use `explore()`, define an outcome type with `@outcomedef` so results can be assembled into labeled arrays:
+
+```julia
+@outcomedef MyOutcome begin
+    @continuous final_value
+end
+
+# Update compute_outcome to return MyOutcome instead of a plain tuple:
+function SimOptDecisions.compute_outcome(step_records::Vector, config::MyConfig, scenario::MyScenario)
+    return MyOutcome(final_value=step_records[end].value)
+end
+
+scenarios = [MyScenario(growth_rate=rand() * 0.1) for _ in 1:100]
+policies = [MyPolicy(threshold=t) for t in 1.0:2.0:10.0]
+result = explore(config, scenarios, policies)
+result[:final_value]  # YAXArray with dims (policy, scenario)
+```
+:::
 
 ## Understanding Each Piece
 
@@ -211,9 +265,10 @@ end
 SimOptDecisions.time_axis(config::MyConfig, scenario::MyScenario) = 1:config.horizon
 ```
 
-**compute_outcome**: Summarize the simulation into an outcome.
+**compute_outcome**: Summarize the simulation into an outcome. For `simulate()` and `optimize()`, plain tuples work. For `explore()`, use `@outcomedef` to wrap fields in parameter types.
 
 ```julia
+# Plain tuple (works with simulate and optimize)
 function SimOptDecisions.compute_outcome(step_records::Vector, config::MyConfig, scenario::MyScenario)
     return (final_value=step_records[end].value,)
 end
@@ -221,18 +276,16 @@ end
 
 ## Adding Optimization
 
-With `@policydef`, bounds are already defined. Just add a vector constructor:
+With `@policydef`, bounds are stored in `ContinuousParameter` fields and `params()`/`param_bounds()` are auto-derived.
+You only need to add a vector constructor:
 
 ```julia
-# Use named form to enable adding methods
 @policydef OptimizablePolicy begin
     @continuous threshold 0.0 10.0
 end
 
-# Add constructor from parameter vector (required for optimization)
-OptimizablePolicy(params::AbstractVector) = OptimizablePolicy(
-    threshold = ContinuousParameter(params[1], (0.0, 10.0))
-)
+# Vector constructor (required for optimization)
+OptimizablePolicy(params::AbstractVector) = OptimizablePolicy(threshold=params[1])
 ```
 
 Then set up and run optimization:
@@ -248,7 +301,7 @@ function calculate_metrics(outcomes)
 end
 
 # Sample many possible futures
-scenarios = [MyScenario(growth_rate = ContinuousParameter(rand() * 0.1)) for _ in 1:100]
+scenarios = [MyScenario(growth_rate=rand() * 0.1) for _ in 1:100]
 
 # Run optimization (flat API)
 result = optimize(

@@ -69,7 +69,21 @@ This decomposition enables the framework to:
 
 ## Parameter Types and explore()
 
-Outcome fields wrapped in `ContinuousParameter`, `DiscreteParameter`, etc. enable `explore()` to automatically assemble results into a **YAXArray Dataset** with labeled dimensions (`:policy`, `:scenario`).
+`explore()` assembles results into a **YAXArray Dataset** with labeled dimensions (`:policy`, `:scenario`).
+For this to work, Scenario, Policy, and Outcome fields must be parameter types (`ContinuousParameter`, `DiscreteParameter`, etc.).
+
+The definition macros handle wrapping automatically:
+
+```julia
+@scenariodef MyScenario begin
+    @continuous growth_rate       # becomes ContinuousParameter{T}
+    @timeseries water_levels      # becomes TimeSeriesParameter{T,Int}
+end
+
+@outcomedef MyOutcome begin
+    @continuous total_cost        # becomes ContinuousParameter{T}
+end
+```
 
 This is what makes the result matrix indexable:
 
@@ -78,4 +92,5 @@ result[:total_cost][policy=3, scenario=42]  # single value
 result[:total_cost].data[3, :]              # all scenarios for policy 3
 ```
 
-The parameter wrappers tell the framework what type of data each outcome field contains, so it can build the right array structure.
+`simulate()` and `optimize()` do not require parameter wrappers—plain NamedTuples work.
+Only `explore()` needs the wrapper types so it can build the right array structure.

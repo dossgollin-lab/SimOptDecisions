@@ -120,7 +120,13 @@ function SimOptDecisions.run_timestep(
     return (HouseState(new_elevation), (construction_cost=construction_cost, damage_fraction=damage))
 end
 
-# Outcome with parameter wrappers (required for explore)
+# Outcome type: @outcomedef wraps fields in parameter types for explore()
+@outcomedef HouseOutcome begin
+    @continuous construction_cost
+    @continuous npv_damages
+    @continuous total_cost
+end
+
 function SimOptDecisions.compute_outcome(
     step_records::Vector, ::HouseConfig, scenario::HouseScenario
 )
@@ -129,17 +135,25 @@ function SimOptDecisions.compute_outcome(
         step_records[t].damage_fraction * discount_factor(value(scenario.discount_rate), t)
         for t in eachindex(step_records)
     )
-    return (
-        construction_cost = ContinuousParameter(construction_cost),
-        npv_damages = ContinuousParameter(npv_damages),
-        total_cost = ContinuousParameter(construction_cost + npv_damages),
+    return HouseOutcome(
+        construction_cost = construction_cost,
+        npv_damages = npv_damages,
+        total_cost = construction_cost + npv_damages,
     )
 end
 ```
 
 ## The `explore()` Function
 
-The `explore()` function runs `simulate()` for every (policy, scenario) combination and returns a **YAXArray Dataset**—a labeled multi-dimensional array.
+The `explore()` function runs `simulate()` for every (policy, scenario) combination and returns a **YAXArray Dataset**---a labeled multi-dimensional array.
+
+::: {.callout-note}
+## Outcome Types for `explore()`
+
+In the previous section, `compute_outcome` returned a plain `NamedTuple`.
+For `explore()`, outcome fields must be **parameter types** so the framework can build labeled arrays.
+We use `@outcomedef` to define the outcome type—the macro auto-wraps plain values into `ContinuousParameter`, just like `@scenariodef` and `@policydef` do for their fields.
+:::
 
 ```{julia}
 config = HouseConfig()
@@ -195,32 +209,58 @@ end
 
 ## Executors
 
-For large experiments, parallelize with executors:
+By default, `explore()` runs simulations sequentially.
+For large experiments (many policies × many scenarios), **executors** control how simulations are parallelized.
+
+| Executor | How it runs | Best for |
+|----------|------------|----------|
+| `SequentialExecutor()` | Single-threaded loop | Debugging, small experiments |
+| `ThreadedExecutor()` | `Threads.@threads` across Julia threads | Most production use |
+| `DistributedExecutor()` | `asyncmap` across Distributed workers | Multi-node clusters |
+
+All three accept the same keyword arguments:
 
 ```{julia}
 #| eval: false
-# Sequential (default)
+# Sequential (default) — single-threaded, good for debugging
 result = explore(config, scenarios, policies;
-    executor=SequentialExecutor())
+    executor=SequentialExecutor(; crn=true, seed=1234))
 
-# Multi-threaded
+# Multi-threaded — uses all available Julia threads
 result = explore(config, scenarios, policies;
-    executor=ThreadedExecutor())
+    executor=ThreadedExecutor(; crn=true, seed=1234))
 
-# Distributed (across workers)
+# Distributed — across workers added with addprocs()
 result = explore(config, scenarios, policies;
-    executor=DistributedExecutor())
+    executor=DistributedExecutor(; crn=true, seed=1234))
 ```
+
+`ThreadedExecutor` also accepts `ntasks` to control the number of parallel tasks (defaults to `Threads.nthreads()`).
 
 ### Common Random Numbers (CRN)
 
-CRN ensures each scenario uses the same random stream across all policies, reducing variance when comparing alternatives:
+All executors support **Common Random Numbers** (CRN), enabled by default.
+CRN assigns each scenario index a deterministic random seed, so the `rng` passed to `initialize` and `run_timestep` produces the same stream regardless of which policy is being evaluated or which thread runs the simulation.
+
+This matters because it reduces variance when *comparing* policies: any difference in outcomes is due to the policy, not to random noise.
+Without CRN, two policies evaluated on the "same" scenario might see different random draws, making comparisons noisier.
 
 ```{julia}
 #| eval: false
+# CRN enabled (default) — same random stream per scenario across all policies
 result = explore(config, scenarios, policies;
     executor=ThreadedExecutor(; crn=true, seed=42))
+
+# CRN disabled — each simulation gets an independent random stream
+result = explore(config, scenarios, policies;
+    executor=ThreadedExecutor(; crn=false))
 ```
+
+::: {.callout-note}
+CRN only affects the `rng` argument passed to callbacks.
+In this tutorial, our scenarios contain pre-generated water level time series, so `run_timestep` doesn't use `rng` at all—the random draws happen during scenario generation.
+CRN becomes important when your model samples random values *during* simulation (e.g., stochastic demand, random failures).
+:::
 
 ## Storage Backends
 
