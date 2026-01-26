@@ -63,14 +63,17 @@ Field macros within these definitions:
 
 ### For Optimization
 
-The optimizer needs a **vector constructor** for the policy type:
+The optimizer needs two methods:
 
 ```julia
+# Vector constructor
 MyPolicy(params::AbstractVector) = MyPolicy(threshold=params[1])
+
+# Type-level bounds
+SimOptDecisions.param_bounds(::Type{<:MyPolicy}) = [(0.0, 10.0)]
 ```
 
-`params(policy)` and `param_bounds(policy)` are **auto-derived** from `ContinuousParameter` fields defined by `@policydef`.
-You can also pass explicit `bounds` to `optimize()`.
+`params(policy)` (extracting values from an instance) is auto-derived from `ContinuousParameter` fields defined by `@policydef`.
 
 ### Executors
 
@@ -276,16 +279,17 @@ end
 
 ## Adding Optimization
 
-With `@policydef`, bounds are stored in `ContinuousParameter` fields and `params()`/`param_bounds()` are auto-derived.
-You only need to add a vector constructor:
+With `@policydef`, `params()` is auto-derived from `ContinuousParameter` fields.
+You need to add a vector constructor and type-level `param_bounds`:
 
 ```julia
 @policydef OptimizablePolicy begin
     @continuous threshold 0.0 10.0
 end
 
-# Vector constructor (required for optimization)
+# Required for optimization
 OptimizablePolicy(params::AbstractVector) = OptimizablePolicy(threshold=params[1])
+SimOptDecisions.param_bounds(::Type{<:OptimizablePolicy}) = [(0.0, 10.0)]
 ```
 
 Then set up and run optimization:
