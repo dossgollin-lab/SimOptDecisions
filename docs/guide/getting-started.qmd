@@ -12,19 +12,23 @@ SimOptDecisions supports two main workflows:
 2. **Policy search** with `optimize()`: Use multi-objective optimization to find Pareto-optimal policies, then stress-test them with `explore()`
 
 Both build on `simulate()`, which runs a single (policy, scenario) pair through user-defined callbacks.
-See [Framework Architecture](../concepts/architecture.qmd) for why the framework is structured this way.
+See [Framework Architecture](../architecture.qmd) for why the framework is structured this way.
 
 ## Checklist: What You Implement
 
 ### Types (5 required)
 
-| Type | Purpose | Subtype of |
-|------|---------|------------|
-| Config | Fixed parameters (shared across scenarios) | `AbstractConfig` |
-| Scenario | Uncertain parameters (one possible future) | `AbstractScenario` |
-| State | Your model's internal state | `AbstractState` |
-| Action | What gets decided at each timestep | `AbstractAction` (optional) |
-| Policy | Decision rule with tunable parameters | `AbstractPolicy` |
+| Type | Purpose | Subtype of | Typical definition |
+|------|---------|------------|-------------------|
+| Config | Fixed parameters (shared across scenarios) | `AbstractConfig` | Plain struct |
+| Scenario | Uncertain parameters (one possible future) | `AbstractScenario` | `@scenariodef` |
+| State | Your model's internal state | `AbstractState` | Plain struct |
+| Action | What gets decided at each timestep | `AbstractAction` (optional) | Plain struct |
+| Policy | Decision rule with tunable parameters | `AbstractPolicy` | `@policydef` |
+
+Use `@scenariodef` and `@policydef` for types whose fields are explored as dimensions by `explore()`.
+Config, State, and Action typically have plain fields and are defined as regular Julia structs.
+Macros `@configdef` and `@statedef` are available if you need parameter wrappers on those types too.
 
 ### Callbacks (5 required)
 

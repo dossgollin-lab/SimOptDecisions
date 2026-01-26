@@ -12,10 +12,11 @@ This package is under active development and the API may change.
 
 ## What is SimOptDecisions?
 
-SimOptDecisions is a Julia framework for simulation-based decision analysis under deep uncertainty (DMDU).
+SimOptDecisions is a Julia framework for nonlinear sequential decision problems under uncertainty.
 
-Many decisions in climate adaptation, infrastructure planning, and resource management must be made before key uncertainties are resolved---and those uncertainties may be too deep to assign reliable probabilities.
-SimOptDecisions provides the infrastructure for the core DMDU workflow: you provide a simulation model and decision rules, and the framework runs simulations across many plausible futures, aggregates results, and searches for robust or Pareto-optimal policies.
+You define a time-stepped simulation model and candidate decision rules.
+The framework evaluates them across a Monte Carlo ensemble of plausible futures, aggregates outcomes, and optionally searches for Pareto-optimal policies using multi-objective optimization.
+It is designed for problems where closed-form solutions are unavailable and simulation-based evaluation is the natural approach.
 
 ## How It Works
 
@@ -60,12 +61,11 @@ The framework is built around nested loops. Both `explore()` and `optimize()` ca
 
 ## Why SimOptDecisions?
 
-DMDU analyses require running thousands to millions of simulations across uncertain futures and candidate decisions. SimOptDecisions handles the computational infrastructure so you can focus on your model:
+Many decision problems---infrastructure sizing, climate adaptation, resource management---involve nonlinear dynamics, sequential decisions over time, and uncertainties that require Monte Carlo evaluation.
+SimOptDecisions handles the computational infrastructure so you can focus on your model:
 
 - **You write**: the system model (`run_timestep`), uncertainty characterization (Scenarios), and decision rules (Policies)
 - **Framework handles**: parallel execution, result storage, exploratory analysis, and multi-objective Pareto optimization
-
-The framework is designed for the kinds of problems common in climate risk management, water resources engineering, and infrastructure planning---where models are computationally intensive and the uncertainty space is large.
 
 ## Installation
 
@@ -78,12 +78,12 @@ Pkg.add(url="https://github.com/dossgollin-lab/SimOptDecisions")
 
 ## Who Is This For?
 
-SimOptDecisions is designed for researchers and practitioners working on decision problems under deep uncertainty---particularly in climate risk management, water resources, infrastructure planning, and environmental policy.
-The [Concepts](concepts/dmdu.qmd) section introduces the key ideas; the [Tutorial](tutorial/01-the-problem.qmd) walks through a complete worked example.
+SimOptDecisions is designed for researchers and practitioners working on simulation-based decision problems under uncertainty---particularly in climate risk management, water resources, infrastructure planning, and environmental policy.
+The [Concepts](concepts.qmd) section introduces the key ideas; the [Tutorial](tutorial/01-the-problem.qmd) walks through a complete worked example.
 
 ## Next Steps
 
-→ [Concepts: Deep Uncertainty and DMDU](concepts/dmdu.qmd) — Key vocabulary and ideas for the DMDU workflow
+→ [Concepts](concepts.qmd) — Key vocabulary and ideas
 
 → [Tutorial](tutorial/01-the-problem.qmd) — Learn SimOptDecisions through a complete worked example (house elevation under flood risk)
 

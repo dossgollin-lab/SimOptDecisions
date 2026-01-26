@@ -10,7 +10,7 @@ Now we'll extend our single-year model to run over multiple years using SimOptDe
 This requires defining **five types** (Config, Scenario, State, Action, Policy) and implementing **five callbacks** (initialize, time_axis, get_action, run_timestep, compute_outcome).
 
 This decomposition is central to the framework's design: it separates *what might happen* (Scenario) from *what we decide* (Policy) from *how the system responds* (the callbacks).
-See [Framework Architecture](../concepts/architecture.qmd) for why the framework is structured this way.
+See [Framework Architecture](../architecture.qmd) for why the framework is structured this way.
 
 ## Setup
 
@@ -63,6 +63,16 @@ SimOptDecisions uses Julia's type system to structure your model. You define fiv
 | **State** | Model state | No | Yes |
 | **Action** | Decision at each timestep | — | — |
 | **Policy** | Rule that produces actions | No | No |
+
+::: {.callout-note}
+## Macros vs Plain Structs
+
+SimOptDecisions provides definition macros (`@scenariodef`, `@policydef`, `@outcomedef`, `@configdef`, `@statedef`) that automatically wrap fields in parameter types like `ContinuousParameter`.
+You need parameter wrappers for fields that `explore()` flattens into result dimensions---typically Scenario, Policy, and Outcome fields.
+
+Config, State, and Action usually have plain fields (`Int`, `Float64`) that aren't explored as dimensions, so we define them as regular Julia structs.
+You *can* use `@configdef` or `@statedef` if their fields need parameter wrappers, but for most models plain structs are simpler.
+:::
 
 ### Config: What's Fixed
 
