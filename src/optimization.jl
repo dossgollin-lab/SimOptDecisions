@@ -18,12 +18,10 @@ end
 
 """Extract parameter bounds from a policy's ContinuousParameter fields."""
 function param_bounds(policy::AbstractPolicy)
-    bounds = Tuple{Float64,Float64}[]
-    for fname in fieldnames(typeof(policy))
+    P = typeof(policy)
+    for fname in fieldnames(P)
         field = getfield(policy, fname)
-        if field isa ContinuousParameter
-            push!(bounds, (Float64(field.bounds[1]), Float64(field.bounds[2])))
-        elseif field isa DiscreteParameter
+        if field isa DiscreteParameter
             throw(
                 ArgumentError(
                     "Field :$fname is DiscreteParameter. " *
@@ -40,18 +38,19 @@ function param_bounds(policy::AbstractPolicy)
         end
     end
 
-    isempty(bounds) && return param_bounds(typeof(policy))
+    bounds = [
+        getfield(policy, fname).bounds for
+        fname in fieldnames(P) if getfield(policy, fname) isa ContinuousParameter
+    ]
+    isempty(bounds) && return param_bounds(P)
     return bounds
 end
 
 function _auto_params(policy::AbstractPolicy)
-    vals = Float64[]
-    for fname in fieldnames(typeof(policy))
-        field = getfield(policy, fname)
-        if field isa ContinuousParameter
-            push!(vals, Float64(value(field)))
-        end
-    end
+    vals = [
+        value(getfield(policy, fname)) for
+        fname in fieldnames(typeof(policy)) if getfield(policy, fname) isa ContinuousParameter
+    ]
     return vals
 end
 

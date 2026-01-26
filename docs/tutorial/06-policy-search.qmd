@@ -75,9 +75,8 @@ end
     @continuous elevation_ft 0.0 14.0
 end
 
-# Required for optimization: vector constructor and type-level param_bounds
+# Required for optimization: vector constructor
 ElevationPolicy(params::AbstractVector) = ElevationPolicy(elevation_ft=params[1])
-SimOptDecisions.param_bounds(::Type{<:ElevationPolicy}) = [(0.0, 14.0)]
 
 function SimOptDecisions.get_action(
     policy::ElevationPolicy, state::HouseState, t::TimeStep, scenario::HouseScenario
@@ -155,12 +154,11 @@ end
 ::: {.callout-note}
 ## What `optimize()` Needs
 
-The optimizer requires two things beyond `simulate()`:
+Beyond `simulate()`, the optimizer requires one additional method:
 
-1. A **vector constructor**: `MyPolicy(params::AbstractVector)` that creates a policy from a flat parameter vector
-2. A **type-level `param_bounds`**: `param_bounds(::Type{<:MyPolicy})` returning `[(lo, hi), ...]`
+- A **vector constructor**: `MyPolicy(params::AbstractVector)` that creates a policy from a flat parameter vector
 
-`params(policy)` (extracting current values from a policy instance) is auto-derived from `ContinuousParameter` fields.
+Both `params(policy)` and `param_bounds(::Type{<:MyPolicy})` are **auto-derived** from bounded `@continuous` fields defined via `@policydef`.
 
 Unlike `explore()`, `optimize()` does not need parameter-wrapped outcomes.
 It works with `simulate()` directly and uses `calculate_metrics` to aggregate plain outcome values.

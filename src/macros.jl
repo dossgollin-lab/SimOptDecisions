@@ -115,17 +115,22 @@ function _defmacro_impl(supertype::Symbol, body::Expr, mod::Module; name=nothing
     # Generate auto-wrapping constructor
     constructor_def = _generate_constructor(struct_name, field_infos, needs_T, supertype)
 
-    # Combine struct and constructor
+    # Generate param_bounds for policy types (only for bounded continuous fields)
+    param_bounds_def = _generate_param_bounds(struct_name, field_infos, supertype)
+
+    # Combine struct, constructor, and param_bounds
     result = if name === nothing
         quote
             $struct_def
             $constructor_def
+            $param_bounds_def
             $struct_name
         end
     else
         quote
             $struct_def
             $constructor_def
+            $param_bounds_def
         end
     end
 
@@ -168,6 +173,29 @@ function _generate_constructor(struct_name, field_infos, needs_T, supertype)
                 $validate_call
                 return obj
             end
+        end
+    end
+end
+
+"""Generate param_bounds(::Type) for @policydef types with bounded continuous fields."""
+function _generate_param_bounds(struct_name, field_infos, supertype)
+    supertype === :AbstractPolicy || return nothing
+
+    # Collect bounds from @continuous fields that have explicit bounds
+    bounds_exprs = []
+    for f in field_infos
+        if f.wrap_kind === :continuous && f.bounds !== nothing
+            lo, hi = f.bounds
+            push!(bounds_exprs, :(($(lo), $(hi))))
+        end
+    end
+
+    isempty(bounds_exprs) && return nothing
+
+    bounds_vec = Expr(:vect, bounds_exprs...)
+    return quote
+        function SimOptDecisions.param_bounds(::Type{<:$struct_name})
+            return $bounds_vec
         end
     end
 end
