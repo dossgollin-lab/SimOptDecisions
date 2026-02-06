@@ -20,7 +20,8 @@ It is designed for problems where closed-form solutions are unavailable and simu
 
 ## How It Works
 
-The framework is built around nested loops. Both `explore()` and `optimize()` call `simulate()` at their core:
+The framework is built around nested loops. Both `explore()` and `optimize()` call `simulate()` at their core.
+`simulate()`, in turn, calls `initialize()`, `get_action()`, `run_timestep()`, and `compute_outcome()`, so you don't need to implement it yourself:
 
 ```text
 ┌────────┐  ┌──────────┐  ┌──────────┐
@@ -52,6 +53,8 @@ The framework is built around nested loops. Both `explore()` and `optimize()` ca
 │  └─────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────┘
 ```
+
+The framework also provides helpful configurations for you:
 
 | Option | What it controls | Choices |
 |--------|------------------|---------|
