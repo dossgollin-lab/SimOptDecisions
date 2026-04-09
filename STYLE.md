@@ -20,6 +20,8 @@ struct MyStruct
 end
 ```
 
+Exception: code at the boundary of an external library that is itself concrete-typed may use that concrete type. For example, `ext/SimOptMetaheuristicsExt.jl` uses `Float64` throughout because `Metaheuristics.jl` operates in `Float64`. Keep the concreteness contained to the boundary layer; don't let it leak into the core package.
+
 ### Naming Conventions
 
 - `TitleCase` for structs and modules (e.g., `MyStruct`, `Utils`)
