@@ -34,9 +34,14 @@ function _get_algorithm(
     pop_size::Int,
     max_iters::Int,
     parallel::Bool,
+    store_history::Bool,
     user_options::Dict{Symbol,Any},
 )
-    options = Metaheuristics.Options(; iterations=max_iters, parallel_evaluation=parallel)
+    options = Metaheuristics.Options(;
+        iterations=max_iters,
+        parallel_evaluation=parallel,
+        store_convergence=store_history,
+    )
 
     if n_objectives == 1
         if sym == :ECA
@@ -172,6 +177,43 @@ function _wrap_result(
     end
 end
 
+"""Extract per-generation Pareto archive history from a Metaheuristics result."""
+function _extract_history(
+    mh_result,
+    n_objectives::Int,
+    objectives::Vector{Objective},
+    bounds_vec::Vector{Tuple{Float64,Float64}},
+)
+    states = mh_result.convergence
+    history = Vector{
+        NamedTuple{
+            (:iteration, :params, :objectives),
+            Tuple{Int,Vector{Vector{Float64}},Vector{Vector{Float64}}},
+        },
+    }()
+
+    for (iter, state) in enumerate(states)
+        sols = if n_objectives == 1
+            [state.best_sol]
+        else
+            Metaheuristics.get_non_dominated_solutions(state.population)
+        end
+
+        params_gen = Vector{Vector{Float64}}()
+        objs_gen = Vector{Vector{Float64}}()
+        for sol in sols
+            x_norm = Vector{Float64}(Metaheuristics.get_position(sol))
+            push!(params_gen, _denormalize(x_norm, bounds_vec))
+            raw_fval = Metaheuristics.fval(sol)
+            raw = raw_fval isa AbstractVector ? Vector{Float64}(raw_fval) :
+                  Float64[raw_fval]
+            push!(objs_gen, _unnegate_objectives(raw, objectives))
+        end
+        push!(history, (iteration=iter, params=params_gen, objectives=objs_gen))
+    end
+    return history
+end
+
 """Un-negate objectives that were maximized."""
 function _unnegate_objectives(raw_objectives::Vector{Float64}, objectives)
     result = copy(raw_objectives)
@@ -282,12 +324,19 @@ function SimOptDecisions.optimize_backend(
         backend.population_size,
         backend.max_iterations,
         backend.parallel,
+        backend.store_history,
         backend.options,
     )
 
     mh_result = Metaheuristics.optimize(fitness, normalized_bounds, algorithm)
 
-    return _wrap_result(mh_result, objectives, bounds_vec)
+    result = _wrap_result(mh_result, objectives, bounds_vec)
+    if backend.store_history
+        result.convergence_info[:history] = _extract_history(
+            mh_result, n_objectives, objectives, bounds_vec
+        )
+    end
+    return result
 end
 
 end # module SimOptMetaheuristicsExt

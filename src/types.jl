@@ -126,6 +126,7 @@ struct MetaheuristicsBackend <: AbstractOptimizationBackend
     max_iterations::Int
     population_size::Int
     parallel::Bool
+    store_history::Bool
     options::Dict{Symbol,Any}
 
     function MetaheuristicsBackend(;
@@ -133,8 +134,9 @@ struct MetaheuristicsBackend <: AbstractOptimizationBackend
         max_iterations::Int=1000,
         population_size::Int=100,
         parallel::Bool=true,
+        store_history::Bool=false,
         options::Dict{Symbol,Any}=Dict{Symbol,Any}(),
     )
-        new(algorithm, max_iterations, population_size, parallel, options)
+        new(algorithm, max_iterations, population_size, parallel, store_history, options)
     end
 end

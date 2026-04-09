@@ -201,6 +201,83 @@ end
         @test opt_params[1] >= 1.5  # Allow some tolerance
     end
 
+    @testset "store_history - default off" begin
+        config = MHCounterParams(5)
+        scenarios = [MHEmptySOW() for _ in 1:3]
+        mc(outcomes) = (value=sum(o.final_value for o in outcomes) / length(outcomes),)
+        backend = MetaheuristicsBackend(;
+            algorithm=:ECA, max_iterations=5, population_size=10, parallel=false
+        )
+        result = SimOptDecisions.optimize(
+            config, scenarios, MHCounterPolicy, mc, [minimize(:value)]; backend=backend
+        )
+        @test !haskey(result.convergence_info, :history)
+    end
+
+    @testset "store_history - multi-objective NSGA2" begin
+        config = MHCounterParams(5)
+        scenarios = [MHEmptySOW() for _ in 1:3]
+        function mo_mc(outcomes)
+            values = [o.final_value for o in outcomes]
+            m = sum(values) / length(values)
+            return (mean_value=m, variance=sum((v - m)^2 for v in values) / length(values))
+        end
+        backend = MetaheuristicsBackend(;
+            algorithm=:NSGA2,
+            max_iterations=6,
+            population_size=20,
+            parallel=false,
+            store_history=true,
+        )
+        result = SimOptDecisions.optimize(
+            config,
+            scenarios,
+            MHMultiPolicy,
+            mo_mc,
+            [minimize(:mean_value), minimize(:variance)];
+            backend=backend,
+        )
+
+        @test haskey(result.convergence_info, :history)
+        history = result.convergence_info[:history]
+        @test length(history) == result.convergence_info[:iterations]
+        for gen in history
+            @test !isempty(gen.params)
+            @test !isempty(gen.objectives)
+            @test length(gen.params) == length(gen.objectives)
+            @test all(length(p) == 2 for p in gen.params)
+            @test all(length(o) == 2 for o in gen.objectives)
+        end
+
+        # Final generation should match the reported pareto front
+        final = history[end]
+        @test Set(final.params) == Set(result.pareto_params)
+        @test Set(final.objectives) == Set(result.pareto_objectives)
+    end
+
+    @testset "store_history - single-objective ECA" begin
+        config = MHCounterParams(5)
+        scenarios = [MHEmptySOW() for _ in 1:3]
+        mc(outcomes) = (value=sum(o.final_value for o in outcomes) / length(outcomes),)
+        backend = MetaheuristicsBackend(;
+            algorithm=:ECA,
+            max_iterations=5,
+            population_size=15,
+            parallel=false,
+            store_history=true,
+        )
+        result = SimOptDecisions.optimize(
+            config, scenarios, MHCounterPolicy, mc, [minimize(:value)]; backend=backend
+        )
+        @test haskey(result.convergence_info, :history)
+        history = result.convergence_info[:history]
+        @test length(history) == result.convergence_info[:iterations]
+        for gen in history
+            @test length(gen.params) >= 1
+            @test length(gen.objectives) >= 1
+        end
+    end
+
     @testset "Constraint handling - PenaltyConstraint" begin
         config = MHCounterParams(5)
         scenarios = [MHEmptySOW() for _ in 1:3]
