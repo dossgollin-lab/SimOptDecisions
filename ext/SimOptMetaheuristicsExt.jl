@@ -38,9 +38,7 @@ function _get_algorithm(
     user_options::Dict{Symbol,Any},
 )
     options = Metaheuristics.Options(;
-        iterations=max_iters,
-        parallel_evaluation=parallel,
-        store_convergence=store_history,
+        iterations=max_iters, parallel_evaluation=parallel, store_convergence=store_history
     )
 
     if n_objectives == 1
@@ -205,8 +203,8 @@ function _extract_history(
             x_norm = Vector{Float64}(Metaheuristics.get_position(sol))
             push!(params_gen, _denormalize(x_norm, bounds_vec))
             raw_fval = Metaheuristics.fval(sol)
-            raw = raw_fval isa AbstractVector ? Vector{Float64}(raw_fval) :
-                  Float64[raw_fval]
+            raw =
+                raw_fval isa AbstractVector ? Vector{Float64}(raw_fval) : Float64[raw_fval]
             push!(objs_gen, _unnegate_objectives(raw, objectives))
         end
         push!(history, (iteration=iter, params=params_gen, objectives=objs_gen))
